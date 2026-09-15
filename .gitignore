@@ -1,0 +1,221 @@
+
+# how to check if your path or file is being ignored
+# git check-ignore -v path/to/file
+# git status --ignored
+
+# AWS / Keys / Certificates
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+credentials
+.terraform/
+*.tfstate
+*.tfstate.*
+
+
+# ==============================================================================
+# General / OS / Editor Artifacts
+# ==============================================================================
+.DS_Store
+Thumbs.db
+*.bak
+*.swp
+*~
+tempCodeRunnerFile.py
+.vscode-test
+
+# If you choose to ignore IDE settings across the team:
+# .idea/
+# .vscode/
+
+# ==============================================================================
+# Environment Variables & Secrets
+# ==============================================================================
+.env
+.env.*
+!.env.example
+.envrc
+.streamlit/secrets.toml
+
+# ==============================================================================
+# Logs & Process IDs
+# ==============================================================================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pids/
+*.pid
+*.seed
+*.pid.lock
+celerybeat-schedule
+celerybeat.pid
+
+# ==============================================================================
+# Shared Build & Cache
+# ==============================================================================
+build/
+dist/
+out/
+.cache/
+
+# ==============================================================================
+# Python: Bytecode, Environments & Packages
+# ==============================================================================
+__pycache__/
+*.py[codz]
+*$py.class
+*.so
+.Python
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+__pypackages__/
+
+# PyInstaller / Build Tools
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.pybuilder/
+target/
+.pypirc
+cython_debug/
+
+# Python Tooling & Package Managers
+.pdm-python
+.pdm-build/
+.pixi/
+.abstra/
+
+# Testing & Type Checking
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Frameworks & Notebooks
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+instance/
+.webassets-cache
+.scrapy
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+marimo/_static/
+marimo/_lsp/
+__marimo__/
+.spyderproject
+.spyproject
+.ropeproject
+
+# Documentation & Translations
+docs/_build/
+/site
+*.mo
+*.pot
+*.sage.py
+
+# ==============================================================================
+# JavaScript / TypeScript / Node.js
+# ==============================================================================
+node_modules/
+jspm_packages/
+bower_components
+web_modules/
+
+# Package Manager Caches & Lockfiles
+.npm/
+.pnpm-store
+.yarn-integrity
+*.tgz
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# Test & Coverage
+coverage/
+*.lcov
+.nyc_output
+lib-cov/
+
+# Linters & Build Tool Caches
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+.node_repl_history
+.grunt/
+.lock-wscript
+build/Release/
+.parcel-cache
+.fusebox/
+.tern-port
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Web Frameworks & Bundlers
+.next/
+.nuxt/
+.output/
+.vuepress/dist
+.temp/
+.svelte-kit/
+**/.vitepress/dist
+**/.vitepress/cache
+.docusaurus/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+.vite/
+
+# Cloud, DB & Message Brokers
+.serverless/
+.dynamodb/
+.firebase/
+*.rdb
+*.aof
+mnesia/
+rabbitmq/
+rabbitmq-data/
+activemq-data/
