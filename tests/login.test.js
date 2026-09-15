@@ -1,8 +1,13 @@
 // Story 22199: log in with username + password, no user type selection.
-// The db module is mocked so these tests run without a MySQL server.
-jest.mock('../src/db', () => ({ query: jest.fn() }));
+// The db module is stubbed so these tests run without a MySQL server.
+import { createRequire } from 'node:module';
+import { describe, test, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
+import request from 'supertest';
 
-const request = require('supertest');
+// The app is CommonJS. vi.mock() does not intercept require(), so the app and
+// the db module are loaded through Node's require to share one module instance
+// that vi.spyOn can patch.
+const require = createRequire(import.meta.url);
 const db = require('../src/db');
 const { hashPassword } = require('../src/auth/password');
 const { app } = require('../src/app');
@@ -14,8 +19,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  db.query.mockReset();
-  db.query.mockImplementation(async (sql, params) => {
+  vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.startsWith('SELECT')) {
       const [username] = params;
       if (username === 'driver1') {
@@ -26,6 +30,10 @@ beforeEach(() => {
     if (sql.startsWith('INSERT INTO login_attempts')) return [];
     throw new Error(`Unexpected query in test: ${sql}`);
   });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 function loginAttemptCalls() {

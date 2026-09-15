@@ -1,16 +1,28 @@
 {
-  "name": "teamteam-4910",
-  "version": "0.1.0",
+  "name": "teamteam-4910-project",
+  "version": "1.0.0",
   "description": "Good Driver Incentive Program - CPSC 4910 TeamTeam",
   "private": true,
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "jest",
+    "test": "vitest",
+    "test-run": "vitest run",
     "db:setup": "node scripts/db-setup.js",
     "db:seed": "node scripts/seed.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nando727/TeamTeam-4910-Project.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/nando727/TeamTeam-4910-Project/issues"
+  },
+  "homepage": "https://github.com/nando727/TeamTeam-4910-Project#readme",
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "dotenv": "^16.4.5",
@@ -20,10 +32,7 @@
     "mysql2": "^3.11.0"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
-    "supertest": "^7.0.0"
-  },
-  "jest": {
-    "testEnvironment": "node"
+    "supertest": "^7.0.0",
+    "vitest": "^5.0.1"
   }
 }
