@@ -42,9 +42,3 @@ npm run test-run
 ```bash
 npm run test
 ```
-
-## Project rules (short version)
-
-* Never commit `.env` or any real credentials.
-* All SQL goes through `src/db.js` with `?` placeholders — no string-built SQL.
-* All password hashing goes through `src/auth/password.js`.
