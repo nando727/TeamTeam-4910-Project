@@ -24,7 +24,7 @@ h1 { font-size: 1.4rem; margin-top: 0; }
 
 label { display: block; margin: 12px 0 4px; font-weight: 600; }
 
-input {
+input, textarea {
   width: 100%;
   padding: 10px;
   border: 1px solid #c4c9d0;
@@ -45,6 +45,16 @@ button {
 }
 
 button:hover { background: #16508f; }
+
+.sponsors-card { max-width: 720px; }
+textarea { font-family: inherit; resize: vertical; }
+.application-details dt { font-weight: 600; margin-top: 16px; }
+.application-details dd { margin: 4px 0 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sponsors-card h1 { margin-top: 20px; }
+.sponsor { border-top: 1px solid #c4c9d0; padding: 16px 0; overflow-wrap: anywhere; }
+.sponsor h2 { font-size: 1.2rem; }
+.sponsor button { margin-top: 8px; }
+.success { background: #eaf6ed; border: 1px solid #83b88d; border-radius: 6px; padding: 10px; }
 
 .error {
   background: #fdecec;

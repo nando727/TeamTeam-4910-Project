@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Review application - Good Driver Incentive Program</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="card sponsors-card">
+    <h1>Review your application</h1>
+    <p>Check your information before submitting.</p>
+    <dl class="application-details">
+      <dt>Sponsor</dt><dd><%= sponsor.name %></dd>
+      <dt>Full name</dt><dd><%= draft.fullName %></dd>
+      <dt>Contact email</dt><dd><%= draft.contactEmail %></dd>
+      <dt>Reason for applying</dt><dd><%= draft.reason %></dd>
+    </dl>
+    <a href="/sponsors/<%= sponsor.id %>/apply">Edit application</a>
+    <form action="/sponsors/<%= sponsor.id %>/apply" method="post">
+      <input type="hidden" name="token" value="<%= token %>">
+      <input type="hidden" name="reviewId" value="<%= draft.reviewId %>">
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+</body>
+</html>

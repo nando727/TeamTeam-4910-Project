@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join a sponsor - Good Driver Incentive Program</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="card sponsors-card">
+    <a href="/">Back to home</a>
+    <h1>Join a sponsor</h1>
+    <p>Select a sponsor to start your application for its incentive program.</p>
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+    <% if (success) { %><p class="success" role="status"><%= success %></p><% } %>
+    <% if (sponsors.length === 0) { %>
+      <p>No sponsors are available yet. Please check back later.</p>
+    <% } %>
+    <% sponsors.forEach(sponsor => { %>
+      <section class="sponsor">
+        <h2><%= sponsor.name %></h2>
+        <% if (sponsor.application_id) { %>
+          <p>Application submitted.</p>
+        <% } else { %>
+          <a href="/sponsors/<%= sponsor.id %>/apply">Select <%= sponsor.name %></a>
+        <% } %>
+      </section>
+    <% }); %>
+  </main>
+</body>
+</html>
