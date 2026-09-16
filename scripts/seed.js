@@ -21,6 +21,12 @@ async function main() {
     );
     console.log(`Seeded ${u.role}: ${u.username} / ${u.password}`);
   }
+  await db.query(
+    'INSERT INTO sponsors (name, contact_email, address) ' +
+      'SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM sponsors WHERE name = ? OR contact_email = ?)',
+    ['Demo Sponsor', 'demo-sponsor@example.com', 'Demo address', 'Demo Sponsor', 'demo-sponsor@example.com']
+  );
+  console.log('Seeded Demo Sponsor');
   await db.pool.end();
 }
 

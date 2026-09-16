@@ -4,6 +4,7 @@ const express = require('express');
 const session = require('express-session');
 const authRoutes = require('./auth/routes');
 const apiRoutes = require('./routes/api');
+const sponsorRoutes = require('./sponsors/routes');
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use(
 
 app.use(authRoutes);
 app.use(apiRoutes);
+app.use('/sponsors', sponsorRoutes);
 
 function requireLogin(req, res, next) {
   if (!req.session.user) return res.redirect('/login');

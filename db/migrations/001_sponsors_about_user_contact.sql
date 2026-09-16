@@ -1,13 +1,6 @@
 -- Additive migration for the new /api/sponsors, /api/users, and /api/about
 -- routes. Run after db/schema.sql (via `npm run db:migrate`). Only adds
--- tables/columns, never touches existing ones.
---
--- Requires MySQL 8.0.29+ for `ADD COLUMN IF NOT EXISTS` (RDS default is
--- MySQL 8.0.x, so this should be safe once the DB connection is available).
-
-ALTER TABLE users
-  ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL AFTER id,
-  ADD COLUMN IF NOT EXISTS email VARCHAR(255) NULL AFTER name;
+-- tables/data. The runner adds missing columns to existing tables.
 
 CREATE TABLE IF NOT EXISTS sponsors (
   id INT AUTO_INCREMENT PRIMARY KEY,

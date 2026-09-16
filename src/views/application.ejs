@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sponsor application - Good Driver Incentive Program</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="card sponsors-card">
+    <a href="/sponsors">Select a different sponsor</a>
+    <h1>Apply to <%= sponsor.name %></h1>
+    <p>All fields are required. You can review your information before submitting.</p>
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+    <form action="/sponsors/<%= sponsor.id %>/review" method="post">
+      <input type="hidden" name="token" value="<%= token %>">
+      <label for="fullName">Full name</label>
+      <input id="fullName" name="fullName" autocomplete="name" maxlength="128" required value="<%= values.fullName %>">
+      <label for="contactEmail">Contact email</label>
+      <input id="contactEmail" name="contactEmail" type="email" autocomplete="email" maxlength="254" required value="<%= values.contactEmail %>">
+      <label for="reason">Reason for applying</label>
+      <textarea id="reason" name="reason" rows="6" maxlength="2000" required><%= values.reason %></textarea>
+      <button type="submit">Review application</button>
+    </form>
+  </main>
+</body>
+</html>
