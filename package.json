@@ -10,6 +10,7 @@
     "test": "vitest",
     "test-run": "vitest run",
     "db:setup": "node scripts/db-setup.js",
+    "db:migrate": "node scripts/db-migrate.js",
     "db:seed": "node scripts/seed.js"
   },
   "repository": {
