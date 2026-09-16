@@ -3,12 +3,14 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const authRoutes = require('./auth/routes');
+const apiRoutes = require('./routes/api');
 
 const app = express();
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 app.use(
@@ -25,6 +27,7 @@ app.use(
 );
 
 app.use(authRoutes);
+app.use(apiRoutes);
 
 function requireLogin(req, res, next) {
   if (!req.session.user) return res.redirect('/login');
