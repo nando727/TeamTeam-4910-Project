@@ -1,29 +1,68 @@
+import { useEffect, useState } from 'react'
 import './About.css'
 
-const TEAM_NAME = 'F26-Team13'
-const APP_VERSION = '1.0.0'
-const RELEASE_DATE = '2026-09-15'
-const PRODUCT_DESCRIPTION =
-  'A driver incentive web app that lets sponsor companies reward truck drivers with points redeemable for products, with admin tools to manage sponsors, drivers, and applications.'
-
 function About() {
+  const [about, setAbout] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadAbout() {
+      try {
+        const response = await fetch('http://localhost:3000/api/about')
+        const data = await response.json().catch(() => null)
+
+        if (!response.ok) {
+          throw new Error((data && data.error) || 'Failed to load about info')
+        }
+
+        if (!cancelled) {
+          setAbout(data)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message)
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    loadAbout()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   return (
     <div className="about-page">
       <div className="about-card">
         <h1>About</h1>
-        <dl className="about-details">
-          <dt>Team Name</dt>
-          <dd>{TEAM_NAME}</dd>
 
-          <dt>App Version</dt>
-          <dd>{APP_VERSION}</dd>
+        {isLoading && <p className="about-status">Loading...</p>}
 
-          <dt>Release Date</dt>
-          <dd>{RELEASE_DATE}</dd>
+        {!isLoading && error && <p className="about-status about-error">{error}</p>}
 
-          <dt>Description</dt>
-          <dd>{PRODUCT_DESCRIPTION}</dd>
-        </dl>
+        {!isLoading && !error && about && (
+          <dl className="about-details">
+            <dt>Team Name</dt>
+            <dd>{about.team_name}</dd>
+
+            <dt>App Version</dt>
+            <dd>{about.app_version}</dd>
+
+            <dt>Release Date</dt>
+            <dd>{about.release_date}</dd>
+
+            <dt>Description</dt>
+            <dd>{about.description}</dd>
+          </dl>
+        )}
       </div>
     </div>
   )

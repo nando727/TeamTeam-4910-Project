@@ -33,9 +33,20 @@ function validate(form) {
   return errors
 }
 
-// Swap this out for a real API call (e.g. POST /api/users) once the backend/DB is ready.
 async function createUser(newUser) {
-  return newUser
+  const response = await fetch('http://localhost:3000/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(newUser),
+  })
+
+  const data = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error((data && data.error) || 'Failed to create user')
+  }
+
+  return data
 }
 
 function CreateUser() {
@@ -43,6 +54,8 @@ function CreateUser() {
   const [errors, setErrors] = useState({})
   const [users, setUsers] = useState([])
   const [lastCreated, setLastCreated] = useState(null)
+  const [submitError, setSubmitError] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleChange = (event) => {
     const { name, value } = event.target
@@ -60,11 +73,20 @@ function CreateUser() {
     }
 
     const newUser = { ...form }
-    const createdUser = await createUser(newUser)
+    setSubmitError(null)
+    setIsSubmitting(true)
 
-    setUsers((prev) => [...prev, createdUser])
-    setLastCreated(createdUser)
-    setForm(EMPTY_FORM)
+    try {
+      const createdUser = await createUser(newUser)
+      setUsers((prev) => [...prev, createdUser])
+      setLastCreated(createdUser)
+      setForm(EMPTY_FORM)
+    } catch (error) {
+      setLastCreated(null)
+      setSubmitError(error.message)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -142,8 +164,12 @@ function CreateUser() {
             {errors.role && <p className="field-error">{errors.role}</p>}
           </div>
 
-          <button type="submit">Create User</button>
+          <button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Creating...' : 'Create User'}
+          </button>
         </form>
+
+        {submitError && <p className="submit-error">{submitError}</p>}
 
         {lastCreated && (
           <div className="success-message">
