@@ -80,6 +80,13 @@ button[type='submit']:hover {
   background: #333333;
 }
 
+.submit-error {
+  margin: 1rem 0 0;
+  font-size: 0.9rem;
+  color: #dc2626;
+  text-align: center;
+}
+
 .success-message {
   margin-top: 1.5rem;
   padding-top: 1.5rem;

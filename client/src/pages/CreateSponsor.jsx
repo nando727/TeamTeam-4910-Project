@@ -31,9 +31,20 @@ function validate(form) {
   return errors
 }
 
-// Swap this out for a real API call (e.g. POST /api/sponsors) once the backend/DB is ready.
 async function createSponsor(newSponsor) {
-  return newSponsor
+  const response = await fetch('http://localhost:3000/api/sponsors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(newSponsor),
+  })
+
+  const data = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error((data && data.error) || 'Failed to create sponsor')
+  }
+
+  return data
 }
 
 function CreateSponsor() {
@@ -41,6 +52,8 @@ function CreateSponsor() {
   const [errors, setErrors] = useState({})
   const [sponsors, setSponsors] = useState([])
   const [lastCreated, setLastCreated] = useState(null)
+  const [submitError, setSubmitError] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleChange = (event) => {
     const { name, value } = event.target
@@ -58,11 +71,26 @@ function CreateSponsor() {
     }
 
     const newSponsor = { ...form }
-    const createdSponsor = await createSponsor(newSponsor)
+    setSubmitError(null)
+    setIsSubmitting(true)
 
-    setSponsors((prev) => [...prev, createdSponsor])
-    setLastCreated(createdSponsor)
-    setForm(EMPTY_FORM)
+    try {
+      const createdSponsor = await createSponsor(newSponsor)
+      const displaySponsor = {
+        organizationName: createdSponsor.name,
+        contactEmail: createdSponsor.contactEmail,
+        contactPhone: createdSponsor.contactPhone,
+        address: createdSponsor.address,
+      }
+      setSponsors((prev) => [...prev, displaySponsor])
+      setLastCreated(displaySponsor)
+      setForm(EMPTY_FORM)
+    } catch (error) {
+      setLastCreated(null)
+      setSubmitError(error.message)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -124,8 +152,12 @@ function CreateSponsor() {
             {errors.address && <p className="field-error">{errors.address}</p>}
           </div>
 
-          <button type="submit">Create Sponsor</button>
+          <button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Creating...' : 'Create Sponsor'}
+          </button>
         </form>
+
+        {submitError && <p className="submit-error">{submitError}</p>}
 
         {lastCreated && (
           <div className="success-message">

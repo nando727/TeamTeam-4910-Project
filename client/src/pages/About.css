@@ -23,6 +23,16 @@
   color: #1a1a1a;
 }
 
+.about-status {
+  margin: 0;
+  font-size: 1rem;
+  color: #6b7280;
+}
+
+.about-error {
+  color: #dc2626;
+}
+
 .about-details {
   margin: 0;
   text-align: left;

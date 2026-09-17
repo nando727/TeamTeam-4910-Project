@@ -87,6 +87,61 @@ router.post('/api/users', async (req, res, next) => {
   }
 });
 
+router.get('/api/profile', async (req, res, next) => {
+  try {
+    const rows = await db.query(
+      "SELECT id, name, email, username, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1"
+    );
+    const profile = rows[0];
+    if (!profile) {
+      return res.status(404).json({ error: 'No admin user has been seeded yet.' });
+    }
+    return res.json(profile);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/api/profile', async (req, res, next) => {
+  try {
+    const name = (req.body.name || '').trim();
+    const email = (req.body.email || '').trim();
+
+    if (!name || !email) {
+      return res.status(400).json({ error: 'name and email are required.' });
+    }
+
+    const rows = await db.query(
+      "SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1"
+    );
+    const profile = rows[0];
+    if (!profile) {
+      return res.status(404).json({ error: 'No admin user has been seeded yet.' });
+    }
+
+    try {
+      await db.query('UPDATE users SET name = ?, email = ? WHERE id = ?', [
+        name,
+        email,
+        profile.id,
+      ]);
+    } catch (err) {
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ error: 'A user with that email already exists.' });
+      }
+      throw err;
+    }
+
+    const updatedRows = await db.query(
+      'SELECT id, name, email, username, role FROM users WHERE id = ?',
+      [profile.id]
+    );
+    return res.json(updatedRows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/api/about', async (req, res, next) => {
   try {
     const rows = await db.query(
