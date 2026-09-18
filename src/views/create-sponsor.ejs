@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create sponsor – Good Driver Incentive Program</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="card">
+    <p class="brand">Good Driver Incentive Program</p>
+    <a href="/">Back to home</a>
+    <h1>Create sponsor</h1>
+    <p>Register a sponsor organization. All fields are required.</p>
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+    <% if (created) { %>
+      <div class="success" role="status">
+        <p><strong>Sponsor created successfully.</strong></p>
+        <dl class="application-details">
+          <dt>Organization name</dt><dd><%= created.name %></dd>
+          <dt>Contact email</dt><dd><%= created.contactEmail %></dd>
+          <dt>Contact phone</dt><dd><%= created.contactPhone %></dd>
+          <dt>Address</dt><dd><%= created.address %></dd>
+        </dl>
+      </div>
+    <% } %>
+    <form method="POST" action="/admin/create-sponsor">
+      <input type="hidden" name="token" value="<%= token %>">
+      <label for="name">Organization name</label>
+      <input id="name" name="name" type="text" autocomplete="organization" maxlength="255" required value="<%= values.name %>">
+
+      <label for="contactEmail">Contact email</label>
+      <input id="contactEmail" name="contactEmail" type="email" autocomplete="off" maxlength="255" required value="<%= values.contactEmail %>">
+
+      <label for="contactPhone">Contact phone</label>
+      <input id="contactPhone" name="contactPhone" type="tel" autocomplete="off" maxlength="32" required value="<%= values.contactPhone %>">
+
+      <label for="address">Address</label>
+      <input id="address" name="address" type="text" autocomplete="off" maxlength="255" required value="<%= values.address %>">
+
+      <button type="submit">Create sponsor</button>
+    </form>
+  </main>
+</body>
+</html>

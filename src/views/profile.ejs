@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Profile – Good Driver Incentive Program</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="card">
+    <p class="brand">Good Driver Incentive Program</p>
+    <a href="/">Back to home</a>
+    <h1><%= editing ? 'Edit profile' : 'Profile' %></h1>
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+    <% if (success) { %><p class="success" role="status"><%= success %></p><% } %>
+    <% if (editing) { %>
+      <form method="POST" action="/profile">
+        <input type="hidden" name="token" value="<%= token %>">
+        <label for="name">Name</label>
+        <input id="name" name="name" type="text" autocomplete="name" maxlength="255" required value="<%= values.name %>">
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" maxlength="255" required value="<%= values.email %>">
+
+        <div class="button-row">
+          <button type="submit">Save</button>
+          <a class="button-link" href="/profile">Cancel</a>
+        </div>
+      </form>
+    <% } else { %>
+      <dl class="application-details">
+        <dt>Name</dt><dd><%= profile.name || '—' %></dd>
+        <dt>Email</dt><dd><%= profile.email || '—' %></dd>
+        <dt>Username</dt><dd><%= profile.username %></dd>
+        <dt>Role</dt><dd><%= profile.role %></dd>
+      </dl>
+      <a class="button-link" href="/profile/edit">Edit</a>
+    <% } %>
+  </main>
+</body>
+</html>

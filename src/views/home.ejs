@@ -10,8 +10,12 @@
   <main class="card">
     <h1>Welcome, <%= user.username %></h1>
     <p>You are logged in as a <strong><%= user.role %></strong>.</p>
+    <p><a href="/profile">View your profile</a> · <a href="/about">About this app</a></p>
     <% if (user.role === 'driver') { %>
       <p><a href="/sponsors">Apply to join a sponsor</a></p>
+    <% } %>
+    <% if (user.role === 'admin') { %>
+      <p><a href="/admin/create-user">Create a user</a> · <a href="/admin/create-sponsor">Create a sponsor</a></p>
     <% } %>
     <p><em>Role-specific homepages arrive with story 22200.</em></p>
   </main>
