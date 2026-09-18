@@ -1,10 +1,10 @@
 const express = require('express');
 const db = require('../db');
-const { hashPassword } = require('../auth/password');
+const { VALID_ROLES, DuplicateError, createUser, updateUserContact } = require('../users/store');
+const { createSponsor } = require('../sponsors/store');
+const { getAbout } = require('../about/store');
 
 const router = express.Router();
-
-const VALID_ROLES = ['driver', 'sponsor', 'admin'];
 
 router.post('/api/sponsors', async (req, res, next) => {
   try {
@@ -20,23 +20,10 @@ router.post('/api/sponsors', async (req, res, next) => {
     }
 
     try {
-      const result = await db.query(
-        'INSERT INTO sponsors (name, contact_email, contact_phone, address) VALUES (?, ?, ?, ?)',
-        [name, contactEmail, contactPhone || null, address]
-      );
-      return res.status(201).json({
-        id: result.insertId,
-        name,
-        contactEmail,
-        contactPhone: contactPhone || null,
-        address,
-      });
+      const sponsor = await createSponsor({ name, contactEmail, contactPhone, address });
+      return res.status(201).json(sponsor);
     } catch (err) {
-      if (err.code === 'ER_DUP_ENTRY') {
-        return res.status(409).json({
-          error: 'A sponsor with that contact email already exists.',
-        });
-      }
+      if (err instanceof DuplicateError) return res.status(409).json({ error: err.message });
       throw err;
     }
   } catch (err) {
@@ -63,23 +50,11 @@ router.post('/api/users', async (req, res, next) => {
       });
     }
 
-    const existing = await db.query('SELECT id FROM users WHERE email = ?', [email]);
-    if (existing.length > 0) {
-      return res.status(409).json({ error: 'A user with that email already exists.' });
-    }
-
-    const passwordHash = await hashPassword(password);
-
     try {
-      const result = await db.query(
-        'INSERT INTO users (name, email, username, password_hash, role) VALUES (?, ?, ?, ?, ?)',
-        [name, email, username, passwordHash, role]
-      );
-      return res.status(201).json({ id: result.insertId, name, email, username, role });
+      const user = await createUser({ name, email, username, password, role });
+      return res.status(201).json(user);
     } catch (err) {
-      if (err.code === 'ER_DUP_ENTRY') {
-        return res.status(409).json({ error: 'A user with that username already exists.' });
-      }
+      if (err instanceof DuplicateError) return res.status(409).json({ error: err.message });
       throw err;
     }
   } catch (err) {
@@ -87,12 +62,17 @@ router.post('/api/users', async (req, res, next) => {
   }
 });
 
+// The API profile is the first seeded admin until the React client has sessions.
+async function findFirstAdmin() {
+  const rows = await db.query(
+    "SELECT id, name, email, username, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1"
+  );
+  return rows[0] || null;
+}
+
 router.get('/api/profile', async (req, res, next) => {
   try {
-    const rows = await db.query(
-      "SELECT id, name, email, username, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1"
-    );
-    const profile = rows[0];
+    const profile = await findFirstAdmin();
     if (!profile) {
       return res.status(404).json({ error: 'No admin user has been seeded yet.' });
     }
@@ -111,32 +91,18 @@ router.put('/api/profile', async (req, res, next) => {
       return res.status(400).json({ error: 'name and email are required.' });
     }
 
-    const rows = await db.query(
-      "SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1"
-    );
-    const profile = rows[0];
+    const profile = await findFirstAdmin();
     if (!profile) {
       return res.status(404).json({ error: 'No admin user has been seeded yet.' });
     }
 
     try {
-      await db.query('UPDATE users SET name = ?, email = ? WHERE id = ?', [
-        name,
-        email,
-        profile.id,
-      ]);
+      const updated = await updateUserContact(profile.id, { name, email });
+      return res.json(updated);
     } catch (err) {
-      if (err.code === 'ER_DUP_ENTRY') {
-        return res.status(409).json({ error: 'A user with that email already exists.' });
-      }
+      if (err instanceof DuplicateError) return res.status(409).json({ error: err.message });
       throw err;
     }
-
-    const updatedRows = await db.query(
-      'SELECT id, name, email, username, role FROM users WHERE id = ?',
-      [profile.id]
-    );
-    return res.json(updatedRows[0]);
   } catch (err) {
     next(err);
   }
@@ -144,10 +110,7 @@ router.put('/api/profile', async (req, res, next) => {
 
 router.get('/api/about', async (req, res, next) => {
   try {
-    const rows = await db.query(
-      'SELECT team_name, app_version, release_date, description FROM about ORDER BY id LIMIT 1'
-    );
-    const about = rows[0];
+    const about = await getAbout();
     if (!about) {
       return res.status(404).json({ error: 'About info has not been seeded yet.' });
     }

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About – Good Driver Incentive Program</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="card">
+    <p class="brand">Good Driver Incentive Program</p>
+    <% if (user) { %><a href="/">Back to home</a><% } else { %><a href="/login">Log in</a><% } %>
+    <h1>About</h1>
+    <% if (!about) { %>
+      <p class="error" role="alert">About information has not been added yet.</p>
+    <% } else { %>
+      <dl class="application-details">
+        <dt>Team name</dt><dd><%= about.team_name %></dd>
+        <dt>App version</dt><dd><%= about.app_version %></dd>
+        <dt>Release date</dt><dd><%= releaseDate %></dd>
+        <dt>Description</dt><dd><%= about.description %></dd>
+      </dl>
+    <% } %>
+  </main>
+</body>
+</html>

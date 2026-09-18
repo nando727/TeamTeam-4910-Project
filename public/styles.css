@@ -63,3 +63,41 @@ textarea { font-family: inherit; resize: vertical; }
   color: #a02020;
   padding: 10px;
 }
+
+/* Shared by the about, profile, create-user, and create-sponsor pages. */
+.brand {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1a5fb4;
+}
+select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #c4c9d0;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-family: inherit;
+  background: #fff;
+}
+.success .application-details dt:first-child { margin-top: 8px; }
+.success .application-details dd:last-child { margin-bottom: 0; }
+.button-row { display: flex; gap: 12px; align-items: center; }
+.button-row button { flex: 1; }
+.button-link {
+  display: inline-block;
+  margin-top: 20px;
+  padding: 12px;
+  border: 1px solid #1a5fb4;
+  border-radius: 6px;
+  color: #1a5fb4;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.button-row .button-link { flex: 1; }
+.button-link:hover { background: #eaf1fb; }
