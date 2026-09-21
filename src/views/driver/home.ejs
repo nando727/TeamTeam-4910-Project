@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Driver Home – Good Driver Incentive Program</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="card">
+    <p class="brand">Good Driver Incentive Program</p>
+    <h1>Welcome, <%= user.username %></h1>
+    <p>You are signed in as a driver.</p>
+    <ul class="home-links">
+      <li><a href="/sponsors">Apply to join a sponsor</a></li>
+      <li><a href="/profile">View your profile</a></li>
+      <li><a href="/about">About this app</a></li>
+    </ul>
+    <%- include('../partials/logout') %>
+  </main>
+</body>
+</html>

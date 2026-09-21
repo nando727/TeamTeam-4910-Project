@@ -101,4 +101,15 @@ router.post('/api/login', async (req, res, next) => {
   }
 });
 
+// Story 22202: destroy the server-side session so the old cookie is worthless.
+// POST only, so a link or a prefetch can't sign someone out.
+router.post('/logout', (req, res, next) => {
+  if (!req.session.user) return res.redirect('/login');
+  req.session.destroy((err) => {
+    if (err) return next(err);
+    res.clearCookie('connect.sid');
+    res.redirect('/login');
+  });
+});
+
 module.exports = router;
