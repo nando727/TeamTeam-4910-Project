@@ -101,3 +101,12 @@ select {
 }
 .button-row .button-link { flex: 1; }
 .button-link:hover { background: #eaf1fb; }
+
+/* Role homepages (story 22200). */
+.home-links { list-style: none; margin: 20px 0 0; padding: 0; }
+.home-links li { border-top: 1px solid #e2e6ec; padding: 12px 0; }
+.home-links a { color: #1a5fb4; font-weight: 600; text-decoration: none; }
+.home-links a:hover { text-decoration: underline; }
+.logout { margin-top: 24px; }
+.logout button { background: #fff; color: #1a5fb4; border: 1px solid #1a5fb4; }
+.logout button:hover { background: #eaf1fb; }
