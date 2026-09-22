@@ -16,7 +16,7 @@ router.use((req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const sponsors = await db.query(
-      'SELECT s.id, s.name, a.id AS application_id FROM sponsors s ' +
+      'SELECT s.id, s.name, a.id AS application_id, a.status AS application_status, a.rejection_reason FROM sponsors s ' +
         'LEFT JOIN sponsor_applications a ON a.sponsor_id = s.id AND a.driver_id = ? ORDER BY s.name',
       [req.session.user.id]
     );

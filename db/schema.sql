@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS sponsor_applications (
   full_name VARCHAR(128) NOT NULL,
   contact_email VARCHAR(254) NOT NULL,
   reason VARCHAR(2000) NOT NULL,
+  status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+  rejection_reason VARCHAR(2000) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY unique_driver_sponsor (driver_id, sponsor_id),
   FOREIGN KEY (driver_id) REFERENCES users(id),

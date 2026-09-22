@@ -41,6 +41,36 @@ Required information: full name, contact email, and reason for applying.
 Reviewing saves a temporary session draft; only the final submit stores an application.
 Approval and rejection belong to sprint two.
 
+## Sprint two: driver application status
+
+Run `npm run db:migrate` to add application status and rejection reason fields.
+Existing and new applications start as `pending`. Drivers select **View application
+status** on their homepage to see pending, approved, or rejected applications.
+Rejected applications also show the sponsor's reason, or a message if none was
+recorded. The driver's original `reason` for applying stays separate from
+`rejection_reason`. Refresh the page to see a changed decision.
+
+This covers viewing decisions; sponsor decision controls and email notifications
+are not included. To test locally in Workbench, find your test application ID:
+
+```sql
+SELECT id, driver_id, sponsor_id, status FROM gooddriver.sponsor_applications;
+```
+
+Replace `123` below with that test application's ID and run one update at a time:
+
+```sql
+UPDATE gooddriver.sponsor_applications
+SET status = 'approved', rejection_reason = NULL WHERE id = 123;
+
+UPDATE gooddriver.sponsor_applications
+SET status = 'rejected', rejection_reason = 'We are not accepting new drivers at this time.'
+WHERE id = 123;
+
+UPDATE gooddriver.sponsor_applications
+SET status = 'pending', rejection_reason = NULL WHERE id = 123;
+```
+
 The React frontend in `client/` is separate from these Express/EJS driver pages.
 Continue using http://localhost:3000 for the driver application flow.
 
