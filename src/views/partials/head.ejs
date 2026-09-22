@@ -40,13 +40,16 @@
         <% }); %>
       </nav>
       <% if (me) { %>
-        <a class="site-user" href="/profile" title="View your profile">
-          <span class="site-user__avatar" aria-hidden="true"><%= me.username.charAt(0).toUpperCase() %></span>
-          <span class="site-user__text">
-            <span class="site-user__name"><%= me.username %></span>
-            <span class="site-user__role"><%= me.role %></span>
-          </span>
-        </a>
+        <div class="site-account">
+          <a class="site-user" href="/profile" title="View your profile">
+            <span class="site-user__avatar" aria-hidden="true"><%= me.username.charAt(0).toUpperCase() %></span>
+            <span class="site-user__text">
+              <span class="site-user__name"><%= me.username %></span>
+              <span class="site-user__role"><%= me.role %></span>
+            </span>
+          </a>
+          <%- include('logout') %>
+        </div>
       <% } %>
     </div>
   </header>

@@ -1,0 +1,32 @@
+<%- include('../partials/head', { title: 'Driver Home' }) %>
+  <section class="hero">
+    <%- include('../partials/shield') %>
+    <div>
+      <h1>Welcome, <%= user.username %></h1>
+      <p>You are signed in as a driver.</p>
+    </div>
+  </section>
+
+  <h2 class="section-title">Sponsors</h2>
+  <div class="actions">
+    <a class="action" href="/sponsors">
+      <span class="action__icon" aria-hidden="true">→</span>
+      <span class="action__title">Apply to join a sponsor</span>
+      <span class="action__text">Choose a sponsor and submit your application.</span>
+    </a>
+  </div>
+
+  <h2 class="section-title">Your account</h2>
+  <div class="actions">
+    <a class="action" href="/profile">
+      <span class="action__icon" aria-hidden="true">@</span>
+      <span class="action__title">View your profile</span>
+      <span class="action__text">See and update your name and email.</span>
+    </a>
+    <a class="action" href="/about">
+      <span class="action__icon" aria-hidden="true">i</span>
+      <span class="action__title">About this app</span>
+      <span class="action__text">Team, version, and release information.</span>
+    </a>
+  </div>
+<%- include('../partials/foot') %>

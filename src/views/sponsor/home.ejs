@@ -1,0 +1,25 @@
+<%- include('../partials/head', { title: 'Sponsor Home' }) %>
+  <section class="hero">
+    <%- include('../partials/shield') %>
+    <div>
+      <h1>Welcome, <%= user.username %></h1>
+      <p>You are signed in as a sponsor user.</p>
+    </div>
+  </section>
+
+  <h2 class="section-title">Your account</h2>
+  <div class="actions">
+    <a class="action" href="/profile">
+      <span class="action__icon" aria-hidden="true">@</span>
+      <span class="action__title">View your profile</span>
+      <span class="action__text">See and update your name and email.</span>
+    </a>
+    <a class="action" href="/about">
+      <span class="action__icon" aria-hidden="true">i</span>
+      <span class="action__title">About this app</span>
+      <span class="action__text">Team, version, and release information.</span>
+    </a>
+  </div>
+
+  <p class="muted small" style="margin-top: 28px;"><em>Sponsor tools for reviewing driver applications arrive in a later sprint.</em></p>
+<%- include('../partials/foot') %>

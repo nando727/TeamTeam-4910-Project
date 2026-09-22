@@ -47,9 +47,14 @@ function requireLogin(req, res, next) {
   next();
 }
 
-// Placeholder homepage; story 22200 replaces this with per-role views.
+// Story 22200: each role lands on its own homepage view.
+const HOME_VIEWS = { driver: 'driver/home', sponsor: 'sponsor/home', admin: 'admin/home' };
+
 app.get('/', requireLogin, (req, res) => {
-  res.render('home', { user: req.session.user });
+  const view = HOME_VIEWS[req.session.user.role];
+  // A session whose role isn't one of the three is not trusted with any homepage.
+  if (!view) return res.status(403).send('Your account has no homepage. Contact an admin.');
+  res.render(view, { user: req.session.user });
 });
 
 app.use((err, req, res, next) => {

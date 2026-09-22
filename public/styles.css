@@ -320,7 +320,7 @@ form > button { width: 100%; }
 @media (max-width: 1040px) {
   .site-header__inner { padding-bottom: 8px; }
   .site-nav { order: 3; width: 100%; margin-left: 0; }
-  .site-user { margin-left: auto; }
+  .site-account { margin-left: auto; }
 }
 
 @media (max-width: 720px) {
@@ -330,7 +330,31 @@ form > button { width: 100%; }
   .site-nav { order: 3; width: 100%; margin-left: 0; gap: 0; }
   .site-nav__link { padding: 6px 10px; font-size: 0.88rem; }
   .site-user__text { display: none; }
-  .site-user { padding: 4px; margin-left: auto; }
+  .site-user { padding: 4px; }
+  .site-account { margin-left: auto; }
   .hero { padding: 24px 20px; }
   .page-header h1 { font-size: 1.45rem; }
+}
+
+/* Role homepages (story 22200). */
+.home-links { list-style: none; margin: 20px 0 0; padding: 0; }
+.home-links li { border-top: 1px solid #e2e6ec; padding: 12px 0; }
+.home-links a { color: #1a5fb4; font-weight: 600; text-decoration: none; }
+.home-links a:hover { text-decoration: underline; }
+.logout { margin-top: 24px; }
+.logout button { background: #fff; color: #1a5fb4; border: 1px solid #1a5fb4; }
+.logout button:hover { background: #eaf1fb; }
+
+/* The logout form (partials/logout.ejs) also lives in the site header, where it
+   becomes a compact ghost button beside the user chip. */
+.site-account { display: inline-flex; align-items: center; gap: 8px; }
+.site-header .logout { margin: 0; }
+.site-header .logout > button {
+  width: auto; margin-top: 0; padding: 7px 12px; font-size: 0.85rem; font-weight: 600;
+  background: transparent; color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.28); box-shadow: none;
+}
+.site-header .logout > button:hover { background: rgba(255, 255, 255, 0.1); color: #fff; border-color: rgba(255, 255, 255, 0.5); }
+@media (max-width: 720px) {
+  .site-header .logout > button { padding: 6px 10px; font-size: 0.8rem; }
 }

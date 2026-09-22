@@ -59,8 +59,10 @@ test('admins see every sponsor with name, contact email, and status', async () =
     expect(page.text).toContain(sponsor.contactEmail);
     expect(page.text).toContain(`status-${sponsor.status}`);
   }
-  // Read-only: no form on the page.
-  expect(page.text).not.toMatch(/<form/i);
+  // Read-only: the only form on the page is the header's logout button.
+  const forms = page.text.match(/<form[^>]*>/gi) || [];
+  expect(forms).toHaveLength(1);
+  expect(forms[0]).toContain('action="/logout"');
 });
 
 test('the admin homepage links to the sponsor status page', async () => {
