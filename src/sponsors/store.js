@@ -23,4 +23,11 @@ async function createSponsor({ name, contactEmail, contactPhone, address }) {
   }
 }
 
-module.exports = { createSponsor };
+// Read-only list for the admin "Sponsor status" page.
+async function listSponsors() {
+  return db.query(
+    'SELECT id, name, contact_email AS contactEmail, status FROM sponsors ORDER BY name, id'
+  );
+}
+
+module.exports = { createSponsor, listSponsors };

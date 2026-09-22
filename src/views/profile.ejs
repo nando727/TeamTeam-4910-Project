@@ -1,16 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Profile – Good Driver Incentive Program</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <main class="card">
-    <p class="brand">Good Driver Incentive Program</p>
-    <a href="/">Back to home</a>
-    <h1><%= editing ? 'Edit profile' : 'Profile' %></h1>
+<%- include('partials/head', { title: editing ? 'Edit profile' : 'Profile' }) %>
+  <section class="card card--form">
+    <div class="page-header">
+      <span class="eyebrow">Your account</span>
+      <h1><%= editing ? 'Edit profile' : 'Profile' %></h1>
+      <p class="lede"><%= editing ? 'Update the name and email on your account.' : 'Your account details as stored in the program.' %></p>
+    </div>
     <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
     <% if (success) { %><p class="success" role="status"><%= success %></p><% } %>
     <% if (editing) { %>
@@ -28,14 +22,15 @@
         </div>
       </form>
     <% } else { %>
-      <dl class="application-details">
+      <dl class="details">
         <dt>Name</dt><dd><%= profile.name || '—' %></dd>
         <dt>Email</dt><dd><%= profile.email || '—' %></dd>
         <dt>Username</dt><dd><%= profile.username %></dd>
-        <dt>Role</dt><dd><%= profile.role %></dd>
+        <dt>Role</dt><dd><span class="role-chip"><%= profile.role %></span></dd>
       </dl>
-      <a class="button-link" href="/profile/edit">Edit</a>
+      <div class="button-row" style="margin-top: 20px;">
+        <a class="button-link" href="/profile/edit">Edit profile</a>
+      </div>
     <% } %>
-  </main>
-</body>
-</html>
+  </section>
+<%- include('partials/foot') %>

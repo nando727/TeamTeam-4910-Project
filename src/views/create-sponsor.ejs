@@ -1,22 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Create sponsor – Good Driver Incentive Program</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <main class="card">
-    <p class="brand">Good Driver Incentive Program</p>
-    <a href="/">Back to home</a>
-    <h1>Create sponsor</h1>
-    <p>Register a sponsor organization. All fields are required.</p>
+<%- include('partials/head', { title: 'Create sponsor' }) %>
+  <section class="card card--form">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Create sponsor</h1>
+      <p class="lede">Register a sponsor organization. All fields are required.</p>
+    </div>
     <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
     <% if (created) { %>
       <div class="success" role="status">
         <p><strong>Sponsor created successfully.</strong></p>
-        <dl class="application-details">
+        <dl class="details">
           <dt>Organization name</dt><dd><%= created.name %></dd>
           <dt>Contact email</dt><dd><%= created.contactEmail %></dd>
           <dt>Contact phone</dt><dd><%= created.contactPhone %></dd>
@@ -40,6 +33,5 @@
 
       <button type="submit">Create sponsor</button>
     </form>
-  </main>
-</body>
-</html>
+  </section>
+<%- include('partials/foot') %>

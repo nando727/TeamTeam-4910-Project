@@ -1,0 +1,53 @@
+<%
+  // Shared page chrome. `currentUser` and `currentPath` come from app.js locals.
+  const me = (typeof currentUser !== 'undefined') ? currentUser : null;
+  const path = (typeof currentPath !== 'undefined') ? currentPath : '';
+  const navLinks = [];
+  if (me) {
+    navLinks.push({ href: '/', label: 'Home' });
+    if (me.role === 'driver') navLinks.push({ href: '/sponsors', label: 'Sponsors' });
+    if (me.role === 'admin') {
+      navLinks.push({ href: '/admin/create-user', label: 'Create user' });
+      navLinks.push({ href: '/admin/manage-users', label: 'Manage users' });
+      navLinks.push({ href: '/admin/create-sponsor', label: 'Create sponsor' });
+      navLinks.push({ href: '/admin/sponsor-status', label: 'Sponsor status' });
+    }
+  } else if (path !== '/login') {
+    navLinks.push({ href: '/login', label: 'Log in' });
+  }
+  navLinks.push({ href: '/about', label: 'About' });
+  const isActive = href => (href === '/' ? path === '/' : path.startsWith(href));
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %> – Good Driver Incentive Program</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="site-header__inner">
+      <a class="brand" href="<%= me ? '/' : '/login' %>">
+        <%- include('shield') %>
+        <span class="brand__name">Good Driver <span class="brand__accent">Incentive Program</span></span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <% navLinks.forEach(link => { %>
+          <a class="site-nav__link<%= isActive(link.href) ? ' is-active' : '' %>" href="<%= link.href %>"<%- isActive(link.href) ? ' aria-current="page"' : '' %>><%= link.label %></a>
+        <% }); %>
+      </nav>
+      <% if (me) { %>
+        <a class="site-user" href="/profile" title="View your profile">
+          <span class="site-user__avatar" aria-hidden="true"><%= me.username.charAt(0).toUpperCase() %></span>
+          <span class="site-user__text">
+            <span class="site-user__name"><%= me.username %></span>
+            <span class="site-user__role"><%= me.role %></span>
+          </span>
+        </a>
+      <% } %>
+    </div>
+  </header>
+  <main id="main" class="page">

@@ -1,0 +1,23 @@
+<%- include('partials/head', { title: 'Confirm status change' }) %>
+  <section class="card card--narrow">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Confirm status change</h1>
+      <p class="lede">Review this change before saving it.</p>
+    </div>
+    <dl class="details">
+      <dt>Username</dt><dd><%= user.username %></dd>
+      <dt>Role</dt><dd><span class="role-chip"><%= user.role %></span></dd>
+      <dt>Current status</dt><dd><span class="status-badge status-<%= user.status %>"><%= user.status %></span></dd>
+      <dt>New status</dt><dd><span class="status-badge status-<%= draft.status %>"><%= draft.status %></span></dd>
+    </dl>
+    <form action="/admin/manage-users/<%= user.id %>/confirm" method="POST">
+      <input type="hidden" name="token" value="<%= token %>">
+      <input type="hidden" name="confirmId" value="<%= draft.confirmId %>">
+      <div class="button-row">
+        <button type="submit" class="button--danger">Confirm: set to <%= draft.status %></button>
+        <a class="button-link" href="/admin/manage-users">Cancel</a>
+      </div>
+    </form>
+  </section>
+<%- include('partials/foot') %>

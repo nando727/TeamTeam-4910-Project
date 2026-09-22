@@ -29,6 +29,13 @@ app.use(
   })
 );
 
+// Template-only locals for the shared header and nav (partials/head.ejs).
+app.use((req, res, next) => {
+  res.locals.currentUser = req.session.user || null;
+  res.locals.currentPath = req.path;
+  next();
+});
+
 app.use(authRoutes);
 app.use(apiRoutes);
 app.use('/sponsors', sponsorRoutes);
