@@ -1,16 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sponsor application - Good Driver Incentive Program</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <main class="card sponsors-card">
-    <a href="/sponsors">Select a different sponsor</a>
-    <h1>Apply to <%= sponsor.name %></h1>
-    <p>All fields are required. You can review your information before submitting.</p>
+<%- include('partials/head', { title: 'Sponsor application' }) %>
+  <section class="card card--form">
+    <a class="back" href="/sponsors">Select a different sponsor</a>
+    <div class="page-header">
+      <span class="eyebrow">Sponsor application</span>
+      <h1>Apply to <%= sponsor.name %></h1>
+      <p class="lede">All fields are required. You can review your information before submitting.</p>
+    </div>
     <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
     <form action="/sponsors/<%= sponsor.id %>/review" method="post">
       <input type="hidden" name="token" value="<%= token %>">
@@ -22,6 +17,5 @@
       <textarea id="reason" name="reason" rows="6" maxlength="2000" required><%= values.reason %></textarea>
       <button type="submit">Review application</button>
     </form>
-  </main>
-</body>
-</html>
+  </section>
+<%- include('partials/foot') %>

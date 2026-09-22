@@ -1,0 +1,33 @@
+<%- include('partials/head', { title: 'Sponsor status' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Sponsor status</h1>
+      <p class="lede">All sponsor organizations and their current status.</p>
+    </div>
+    <% if (sponsors.length === 0) { %>
+      <p class="info" role="status">No sponsors have been created yet. <a href="/admin/create-sponsor">Create a sponsor</a>.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Organization</th>
+              <th scope="col">Contact email</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% sponsors.forEach(sponsor => { %>
+              <tr>
+                <td class="cell-strong"><%= sponsor.name %></td>
+                <td><a href="mailto:<%= sponsor.contactEmail %>"><%= sponsor.contactEmail %></a></td>
+                <td><span class="status-badge status-<%= sponsor.status %>"><%= sponsor.status %></span></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+<%- include('partials/foot') %>

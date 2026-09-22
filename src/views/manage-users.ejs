@@ -1,0 +1,49 @@
+<%- include('partials/head', { title: 'Manage users' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Manage users</h1>
+      <p class="lede">Every account and its current status. Disabling or revoking an account asks you to confirm first.</p>
+    </div>
+    <% if (notice) { %>
+      <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %></p>
+    <% } %>
+    <% if (users.length === 0) { %>
+      <p class="info" role="status">No users have been created yet. <a href="/admin/create-user">Create a user</a>.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Username</th>
+              <th scope="col">Role</th>
+              <th scope="col">Status</th>
+              <th scope="col">Change status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% users.forEach(user => { %>
+              <tr>
+                <td class="cell-strong"><%= user.username %><% if (user.id === currentUserId) { %> <span class="muted small">(you)</span><% } %></td>
+                <td><span class="role-chip"><%= user.role %></span></td>
+                <td><span class="status-badge status-<%= user.status %>"><%= user.status %></span></td>
+                <td>
+                  <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/status">
+                    <input type="hidden" name="token" value="<%= token %>">
+                    <label for="status-<%= user.id %>" class="sr-only">New status for <%= user.username %></label>
+                    <select id="status-<%= user.id %>" name="status">
+                      <% statuses.forEach(status => { %>
+                        <option value="<%= status %>" <%= status === user.status ? 'selected' : '' %>><%= status %></option>
+                      <% }); %>
+                    </select>
+                    <button type="submit">Update</button>
+                  </form>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+<%- include('partials/foot') %>

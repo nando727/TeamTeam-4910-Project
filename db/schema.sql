@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   username VARCHAR(64) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   role ENUM('driver', 'sponsor', 'admin') NOT NULL,
+  status ENUM('active', 'disabled', 'revoked') NOT NULL DEFAULT 'active',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS sponsors (
   contact_email VARCHAR(255) NOT NULL UNIQUE,
   contact_phone VARCHAR(32) NULL,
   address VARCHAR(255) NOT NULL,
+  status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

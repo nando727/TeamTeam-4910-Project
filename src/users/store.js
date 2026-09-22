@@ -2,6 +2,7 @@ const db = require('../db');
 const { hashPassword } = require('../auth/password');
 
 const VALID_ROLES = ['driver', 'sponsor', 'admin'];
+const USER_STATUSES = ['active', 'disabled', 'revoked'];
 
 // Thrown when a unique value (email or username) is already taken, so both the
 // JSON API and the server-rendered pages can map it to a 409 / form error.
@@ -39,10 +40,22 @@ async function createUser({ name, email, username, password, role }) {
 
 async function findUserById(id) {
   const rows = await db.query(
-    'SELECT id, name, email, username, role FROM users WHERE id = ?',
+    'SELECT id, name, email, username, role, status FROM users WHERE id = ?',
     [id]
   );
   return rows[0] || null;
+}
+
+// Read-only list for the admin "Manage users" page.
+async function listUsers() {
+  return db.query('SELECT id, username, role, status FROM users ORDER BY username, id');
+}
+
+// Sets an account's status; returns true when a row was updated.
+async function updateUserStatus(id, status) {
+  if (!USER_STATUSES.includes(status)) throw new Error(`Invalid user status: ${status}`);
+  const result = await db.query('UPDATE users SET status = ? WHERE id = ?', [status, id]);
+  return result.affectedRows > 0;
 }
 
 // Updates the editable profile fields and returns the fresh row.
@@ -71,4 +84,7 @@ async function updateUserContact(id, { name, email }) {
   return findUserById(id);
 }
 
-module.exports = { VALID_ROLES, DuplicateError, createUser, findUserById, updateUserContact };
+module.exports = {
+  VALID_ROLES, USER_STATUSES, DuplicateError,
+  createUser, findUserById, updateUserContact, listUsers, updateUserStatus,
+};

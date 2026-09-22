@@ -1,22 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Create user – Good Driver Incentive Program</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <main class="card">
-    <p class="brand">Good Driver Incentive Program</p>
-    <a href="/">Back to home</a>
-    <h1>Create user</h1>
-    <p>All fields are required. Passwords must be at least 8 characters.</p>
+<%- include('partials/head', { title: 'Create user' }) %>
+  <section class="card card--form">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Create user</h1>
+      <p class="lede">All fields are required. Passwords must be at least 8 characters.</p>
+    </div>
     <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
     <% if (created) { %>
       <div class="success" role="status">
         <p><strong>User created successfully.</strong></p>
-        <dl class="application-details">
+        <dl class="details">
           <dt>Name</dt><dd><%= created.name %></dd>
           <dt>Email</dt><dd><%= created.email %></dd>
           <dt>Username</dt><dd><%= created.username %></dd>
@@ -37,6 +30,7 @@
 
       <label for="password">Password</label>
       <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required>
+      <p class="hint">At least 8 characters.</p>
 
       <label for="role">Role</label>
       <select id="role" name="role" required>
@@ -48,6 +42,5 @@
 
       <button type="submit">Create user</button>
     </form>
-  </main>
-</body>
-</html>
+  </section>
+<%- include('partials/foot') %>

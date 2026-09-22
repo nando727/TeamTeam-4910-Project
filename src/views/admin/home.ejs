@@ -1,23 +1,47 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Home – Good Driver Incentive Program</title>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <main class="card">
-    <p class="brand">Good Driver Incentive Program</p>
-    <h1>Welcome, <%= user.username %></h1>
-    <p>You are signed in as an admin.</p>
-    <ul class="home-links">
-      <li><a href="/admin/create-user">Create a user</a></li>
-      <li><a href="/admin/create-sponsor">Create a sponsor</a></li>
-      <li><a href="/profile">View your profile</a></li>
-      <li><a href="/about">About this app</a></li>
-    </ul>
-    <%- include('../partials/logout') %>
-  </main>
-</body>
-</html>
+<%- include('../partials/head', { title: 'Admin Home' }) %>
+  <section class="hero">
+    <%- include('../partials/shield') %>
+    <div>
+      <h1>Welcome, <%= user.username %></h1>
+      <p>You are signed in as an admin.</p>
+    </div>
+  </section>
+
+  <h2 class="section-title">Administration</h2>
+  <div class="actions">
+    <a class="action" href="/admin/create-user">
+      <span class="action__icon" aria-hidden="true">+</span>
+      <span class="action__title">Create a user</span>
+      <span class="action__text">Add a driver, sponsor, or admin account.</span>
+    </a>
+    <a class="action" href="/admin/manage-users">
+      <span class="action__icon" aria-hidden="true">≡</span>
+      <span class="action__title">Manage users</span>
+      <span class="action__text">Review accounts and change their status.</span>
+    </a>
+    <a class="action" href="/admin/create-sponsor">
+      <span class="action__icon" aria-hidden="true">+</span>
+      <span class="action__title">Create a sponsor</span>
+      <span class="action__text">Register a new sponsor organization.</span>
+    </a>
+    <a class="action" href="/admin/sponsor-status">
+      <span class="action__icon" aria-hidden="true">≡</span>
+      <span class="action__title">Sponsor status</span>
+      <span class="action__text">See every sponsor and whether it is active.</span>
+    </a>
+  </div>
+
+  <h2 class="section-title">Your account</h2>
+  <div class="actions">
+    <a class="action" href="/profile">
+      <span class="action__icon" aria-hidden="true">@</span>
+      <span class="action__title">View your profile</span>
+      <span class="action__text">See and update your name and email.</span>
+    </a>
+    <a class="action" href="/about">
+      <span class="action__icon" aria-hidden="true">i</span>
+      <span class="action__title">About this app</span>
+      <span class="action__text">Team, version, and release information.</span>
+    </a>
+  </div>
+<%- include('../partials/foot') %>
