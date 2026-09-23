@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { verifyPassword } = require('./password');
+const { idleLimitLabel } = require('./session-timeout');
 
 const router = express.Router();
 
@@ -26,7 +27,11 @@ function accessDeniedMessage(user) {
 
 router.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/');
-  res.render('login', { error: null });
+  // Story 22208: say why they were signed out instead of showing a bare form.
+  const notice = req.query.expired
+    ? `You were signed out after ${idleLimitLabel()} of inactivity. Please log in again.`
+    : null;
+  res.render('login', { error: null, notice });
 });
 
 router.post('/login', async (req, res, next) => {
@@ -69,6 +74,7 @@ router.post('/login', async (req, res, next) => {
     req.session.regenerate((err) => {
       if (err) return next(err);
       req.session.user = { id: user.id, username: user.username, role: user.role };
+      req.session.lastActivity = Date.now();
       res.redirect('/');
     });
   } catch (err) {
@@ -120,6 +126,7 @@ router.post('/api/login', async (req, res, next) => {
     req.session.regenerate((err) => {
       if (err) return next(err);
       req.session.user = { id: user.id, username: user.username, role: user.role };
+      req.session.lastActivity = Date.now();
       res.json({ success: true, role: user.role });
     });
   } catch (err) {

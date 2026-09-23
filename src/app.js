@@ -3,6 +3,7 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const authRoutes = require('./auth/routes');
+const { sessionTimeout } = require('./auth/session-timeout');
 const apiRoutes = require('./routes/api');
 const sponsorRoutes = require('./sponsors/routes');
 const accountRoutes = require('./account/routes');
@@ -28,6 +29,9 @@ app.use(
     },
   })
 );
+
+// Story 22204: expire idle sessions before anything else reads req.session.user.
+app.use(sessionTimeout);
 
 // Template-only locals for the shared header and nav (partials/head.ejs).
 app.use((req, res, next) => {

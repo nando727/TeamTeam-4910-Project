@@ -29,6 +29,10 @@ Vitest + supertest for automated tests.
 6. `npm run db:seed` — creates demo users (driver1 / sponsor1 / admin1)
 7. `npm run dev` — starts the app at http://localhost:3000
 
+Sessions expire after 30 minutes of inactivity (story 22204). Set
+`SESSION_IDLE_MINUTES` in `.env` to change it — a small value such as `0.25`
+makes the timeout easy to demonstrate.
+
 ## Sprint one: driver sponsor applications
 
 Run `npm run db:setup` to add the sponsor and application tables to an existing
