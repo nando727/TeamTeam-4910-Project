@@ -43,3 +43,15 @@ CREATE TABLE IF NOT EXISTS sponsor_applications (
   FOREIGN KEY (driver_id) REFERENCES users(id),
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );
+
+-- Story 22255: single-use setup links for newly created accounts. Only the
+-- SHA-256 hash of the token is stored, never the raw value.
+CREATE TABLE IF NOT EXISTS setup_tokens (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
