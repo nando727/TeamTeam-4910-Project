@@ -12,6 +12,18 @@ async function recordLoginAttempt(username, success) {
   );
 }
 
+// Story 22205: an account an admin has disabled or revoked cannot sign in, even
+// with the right password. Returns null when the account may proceed.
+function accessDeniedMessage(user) {
+  if (user.status === 'revoked') {
+    return 'This account has been revoked. Contact an administrator if you believe this is a mistake.';
+  }
+  if (user.status === 'disabled') {
+    return 'This account is disabled. Contact your sponsor or an administrator to restore access.';
+  }
+  return null;
+}
+
 router.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/');
   res.render('login', { error: null });
@@ -30,13 +42,16 @@ router.post('/login', async (req, res, next) => {
 
     // Role comes from the database — the form never asks for a user type.
     const rows = await db.query(
-      'SELECT id, username, password_hash, role FROM users WHERE username = ?',
+      'SELECT id, username, password_hash, role, status FROM users WHERE username = ?',
       [username]
     );
     const user = rows[0];
     const valid = user && (await verifyPassword(password, user.password_hash));
+    const denied = valid ? accessDeniedMessage(user) : null;
 
-    await recordLoginAttempt(username, Boolean(valid));
+    // A blocked account is an unsuccessful login, so the audit log records it
+    // as a failure even though the password was correct.
+    await recordLoginAttempt(username, Boolean(valid) && !denied);
 
     if (!valid) {
       // Same message for unknown user and wrong password, so the form
@@ -44,6 +59,10 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).render('login', {
         error: 'Incorrect username or password.',
       });
+    }
+
+    if (denied) {
+      return res.status(403).render('login', { error: denied });
     }
 
     // New session ID on login so a pre-login session can't be reused.
@@ -73,13 +92,16 @@ router.post('/api/login', async (req, res, next) => {
 
     // Role comes from the database — the client never sends a user type.
     const rows = await db.query(
-      'SELECT id, username, password_hash, role FROM users WHERE username = ?',
+      'SELECT id, username, password_hash, role, status FROM users WHERE username = ?',
       [username]
     );
     const user = rows[0];
     const valid = user && (await verifyPassword(password, user.password_hash));
+    const denied = valid ? accessDeniedMessage(user) : null;
 
-    await recordLoginAttempt(username, Boolean(valid));
+    // A blocked account is an unsuccessful login, so the audit log records it
+    // as a failure even though the password was correct.
+    await recordLoginAttempt(username, Boolean(valid) && !denied);
 
     if (!valid) {
       // Same message for unknown user and wrong password, so the response
@@ -88,6 +110,10 @@ router.post('/api/login', async (req, res, next) => {
         success: false,
         error: 'Incorrect username or password.',
       });
+    }
+
+    if (denied) {
+      return res.status(403).json({ success: false, error: denied });
     }
 
     // New session ID on login so a pre-login session can't be reused.

@@ -1,18 +1,20 @@
-// Story 22199: log in with username + password, no user type selection.
-// The db module is stubbed so these tests run without a MySQL server.
 import { createRequire } from 'node:module';
 import { describe, test, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 
-// The app is CommonJS. vi.mock() does not intercept require(), so the app and
-// the db module are loaded through Node's require to share one module instance
-// that vi.spyOn can patch.
+
 const require = createRequire(import.meta.url);
 const db = require('../src/db');
 const { hashPassword } = require('../src/auth/password');
 const { app } = require('../src/app');
 
 let driverHash;
+
+const ACCOUNTS = {
+  driver1: { id: 1, role: 'driver', status: 'active' },
+  disabled1: { id: 4, role: 'driver', status: 'disabled' },
+  revoked1: { id: 5, role: 'driver', status: 'revoked' },
+};
 
 beforeAll(async () => {
   driverHash = await hashPassword('DriverPass1!');
@@ -22,10 +24,9 @@ beforeEach(() => {
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.startsWith('SELECT')) {
       const [username] = params;
-      if (username === 'driver1') {
-        return [{ id: 1, username: 'driver1', password_hash: driverHash, role: 'driver' }];
-      }
-      return [];
+      const account = ACCOUNTS[username];
+      if (!account) return [];
+      return [{ ...account, username, password_hash: driverHash }];
     }
     if (sql.startsWith('INSERT INTO login_attempts')) return [];
     throw new Error(`Unexpected query in test: ${sql}`);
@@ -120,5 +121,81 @@ describe('GET / without a session', () => {
     const res = await request(app).get('/');
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/login');
+  });
+});
+
+// Story 22205: disabled and revoked accounts are denied access.
+describe('blocked accounts', () => {
+  test('a disabled account is refused and told who to contact', async () => {
+    const agent = request.agent(app);
+    const res = await agent
+      .post('/login')
+      .type('form')
+      .send({ username: 'disabled1', password: 'DriverPass1!' });
+
+    expect(res.status).toBe(403);
+    expect(res.text).toContain('This account is disabled.');
+    expect(res.text).toContain('Contact your sponsor or an administrator');
+
+    // No session was created, so the homepage is still out of reach.
+    const home = await agent.get('/');
+    expect(home.status).toBe(302);
+    expect(home.headers.location).toBe('/login');
+  });
+
+  test('a revoked account gets the revoked message', async () => {
+    const res = await request(app)
+      .post('/login')
+      .type('form')
+      .send({ username: 'revoked1', password: 'DriverPass1!' });
+
+    expect(res.status).toBe(403);
+    expect(res.text).toContain('This account has been revoked.');
+  });
+
+  test('a blocked login is recorded in the audit log as a failure', async () => {
+    await request(app)
+      .post('/login')
+      .type('form')
+      .send({ username: 'disabled1', password: 'DriverPass1!' });
+
+    const [, params] = loginAttemptCalls()[0];
+    expect(params).toEqual(['disabled1', false]);
+  });
+
+  test('a wrong password on a disabled account still gets the generic error', async () => {
+    const res = await request(app)
+      .post('/login')
+      .type('form')
+      .send({ username: 'disabled1', password: 'wrong-password' });
+
+    // The status of an account must not leak to someone who can't sign in.
+    expect(res.status).toBe(401);
+    expect(res.text).toContain('Incorrect username or password.');
+    expect(res.text).not.toContain('disabled');
+  });
+
+  test('an active account is unaffected', async () => {
+    const res = await request(app)
+      .post('/login')
+      .type('form')
+      .send({ username: 'driver1', password: 'DriverPass1!' });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/');
+  });
+
+  test('the JSON login route blocks disabled accounts too', async () => {
+    const agent = request.agent(app);
+    const res = await agent
+      .post('/api/login')
+      .send({ username: 'disabled1', password: 'DriverPass1!' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toContain('disabled');
+
+    const home = await agent.get('/');
+    expect(home.status).toBe(302);
   });
 });
