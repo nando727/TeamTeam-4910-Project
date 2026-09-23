@@ -78,6 +78,17 @@ SET status = 'pending', rejection_reason = NULL WHERE id = 123;
 The React frontend in `client/` is separate from these Express/EJS driver pages.
 Continue using http://localhost:3000 for the driver application flow.
 
+## Creating users (story 22255)
+
+An admin creates users at **/admin/create-user**. Leaving the password blank
+creates the account without a usable password and issues a one-time setup link,
+shown on the page and written to the server log as an email (the mailer's
+default `console` transport — nothing is actually sent). The new user opens the
+link, chooses their own password, and is sent to the login page.
+
+Links expire after 48 hours; set `SETUP_LINK_HOURS` in `.env` to change that.
+A link works once: reusing it shows a "no longer works" page.
+
 ## Automated Testing
 
 Story 23794 uses Vitest and supertest for automated testing. Test files go in `tests/`

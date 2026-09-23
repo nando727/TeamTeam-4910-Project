@@ -28,9 +28,13 @@ function accessDeniedMessage(user) {
 router.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/');
   // Story 22208: say why they were signed out instead of showing a bare form.
-  const notice = req.query.expired
-    ? `You were signed out after ${idleLimitLabel()} of inactivity. Please log in again.`
-    : null;
+  let notice = null;
+  if (req.query.expired) {
+    notice = `You were signed out after ${idleLimitLabel()} of inactivity. Please log in again.`;
+  } else if (req.query.setup) {
+    // Story 22255: arriving here after choosing a password from a setup link.
+    notice = 'Your password is set. Please log in.';
+  }
   res.render('login', { error: null, notice });
 });
 

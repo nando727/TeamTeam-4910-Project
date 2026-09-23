@@ -8,6 +8,7 @@ const apiRoutes = require('./routes/api');
 const sponsorRoutes = require('./sponsors/routes');
 const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
+const setupRoutes = require('./setup/routes');
 
 const app = express();
 
@@ -45,6 +46,8 @@ app.use(apiRoutes);
 app.use('/sponsors', sponsorRoutes);
 app.use(accountRoutes);
 app.use('/admin', adminRoutes);
+// Story 22255: claiming a new account. No login required; the link is the credential.
+app.use(setupRoutes);
 
 function requireLogin(req, res, next) {
   if (!req.session.user) return res.redirect('/login');
