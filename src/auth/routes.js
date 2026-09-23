@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { verifyPassword } = require('./password');
 const { idleLimitLabel } = require('./session-timeout');
+const { takeReturnTo } = require('./return-to');
 
 const router = express.Router();
 
@@ -74,12 +75,16 @@ router.post('/login', async (req, res, next) => {
       return res.status(403).render('login', { error: denied });
     }
 
+    // Read before regenerate(), which throws the old session data away.
+    const destination = takeReturnTo(req.session.returnTo);
+
     // New session ID on login so a pre-login session can't be reused.
     req.session.regenerate((err) => {
       if (err) return next(err);
       req.session.user = { id: user.id, username: user.username, role: user.role };
       req.session.lastActivity = Date.now();
-      res.redirect('/');
+      // Story 22208: back to the page they asked for, or their homepage.
+      res.redirect(destination);
     });
   } catch (err) {
     next(err);

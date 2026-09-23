@@ -1,4 +1,5 @@
 const express = require('express');
+const { rememberAndRedirect } = require('../auth/return-to');
 const { DuplicateError, findUserById, updateUserContact } = require('../users/store');
 const { getAbout } = require('../about/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
@@ -30,7 +31,7 @@ router.get('/about', async (req, res, next) => {
 // ---- Profile (logged-in user) ---------------------------------------------
 
 function requireLogin(req, res, next) {
-  if (!req.session.user) return res.redirect('/login');
+  if (!req.session.user) return rememberAndRedirect(req, res);
   next();
 }
 

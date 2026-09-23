@@ -4,6 +4,7 @@ const express = require('express');
 const session = require('express-session');
 const authRoutes = require('./auth/routes');
 const { sessionTimeout } = require('./auth/session-timeout');
+const { rememberAndRedirect } = require('./auth/return-to');
 const apiRoutes = require('./routes/api');
 const sponsorRoutes = require('./sponsors/routes');
 const accountRoutes = require('./account/routes');
@@ -50,7 +51,8 @@ app.use('/admin', adminRoutes);
 app.use(setupRoutes);
 
 function requireLogin(req, res, next) {
-  if (!req.session.user) return res.redirect('/login');
+  // Story 22208: remember where they were headed before sending them to log in.
+  if (!req.session.user) return rememberAndRedirect(req, res);
   next();
 }
 
