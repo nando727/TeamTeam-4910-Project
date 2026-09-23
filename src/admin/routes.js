@@ -5,6 +5,8 @@ const {
 } = require('../users/store');
 const { createSponsor, listSponsors } = require('../sponsors/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
+const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('../auth/setup-tokens');
+const { sendMail } = require('../mail/mailer');
 const router = express.Router();
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -24,9 +26,9 @@ const read = (req, key) => (typeof req.body[key] === 'string' ? req.body[key].tr
 
 const EMPTY_USER = { name: '', email: '', username: '', role: '' };
 
-function renderCreateUser(req, res, values, { error = null, created = null, status = 200 } = {}) {
+function renderCreateUser(req, res, values, { error = null, created = null, setupLink = null, status = 200 } = {}) {
   return res.status(status).render('create-user', {
-    values, roles: VALID_ROLES, error, created, token: formToken(req),
+    values, roles: VALID_ROLES, error, created, setupLink, token: formToken(req),
   });
 }
 
@@ -46,13 +48,42 @@ router.post('/create-user', async (req, res, next) => {
   if (!values.name || values.name.length > 255) problems.push('Enter a name (up to 255 characters).');
   if (!values.email || values.email.length > 255 || !EMAIL_PATTERN.test(values.email)) problems.push('Enter a valid email address.');
   if (!values.username || values.username.length > 64) problems.push('Enter a username (up to 64 characters).');
-  if (password.length < 8) problems.push('Password must be at least 8 characters.');
+  // Story 22255: a blank password means the new user sets their own from a
+  // setup link, so the admin never knows it.
+  if (password && password.length < 8) problems.push('Password must be at least 8 characters.');
   if (!VALID_ROLES.includes(values.role)) problems.push('Choose a role: driver, sponsor, or admin.');
   if (problems.length) return renderCreateUser(req, res, values, { error: problems.join(' '), status: 400 });
 
   try {
-    const created = await createUser({ ...values, password });
-    renderCreateUser(req, res, EMPTY_USER, { created });
+    // With no password chosen, the account gets an unguessable one nobody
+    // holds, so the only way in is the setup link.
+    const usesSetupLink = password.length === 0;
+    const created = await createUser({
+      ...values,
+      password: usesSetupLink ? randomBytes(32).toString('hex') : password,
+    });
+
+    let setupLink = null;
+    if (usesSetupLink) {
+      const rawToken = await issueSetupToken(created.id);
+      setupLink = setupLinkFor(req, rawToken);
+      await sendMail({
+        to: created.email,
+        subject: 'Set up your Good Driver Incentive Program account',
+        text: [
+          `Hello ${created.name},`,
+          '',
+          `An account has been created for you as a ${created.role}.`,
+          'Choose your password using the link below:',
+          '',
+          setupLink,
+          '',
+          `The link works once and expires in ${linkLifetimeHours()} hours.`,
+        ].join('\n'),
+      });
+    }
+
+    renderCreateUser(req, res, EMPTY_USER, { created, setupLink });
   } catch (err) {
     if (err instanceof DuplicateError) return renderCreateUser(req, res, values, { error: err.message, status: 409 });
     next(err);

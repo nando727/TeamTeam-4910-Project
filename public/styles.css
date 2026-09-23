@@ -362,3 +362,10 @@ form > button { width: 100%; }
 @media (max-width: 720px) {
   .site-header .logout > button { padding: 6px 10px; font-size: 0.8rem; }
 }
+
+/* Setup link shown to an admin after creating a user (story 22255). */
+.setup-link {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  background: var(--surface-muted);
+}
