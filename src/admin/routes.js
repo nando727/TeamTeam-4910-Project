@@ -5,6 +5,7 @@ const {
 } = require('../users/store');
 const { createSponsor, listSponsors } = require('../sponsors/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
+const { rememberAndRedirect } = require('../auth/return-to');
 const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('../auth/setup-tokens');
 const { sendMail } = require('../mail/mailer');
 const router = express.Router();
@@ -14,7 +15,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Admin-only pages: creating users and sponsor organizations, managing user
 // status, viewing sponsor status.
 router.use((req, res, next) => {
-  if (!req.session.user) return res.redirect('/login');
+  if (!req.session.user) return rememberAndRedirect(req, res);
   if (req.session.user.role !== 'admin') return res.status(403).send('Only admins can manage users and sponsors.');
   next();
 });

@@ -1,10 +1,11 @@
 const express = require('express');
 const { randomBytes } = require('crypto');
 const db = require('../db');
+const { rememberAndRedirect } = require('../auth/return-to');
 const router = express.Router();
 
 router.use((req, res, next) => {
-  if (!req.session.user) return res.redirect('/login');
+  if (!req.session.user) return rememberAndRedirect(req, res);
   if (req.session.user.role !== 'driver') return res.status(403).send('Only drivers can apply to join a sponsor.');
   if (!req.session.applicationToken) req.session.applicationToken = randomBytes(32).toString('hex');
   if (req.method === 'POST' && req.body.token !== req.session.applicationToken) {
