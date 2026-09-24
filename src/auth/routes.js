@@ -52,7 +52,7 @@ router.post('/login', async (req, res, next) => {
 
     // Role comes from the database — the form never asks for a user type.
     const rows = await db.query(
-      'SELECT id, username, password_hash, role, status FROM users WHERE username = ?',
+      'SELECT id, username, password_hash, role, status, sponsor_id FROM users WHERE username = ?',
       [username]
     );
     const user = rows[0];
@@ -81,7 +81,7 @@ router.post('/login', async (req, res, next) => {
     // New session ID on login so a pre-login session can't be reused.
     req.session.regenerate((err) => {
       if (err) return next(err);
-      req.session.user = { id: user.id, username: user.username, role: user.role };
+      req.session.user = { id: user.id, username: user.username, role: user.role, sponsorId: user.sponsor_id };
       req.session.lastActivity = Date.now();
       // Story 22208: back to the page they asked for, or their homepage.
       res.redirect(destination);
@@ -107,7 +107,7 @@ router.post('/api/login', async (req, res, next) => {
 
     // Role comes from the database — the client never sends a user type.
     const rows = await db.query(
-      'SELECT id, username, password_hash, role, status FROM users WHERE username = ?',
+      'SELECT id, username, password_hash, role, status, sponsor_id FROM users WHERE username = ?',
       [username]
     );
     const user = rows[0];
@@ -134,7 +134,7 @@ router.post('/api/login', async (req, res, next) => {
     // New session ID on login so a pre-login session can't be reused.
     req.session.regenerate((err) => {
       if (err) return next(err);
-      req.session.user = { id: user.id, username: user.username, role: user.role };
+      req.session.user = { id: user.id, username: user.username, role: user.role, sponsorId: user.sponsor_id };
       req.session.lastActivity = Date.now();
       res.json({ success: true, role: user.role });
     });

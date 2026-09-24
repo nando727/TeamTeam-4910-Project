@@ -10,6 +10,8 @@ const sponsorRoutes = require('./sponsors/routes');
 const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
 const setupRoutes = require('./setup/routes');
+const { formToken, requireFormToken } = require('./auth/form-token');
+const { listApplicationsForSponsor, setApplicationStatus } = require('./applications');
 
 const app = express();
 
@@ -59,11 +61,43 @@ function requireLogin(req, res, next) {
 // Story 22200: each role lands on its own homepage view.
 const HOME_VIEWS = { driver: 'driver/home', sponsor: 'sponsor/home', admin: 'admin/home' };
 
-app.get('/', requireLogin, (req, res) => {
+
+function requireSponsor(req, res, next) {
+  if (req.session.user.role !== 'sponsor') return res.status(403).send('Sponsors only.');
+  next();
+}
+
+app.get('/', requireLogin, async (req, res, next) => {
   const view = HOME_VIEWS[req.session.user.role];
-  // A session whose role isn't one of the three is not trusted with any homepage.
   if (!view) return res.status(403).send('Your account has no homepage. Contact an admin.');
-  res.render(view, { user: req.session.user });
+
+  const locals = { user: req.session.user };
+  if (req.session.user.role === 'sponsor') {
+    try {
+      locals.applications = await listApplicationsForSponsor(req.session.user.sponsorId);
+      locals.formToken = formToken(req);
+    } catch (err) {
+      return next(err);
+    }
+  }
+  res.render(view, locals);
+});
+
+app.post('/applications/:id/approve', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  try {
+    const ok = await setApplicationStatus(req.params.id, 'approved', req.session.user.sponsorId);
+    if (!ok) return res.status(404).send('Application not found.');
+    res.redirect('/');
+  } catch (err) { next(err); }
+});
+
+app.post('/applications/:id/reject', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  try {
+    const reason = (req.body.rejectionReason || '').trim().slice(0, 2000) || null;
+    const ok = await setApplicationStatus(req.params.id, 'rejected', req.session.user.sponsorId, reason);
+    if (!ok) return res.status(404).send('Application not found.');
+    res.redirect('/');
+  } catch (err) { next(err); }
 });
 
 app.use((err, req, res, next) => {
