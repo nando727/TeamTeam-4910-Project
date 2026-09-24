@@ -1,3 +1,6 @@
+# erd diagram
+
+```mermaid
 erDiagram
     users ||--o{ sponsor_applications : "applies as driver"
     sponsors ||--o{ sponsor_applications : receives
@@ -27,6 +30,8 @@ erDiagram
     login_attempts { int id PK
                      varchar username
                      boolean success }
+                %% login_attempts has no foreign key b/c it records attempts against usernames that don't exist
+                %% which a foreign key would prevent.
     about { int id PK
             varchar team_name
             varchar app_version }
