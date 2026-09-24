@@ -39,6 +39,8 @@ app.use(sessionTimeout);
 
 // Template-only locals for the shared header and nav (partials/head.ejs).
 app.use((req, res, next) => {
+  //debug line to try and find log out bug
+  //console.log('sessionID:', req.sessionID, 'user:', req.session.user);
   res.locals.currentUser = req.session.user || null;
   res.locals.currentPath = req.path;
   next();
@@ -92,8 +94,11 @@ app.post('/applications/:id/approve', requireLogin, requireSponsor, requireFormT
 });
 
 app.post('/applications/:id/reject', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const reason = (req.body.rejectionReason || '').trim().slice(0, 2000) || null;
+  if (!reason) {
+    return res.status(400).send('A rejection reason is required.');
+  }
   try {
-    const reason = (req.body.rejectionReason || '').trim().slice(0, 2000) || null;
     const ok = await setApplicationStatus(req.params.id, 'rejected', req.session.user.sponsorId, reason);
     if (!ok) return res.status(404).send('Application not found.');
     res.redirect('/');

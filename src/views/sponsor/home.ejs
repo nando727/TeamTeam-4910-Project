@@ -47,7 +47,7 @@
               </form>
               <form method="POST" action="/applications/<%= app.id %>/reject" class="inline-form">
                 <input type="hidden" name="token" value="<%= formToken %>">
-                <input type="text" name="rejectionReason" placeholder="Reason (optional)">
+                <input type="text" name="rejectionReason" placeholder="Reason" required>
                 <button type="submit">Reject</button>
               </form>
             <% } %>
