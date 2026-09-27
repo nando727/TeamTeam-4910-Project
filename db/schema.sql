@@ -36,13 +36,27 @@ CREATE TABLE IF NOT EXISTS sponsor_applications (
   full_name VARCHAR(128) NOT NULL,
   contact_email VARCHAR(254) NOT NULL,
   reason VARCHAR(2000) NOT NULL,
+  status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+  rejection_reason VARCHAR(2000) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY unique_driver_sponsor (driver_id, sponsor_id),
   FOREIGN KEY (driver_id) REFERENCES users(id),
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );
 
--- One-time password reset links (hash of the token only; see migration 004).
+-- Story 22255: single-use setup links for newly created accounts. Only the
+-- SHA-256 hash of the token is stored, never the raw value.
+CREATE TABLE IF NOT EXISTS setup_tokens (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- One-time password reset links (hash of the token only; see migration 006).
 CREATE TABLE IF NOT EXISTS password_resets (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,

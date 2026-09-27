@@ -1,4 +1,5 @@
 const express = require('express');
+const { rememberAndRedirect } = require('../auth/return-to');
 const {
   DuplicateError, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
 } = require('../users/store');
@@ -34,7 +35,7 @@ router.get('/about', async (req, res, next) => {
 // ---- Profile (logged-in user) ---------------------------------------------
 
 function requireLogin(req, res, next) {
-  if (!req.session.user) return res.redirect('/login');
+  if (!req.session.user) return rememberAndRedirect(req, res);
   next();
 }
 

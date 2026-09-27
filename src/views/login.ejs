@@ -4,11 +4,11 @@
       <%- include('partials/logo') %>
       <h1>Good Driver Incentive Program</h1>
       <p class="lede">Sign in to continue</p>
+      <% if (locals.notice) { %>
+        <p class="success" role="status"><%= locals.notice %></p>
+      <% } %>
       <% if (error) { %>
         <p class="error" role="alert"><%= error %></p>
-      <% } %>
-      <% if (locals.notice) { %>
-        <p class="success" role="status"><%= notice %></p>
       <% } %>
       <form method="POST" action="/login">
         <label for="username">Username</label>

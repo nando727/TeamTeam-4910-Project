@@ -1,7 +1,9 @@
 const express = require('express');
 const db = require('../db');
 const { verifyPassword } = require('./password');
-const { formToken, requireFormToken } = require('./form-token');
+const { idleLimitLabel } = require('./session-timeout');
+const { takeReturnTo } = require('./return-to');
+const { requireFormToken } = require('./form-token');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./password-policy');
 const { updateUserPassword } = require('../users/store');
 const { createResetToken, findValidReset, consumeReset, TOKEN_PATTERN, EXPIRY_MINUTES } = require('./password-reset');
@@ -17,33 +19,16 @@ async function recordLoginAttempt(username, success) {
   );
 }
 
-// Shown when the password is right but the account is not active. Only a
-// caller who already knows the password sees these, so naming the status is
-// safe and tells the user exactly why they cannot get in.
-const BLOCKED_MESSAGES = {
-  disabled: 'This account has been disabled. Contact an administrator to restore access.',
-  revoked: 'Access for this account has been revoked. Contact an administrator.',
-  default: 'This account is not active. Contact an administrator.',
-};
-
-// Shared by the form login and the JSON login: one credential check, one audit
-// row, one status rule. Returns { outcome: 'invalid' | 'blocked' | 'ok' }.
-async function authenticate(username, password) {
-  // Role and status come from the database; the client never sends them.
-  const rows = await db.query(
-    'SELECT id, username, password_hash, role, status FROM users WHERE username = ?',
-    [username]
-  );
-  const user = rows[0];
-  const valid = Boolean(user && (await verifyPassword(password, user.password_hash)));
-  // A disabled or revoked account cannot sign in even with the right password,
-  // and that is recorded as a failed attempt.
-  const blocked = valid && user.status !== 'active';
-  await recordLoginAttempt(username, valid && !blocked);
-
-  if (!valid) return { outcome: 'invalid' };
-  if (blocked) return { outcome: 'blocked', message: BLOCKED_MESSAGES[user.status] || BLOCKED_MESSAGES.default };
-  return { outcome: 'ok', user };
+// Story 22205: an account an admin has disabled or revoked cannot sign in, even
+// with the right password. Returns null when the account may proceed.
+function accessDeniedMessage(user) {
+  if (user.status === 'revoked') {
+    return 'This account has been revoked. Contact an administrator if you believe this is a mistake.';
+  }
+  if (user.status === 'disabled') {
+    return 'This account is disabled. Contact your sponsor or an administrator to restore access.';
+  }
+  return null;
 }
 
 // Why a signed-in admin was sent back here by the admin router's status check.
@@ -57,8 +42,19 @@ const SIGNED_OUT_REASONS = {
 
 router.get('/login', (req, res) => {
   if (req.session.user) return res.redirect('/');
+  // Story 22208: say why they were signed out instead of showing a bare form.
+  let notice = null;
+  if (req.query.expired) {
+    notice = `You were signed out after ${idleLimitLabel()} of inactivity. Please log in again.`;
+  } else if (req.query.setup) {
+    // Story 22255: arriving here after choosing a password from a setup link.
+    notice = 'Your password is set. Please log in.';
+  } else if (req.query.reset === 'done') {
+    // Forgot-password flow: they just chose a new password from a reset link.
+    notice = 'Your password was reset. Sign in with your new password.';
+  }
+  // Forced sign-out by the admin router's live status check.
   const reason = typeof req.query.reason === 'string' ? req.query.reason : '';
-  const notice = req.query.reset === 'done' ? 'Your password was reset. Sign in with your new password.' : null;
   res.render('login', { error: SIGNED_OUT_REASONS[reason] || null, notice });
 });
 
@@ -73,25 +69,41 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
-    const result = await authenticate(username, password);
+    // Role comes from the database — the form never asks for a user type.
+    const rows = await db.query(
+      'SELECT id, username, password_hash, role, status, sponsor_id FROM users WHERE username = ?',
+      [username]
+    );
+    const user = rows[0];
+    const valid = user && (await verifyPassword(password, user.password_hash));
+    const denied = valid ? accessDeniedMessage(user) : null;
 
-    if (result.outcome === 'invalid') {
+    // A blocked account is an unsuccessful login, so the audit log records it
+    // as a failure even though the password was correct.
+    await recordLoginAttempt(username, Boolean(valid) && !denied);
+
+    if (!valid) {
       // Same message for unknown user and wrong password, so the form
       // doesn't reveal which usernames exist.
       return res.status(401).render('login', {
         error: 'Incorrect username or password.',
       });
     }
-    if (result.outcome === 'blocked') {
-      return res.status(403).render('login', { error: result.message });
+
+    if (denied) {
+      return res.status(403).render('login', { error: denied });
     }
 
-    const { user } = result;
+    // Read before regenerate(), which throws the old session data away.
+    const destination = takeReturnTo(req.session.returnTo);
+
     // New session ID on login so a pre-login session can't be reused.
     req.session.regenerate((err) => {
       if (err) return next(err);
-      req.session.user = { id: user.id, username: user.username, role: user.role };
-      res.redirect('/');
+      req.session.user = { id: user.id, username: user.username, role: user.role, sponsorId: user.sponsor_id };
+      req.session.lastActivity = Date.now();
+      // Story 22208: back to the page they asked for, or their homepage.
+      res.redirect(destination);
     });
   } catch (err) {
     next(err);
@@ -112,9 +124,20 @@ router.post('/api/login', async (req, res, next) => {
       });
     }
 
-    const result = await authenticate(username, password);
+    // Role comes from the database — the client never sends a user type.
+    const rows = await db.query(
+      'SELECT id, username, password_hash, role, status, sponsor_id FROM users WHERE username = ?',
+      [username]
+    );
+    const user = rows[0];
+    const valid = user && (await verifyPassword(password, user.password_hash));
+    const denied = valid ? accessDeniedMessage(user) : null;
 
-    if (result.outcome === 'invalid') {
+    // A blocked account is an unsuccessful login, so the audit log records it
+    // as a failure even though the password was correct.
+    await recordLoginAttempt(username, Boolean(valid) && !denied);
+
+    if (!valid) {
       // Same message for unknown user and wrong password, so the response
       // doesn't reveal which usernames exist.
       return res.status(401).json({
@@ -122,15 +145,16 @@ router.post('/api/login', async (req, res, next) => {
         error: 'Incorrect username or password.',
       });
     }
-    if (result.outcome === 'blocked') {
-      return res.status(403).json({ success: false, error: result.message });
+
+    if (denied) {
+      return res.status(403).json({ success: false, error: denied });
     }
 
-    const { user } = result;
     // New session ID on login so a pre-login session can't be reused.
     req.session.regenerate((err) => {
       if (err) return next(err);
-      req.session.user = { id: user.id, username: user.username, role: user.role };
+      req.session.user = { id: user.id, username: user.username, role: user.role, sponsorId: user.sponsor_id };
+      req.session.lastActivity = Date.now();
       res.json({ success: true, role: user.role });
     });
   } catch (err) {

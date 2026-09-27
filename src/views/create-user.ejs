@@ -3,7 +3,7 @@
     <div class="page-header">
       <span class="eyebrow">Administration</span>
       <h1>Create user</h1>
-      <p class="lede">All fields are required. The password must meet every rule listed under the field.</p>
+      <p class="lede">Set a password that meets every rule under the field, or leave it blank to send the new user a setup link so they choose their own.</p>
     </div>
     <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
     <% if (created) { %>
@@ -15,6 +15,14 @@
           <dt>Username</dt><dd><%= created.username %></dd>
           <dt>Role</dt><dd><%= created.role %></dd>
         </dl>
+        <% if (locals.setupLink) { %>
+          <p>Send this setup link to <%= created.name %> so they can choose a password.
+            It works once, and a copy has been emailed to <%= created.email %>.</p>
+          <p><input class="setup-link" type="text" readonly value="<%= setupLink %>"
+                    aria-label="Setup link" onfocus="this.select()"></p>
+        <% } else { %>
+          <p>You set this user's password. They can sign in with it now.</p>
+        <% } %>
       </div>
     <% } %>
     <form method="POST" action="/admin/create-user">
@@ -28,8 +36,9 @@
       <label for="username">Username</label>
       <input id="username" name="username" type="text" autocomplete="off" maxlength="64" required value="<%= values.username %>">
 
-      <label for="password">Password</label>
-      <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="<%= maxLength %>" required>
+      <label for="password">Password <span class="muted">(optional)</span></label>
+      <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="<%= maxLength %>">
+      <p class="hint">Leave blank to email a setup link instead. If you set one, it must meet every rule below.</p>
       <%- include('partials/password-rules', { inputId: 'password', rules }) %>
 
       <label for="role">Role</label>

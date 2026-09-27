@@ -144,7 +144,7 @@ describe('login blocks accounts that are not active', () => {
   test('a disabled account with the right password is refused with a clear message', async () => {
     const res = await request(app).post('/login').type('form')
       .send({ username: 'admin3', password: PASSWORD }).expect(403);
-    expect(res.text).toContain('This account has been disabled.');
+    expect(res.text).toContain('This account is disabled.');
     expect(attempts).toEqual([['admin3', false]]);
     expect(res.headers['set-cookie']).toBeUndefined();
   });
@@ -165,7 +165,7 @@ describe('login blocks accounts that are not active', () => {
 
   test('the JSON login applies the same rule', async () => {
     const res = await request(app).post('/api/login').send({ username: 'sponsor1', password: PASSWORD }).expect(403);
-    expect(res.body).toEqual({ success: false, error: 'This account has been disabled. Contact an administrator to restore access.' });
+    expect(res.body).toEqual({ success: false, error: 'This account is disabled. Contact your sponsor or an administrator to restore access.' });
     expect(attempts).toEqual([['sponsor1', false]]);
   });
 

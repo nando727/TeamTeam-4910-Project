@@ -1,9 +1,9 @@
-<%- include('partials/head', { title: 'Join a sponsor' }) %>
+<%- include('partials/head', { title: 'Sponsors and applications' }) %>
   <section class="card card--form">
     <div class="page-header">
       <span class="eyebrow">Sponsors</span>
-      <h1>Join a sponsor</h1>
-      <p class="lede">Select a sponsor to start your application for its incentive program.</p>
+      <h1>Sponsors and applications</h1>
+      <p class="lede">Check your application status or select a sponsor to apply. Refresh this page to see the latest decisions.</p>
     </div>
     <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
     <% if (success) { %><p class="success" role="status"><%= success %></p><% } %>
@@ -15,7 +15,16 @@
         <section class="sponsor">
           <h2><%= sponsor.name %></h2>
           <% if (sponsor.application_id) { %>
-            <span class="done">Application submitted</span>
+            <p>Application status: <span class="status-badge status-<%= sponsor.application_status %>"><%= sponsor.application_status %></span></p>
+            <% if (sponsor.application_status === 'pending') { %>
+              <p>Your application is waiting for a sponsor decision.</p>
+            <% } else if (sponsor.application_status === 'approved') { %>
+              <p>Your application was approved. You can participate in this sponsor's incentive program.</p>
+            <% } else if (sponsor.application_status === 'rejected') { %>
+              <p>Your application was rejected. You were not accepted into this sponsor's incentive program.</p>
+              <p><strong>Reason for rejection:</strong></p>
+              <p class="rejection-reason"><%= sponsor.rejection_reason && sponsor.rejection_reason.trim() ? sponsor.rejection_reason : 'No reason was provided by the sponsor.' %></p>
+            <% } %>
           <% } else { %>
             <a class="button-link button--small" href="/sponsors/<%= sponsor.id %>/apply">Select <%= sponsor.name %></a>
           <% } %>

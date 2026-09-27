@@ -26,5 +26,44 @@
     </a>
   </div>
 
-  <p class="muted small" style="margin-top: 28px;"><em>Sponsor tools for reviewing driver applications arrive in a later sprint.</em></p>
+  <h2 class="section-title">Driver Applications</h2>
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Applicant</th>
+        <th>Contact</th>
+        <th>Reason</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% applications.forEach(app => { %>
+        <tr>
+          <td><%= app.full_name %></td>
+          <td><%= app.contact_email %></td>
+          <td><%= app.reason %></td>
+          <td><%= app.status %></td>
+          <td>
+            <% if (app.status === 'pending') { %>
+              <form method="POST" action="/applications/<%= app.id %>/approve" class="inline-form">
+                <input type="hidden" name="token" value="<%= formToken %>">
+                <button type="submit">Approve</button>
+              </form>
+              <form method="POST" action="/applications/<%= app.id %>/reject" class="inline-form">
+                <input type="hidden" name="token" value="<%= formToken %>">
+                <input type="text" name="rejectionReason" placeholder="Reason" required>
+                <button type="submit">Reject</button>
+              </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+      <% if (applications.length === 0) { %>
+        <tr><td colspan="5">No applications yet.</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+  </div>
 <%- include('../partials/foot') %>

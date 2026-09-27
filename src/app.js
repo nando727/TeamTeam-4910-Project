@@ -3,11 +3,15 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const authRoutes = require('./auth/routes');
+const { sessionTimeout } = require('./auth/session-timeout');
+const { rememberAndRedirect } = require('./auth/return-to');
 const apiRoutes = require('./routes/api');
 const sponsorRoutes = require('./sponsors/routes');
 const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
-const { formToken } = require('./auth/form-token');
+const setupRoutes = require('./setup/routes');
+const { formToken, requireFormToken } = require('./auth/form-token');
+const { listApplicationsForSponsor, setApplicationStatus } = require('./applications');
 
 const app = express();
 
@@ -30,8 +34,13 @@ app.use(
   })
 );
 
+// Story 22204: expire idle sessions before anything else reads req.session.user.
+app.use(sessionTimeout);
+
 // Template-only locals for the shared header and nav (partials/head.ejs).
 app.use((req, res, next) => {
+  //debug line to try and find log out bug
+  //console.log('sessionID:', req.sessionID, 'user:', req.session.user);
   res.locals.currentUser = req.session.user || null;
   res.locals.currentPath = req.path;
   // While an admin acts as another user, every page shows a banner with a stop button.
@@ -45,20 +54,58 @@ app.use(apiRoutes);
 app.use('/sponsors', sponsorRoutes);
 app.use(accountRoutes);
 app.use('/admin', adminRoutes);
+// Story 22255: claiming a new account. No login required; the link is the credential.
+app.use(setupRoutes);
 
 function requireLogin(req, res, next) {
-  if (!req.session.user) return res.redirect('/login');
+  // Story 22208: remember where they were headed before sending them to log in.
+  if (!req.session.user) return rememberAndRedirect(req, res);
   next();
 }
 
 // Story 22200: each role lands on its own homepage view.
 const HOME_VIEWS = { driver: 'driver/home', sponsor: 'sponsor/home', admin: 'admin/home' };
 
-app.get('/', requireLogin, (req, res) => {
+
+function requireSponsor(req, res, next) {
+  if (req.session.user.role !== 'sponsor') return res.status(403).send('Sponsors only.');
+  next();
+}
+
+app.get('/', requireLogin, async (req, res, next) => {
   const view = HOME_VIEWS[req.session.user.role];
-  // A session whose role isn't one of the three is not trusted with any homepage.
   if (!view) return res.status(403).send('Your account has no homepage. Contact an admin.');
-  res.render(view, { user: req.session.user });
+
+  const locals = { user: req.session.user };
+  if (req.session.user.role === 'sponsor') {
+    try {
+      locals.applications = await listApplicationsForSponsor(req.session.user.sponsorId);
+      locals.formToken = formToken(req);
+    } catch (err) {
+      return next(err);
+    }
+  }
+  res.render(view, locals);
+});
+
+app.post('/applications/:id/approve', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  try {
+    const ok = await setApplicationStatus(req.params.id, 'approved', req.session.user.sponsorId);
+    if (!ok) return res.status(404).send('Application not found.');
+    res.redirect('/');
+  } catch (err) { next(err); }
+});
+
+app.post('/applications/:id/reject', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const reason = (req.body.rejectionReason || '').trim().slice(0, 2000) || null;
+  if (!reason) {
+    return res.status(400).send('A rejection reason is required.');
+  }
+  try {
+    const ok = await setApplicationStatus(req.params.id, 'rejected', req.session.user.sponsorId, reason);
+    if (!ok) return res.status(404).send('Application not found.');
+    res.redirect('/');
+  } catch (err) { next(err); }
 });
 
 app.use((err, req, res, next) => {

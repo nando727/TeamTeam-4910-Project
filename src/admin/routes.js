@@ -7,6 +7,9 @@ const {
 const { createSponsor, listSponsors } = require('../sponsors/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
+const { rememberAndRedirect } = require('../auth/return-to');
+const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('../auth/setup-tokens');
+const { sendMail } = require('../mail/mailer');
 const router = express.Router();
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -14,7 +17,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Admin-only pages: creating users and sponsor organizations, managing user
 // status, viewing sponsor status.
 router.use(async (req, res, next) => {
-  if (!req.session.user) return res.redirect('/login');
+  if (!req.session.user) return rememberAndRedirect(req, res);
   if (req.session.user.role !== 'admin') return res.status(403).send('Only admins can manage users and sponsors.');
   try {
     // The session only says who signed in. Re-read the account so an admin who
@@ -39,9 +42,9 @@ const read = (req, key) => (typeof req.body[key] === 'string' ? req.body[key].tr
 
 const EMPTY_USER = { name: '', email: '', username: '', role: '' };
 
-function renderCreateUser(req, res, values, { error = null, created = null, status = 200 } = {}) {
+function renderCreateUser(req, res, values, { error = null, created = null, setupLink = null, status = 200 } = {}) {
   return res.status(status).render('create-user', {
-    values, roles: VALID_ROLES, error, created, token: formToken(req),
+    values, roles: VALID_ROLES, error, created, setupLink, token: formToken(req),
     rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH,
   });
 }
@@ -62,13 +65,43 @@ router.post('/create-user', async (req, res, next) => {
   if (!values.name || values.name.length > 255) problems.push('Enter a name (up to 255 characters).');
   if (!values.email || values.email.length > 255 || !EMAIL_PATTERN.test(values.email)) problems.push('Enter a valid email address.');
   if (!values.username || values.username.length > 64) problems.push('Enter a username (up to 64 characters).');
-  problems.push(...passwordProblems(password));
+  // Story 22255: a blank password means the new user sets their own from a
+  // setup link, so the admin never knows it. A password that is given must
+  // meet the shared complexity rules.
+  if (password) problems.push(...passwordProblems(password));
   if (!VALID_ROLES.includes(values.role)) problems.push('Choose a role: driver, sponsor, or admin.');
   if (problems.length) return renderCreateUser(req, res, values, { error: problems.join(' '), status: 400 });
 
   try {
-    const created = await createUser({ ...values, password });
-    renderCreateUser(req, res, EMPTY_USER, { created });
+    // With no password chosen, the account gets an unguessable one nobody
+    // holds, so the only way in is the setup link.
+    const usesSetupLink = password.length === 0;
+    const created = await createUser({
+      ...values,
+      password: usesSetupLink ? randomBytes(32).toString('hex') : password,
+    });
+
+    let setupLink = null;
+    if (usesSetupLink) {
+      const rawToken = await issueSetupToken(created.id);
+      setupLink = setupLinkFor(req, rawToken);
+      await sendMail({
+        to: created.email,
+        subject: 'Set up your Good Driver Incentive Program account',
+        text: [
+          `Hello ${created.name},`,
+          '',
+          `An account has been created for you as a ${created.role}.`,
+          'Choose your password using the link below:',
+          '',
+          setupLink,
+          '',
+          `The link works once and expires in ${linkLifetimeHours()} hours.`,
+        ].join('\n'),
+      });
+    }
+
+    renderCreateUser(req, res, EMPTY_USER, { created, setupLink });
   } catch (err) {
     if (err instanceof DuplicateError) return renderCreateUser(req, res, values, { error: err.message, status: 409 });
     next(err);
@@ -239,8 +272,9 @@ router.post('/impersonate/:userId', (req, res) => {
     return refuse(`Cannot sign in as ${target.username}: that account is ${target.status}. Only active accounts can be impersonated.`);
   }
   const admin = req.session.user;
-  req.session.impersonator = { id: admin.id, username: admin.username, role: admin.role, returnTo };
-  req.session.user = { id: target.id, username: target.username, role: target.role };
+  req.session.impersonator = { id: admin.id, username: admin.username, role: admin.role, sponsorId: admin.sponsorId ?? null, returnTo };
+  // sponsorId is read by the sponsor homepage; null (never undefined) so the query binds cleanly.
+  req.session.user = { id: target.id, username: target.username, role: target.role, sponsorId: target.sponsor_id ?? null };
   delete req.session.statusChange;
   console.log(`[impersonation] ${admin.username} (id ${admin.id}) started acting as ${target.username} (id ${target.id})`);
   res.redirect(303, '/');

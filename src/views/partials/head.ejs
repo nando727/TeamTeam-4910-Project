@@ -39,8 +39,11 @@
   <title><%= title %> – Good Driver Incentive Program</title>
   <link rel="icon" type="image/svg+xml" href="<%= favicon %>">
   <link rel="stylesheet" href="/styles.css">
-  <script>document.documentElement.classList.add('js');</script>
-  <script src="/site.js" defer></script>
+  <% if (me) { %>
+    <%# Header scripts only for signed-in pages, so the login form stays script-free. %>
+    <script>document.documentElement.classList.add('js');</script>
+    <script src="/site.js" defer></script>
+  <% } %>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>

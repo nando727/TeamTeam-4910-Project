@@ -1,10 +1,11 @@
 const express = require('express');
 const { randomBytes } = require('crypto');
 const db = require('../db');
+const { rememberAndRedirect } = require('../auth/return-to');
 const router = express.Router();
 
 router.use((req, res, next) => {
-  if (!req.session.user) return res.redirect('/login');
+  if (!req.session.user) return rememberAndRedirect(req, res);
   if (req.session.user.role !== 'driver') return res.status(403).send('Only drivers can apply to join a sponsor.');
   if (!req.session.applicationToken) req.session.applicationToken = randomBytes(32).toString('hex');
   if (req.method === 'POST' && req.body.token !== req.session.applicationToken) {
@@ -16,7 +17,7 @@ router.use((req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const sponsors = await db.query(
-      'SELECT s.id, s.name, a.id AS application_id FROM sponsors s ' +
+      'SELECT s.id, s.name, a.id AS application_id, a.status AS application_status, a.rejection_reason FROM sponsors s ' +
         'LEFT JOIN sponsor_applications a ON a.sponsor_id = s.id AND a.driver_id = ? ORDER BY s.name',
       [req.session.user.id]
     );

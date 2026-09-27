@@ -1,24 +1,13 @@
-// Outbound mail. No email service is configured for this project yet, so the
-// only transport prints to the server console. When one is added (SES,
-// nodemailer, ...), implement sendMail() there and leave the callers alone.
-
-async function sendMail({ to, subject, text }) {
-  const lines = [
-    '',
-    '================ EMAIL (console transport, nothing was sent) ================',
-    `To:      ${to || '(no email on file)'}`,
-    `Subject: ${subject}`,
-    '',
-    text,
-    '=============================================================================',
-    '',
-  ];
-  console.log(lines.join('\n'));
-}
+// Password-reset email, composed here and sent through the shared mail seam in
+// src/mail/mailer.js (console transport by default, see MAIL_TRANSPORT). With
+// no email service configured the link ends up in the server console.
+const { sendMail } = require('../mail/mailer');
 
 async function sendPasswordResetLink({ username, email, link, expiryMinutes }) {
   return sendMail({
-    to: email,
+    // Seeded accounts have no address yet; say so instead of failing, so the
+    // console transport still shows the link during development.
+    to: email || '(no email on file)',
     subject: 'Good Driver Incentive Program: reset your password',
     text:
       `Hi ${username},\n\n` +
@@ -28,4 +17,4 @@ async function sendPasswordResetLink({ username, email, link, expiryMinutes }) {
   });
 }
 
-module.exports = { sendMail, sendPasswordResetLink };
+module.exports = { sendPasswordResetLink };

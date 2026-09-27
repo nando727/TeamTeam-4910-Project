@@ -1,5 +1,5 @@
 -- One-time password reset links for the "forgot password" flow. Runs after
--- 003 (via `npm run db:migrate`). Safe to rerun: IF NOT EXISTS.
+-- 005 (via `npm run db:migrate`). Safe to rerun: IF NOT EXISTS.
 -- Only a SHA-256 hash of the token is stored, never the token itself. A row is
 -- spent once used_at is set or expires_at has passed (30 minutes after issue).
 

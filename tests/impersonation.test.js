@@ -33,6 +33,7 @@ beforeEach(() => {
     if (sql.includes('FROM users WHERE id')) return users.filter(u => u.id === params[0]).map(u => ({ ...u, name: null, email: null }));
     if (sql.includes('FROM users ORDER BY')) return users;
     if (sql.startsWith('SELECT s.id')) return [];
+    if (sql.includes('FROM sponsor_applications')) return [];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });

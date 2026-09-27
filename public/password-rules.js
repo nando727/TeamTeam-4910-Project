@@ -34,6 +34,8 @@
     if (confirm) confirm.addEventListener('input', hideNotice);
 
     form.addEventListener('submit', function (event) {
+      // An optional field left blank is fine (create-user sends a setup link instead).
+      if (!input.required && input.value === '') return;
       var failed = evaluate();
       var message = '';
       if (failed.length) {
