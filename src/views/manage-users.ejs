@@ -3,7 +3,7 @@
     <div class="page-header">
       <span class="eyebrow">Administration</span>
       <h1>Manage users</h1>
-      <p class="lede">Every account and its current status. Disabling or revoking an account asks you to confirm first.</p>
+      <p class="lede">Every account and its current status. Disabling or revoking an account asks you to confirm first. "Sign in as" lets you see the app as an active driver or sponsor.</p>
     </div>
     <% if (notice) { %>
       <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %></p>
@@ -19,6 +19,8 @@
               <th scope="col">Role</th>
               <th scope="col">Status</th>
               <th scope="col">Change status</th>
+              <th scope="col">Password</th>
+              <th scope="col">Impersonate</th>
             </tr>
           </thead>
           <tbody>
@@ -30,6 +32,7 @@
                 <td>
                   <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/status">
                     <input type="hidden" name="token" value="<%= token %>">
+                    <input type="hidden" name="from" value="manage-users">
                     <label for="status-<%= user.id %>" class="sr-only">New status for <%= user.username %></label>
                     <select id="status-<%= user.id %>" name="status">
                       <% statuses.forEach(status => { %>
@@ -38,6 +41,24 @@
                     </select>
                     <button type="submit">Update</button>
                   </form>
+                </td>
+                <td>
+                  <% if (user.id === currentUserId) { %>
+                    <a class="button-link button--small" href="/profile/password">Change</a>
+                  <% } else { %>
+                    <a class="button-link button--small" href="/admin/manage-users/<%= user.id %>/password?from=manage-users">Reset</a>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (user.role !== 'admin') { %>
+                    <form class="status-form" method="POST" action="/admin/impersonate/<%= user.id %>">
+                      <input type="hidden" name="token" value="<%= token %>">
+                      <input type="hidden" name="from" value="manage-users">
+                      <button type="submit" class="button--small">Sign in as</button>
+                    </form>
+                  <% } else { %>
+                    <span class="muted small">Not available</span>
+                  <% } %>
                 </td>
               </tr>
             <% }); %>

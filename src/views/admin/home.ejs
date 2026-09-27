@@ -1,45 +1,59 @@
 <%- include('../partials/head', { title: 'Admin Home' }) %>
   <section class="hero">
-    <%- include('../partials/shield') %>
+    <%- include('../partials/logo') %>
     <div>
       <h1>Welcome, <%= user.username %></h1>
       <p>You are signed in as an admin.</p>
     </div>
   </section>
 
-  <h2 class="section-title">Administration</h2>
-  <div class="actions">
+  <h2 class="section-title">Users</h2>
+  <div class="actions actions--3">
     <a class="action" href="/admin/create-user">
-      <span class="action__icon" aria-hidden="true">+</span>
+      <span class="action__icon"><%- include('../partials/icon', { name: 'user-plus' }) %></span>
       <span class="action__title">Create a user</span>
       <span class="action__text">Add a driver, sponsor, or admin account.</span>
     </a>
     <a class="action" href="/admin/manage-users">
-      <span class="action__icon" aria-hidden="true">≡</span>
+      <span class="action__icon"><%- include('../partials/icon', { name: 'users' }) %></span>
       <span class="action__title">Manage users</span>
-      <span class="action__text">Review accounts and change their status.</span>
+      <span class="action__text">Review accounts, change status, reset passwords, or sign in as a user.</span>
     </a>
+    <a class="action" href="/admin/admin-accounts">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'shield' }) %></span>
+      <span class="action__title">Admin accounts</span>
+      <span class="action__text">See every admin and enable or disable their access.</span>
+    </a>
+  </div>
+
+  <h2 class="section-title">Sponsors</h2>
+  <div class="actions actions--2">
     <a class="action" href="/admin/create-sponsor">
-      <span class="action__icon" aria-hidden="true">+</span>
+      <span class="action__icon"><%- include('../partials/icon', { name: 'building-plus' }) %></span>
       <span class="action__title">Create a sponsor</span>
       <span class="action__text">Register a new sponsor organization.</span>
     </a>
     <a class="action" href="/admin/sponsor-status">
-      <span class="action__icon" aria-hidden="true">≡</span>
+      <span class="action__icon"><%- include('../partials/icon', { name: 'building-check' }) %></span>
       <span class="action__title">Sponsor status</span>
       <span class="action__text">See every sponsor and whether it is active.</span>
     </a>
   </div>
 
   <h2 class="section-title">Your account</h2>
-  <div class="actions">
+  <div class="actions actions--3">
     <a class="action" href="/profile">
-      <span class="action__icon" aria-hidden="true">@</span>
+      <span class="action__icon"><%- include('../partials/icon', { name: 'user-circle' }) %></span>
       <span class="action__title">View your profile</span>
       <span class="action__text">See and update your name and email.</span>
     </a>
+    <a class="action" href="/profile/password">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'key' }) %></span>
+      <span class="action__title">Change your password</span>
+      <span class="action__text">Choose a new password that meets the complexity rules.</span>
+    </a>
     <a class="action" href="/about">
-      <span class="action__icon" aria-hidden="true">i</span>
+      <span class="action__icon"><%- include('../partials/icon', { name: 'info' }) %></span>
       <span class="action__title">About this app</span>
       <span class="action__text">Team, version, and release information.</span>
     </a>

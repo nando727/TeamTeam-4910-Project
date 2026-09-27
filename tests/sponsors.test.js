@@ -33,7 +33,7 @@ beforeEach(() => {
   applications = [];
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.includes('FROM users')) {
-      return [{ id: params[0] === 'otherDriver' ? 2 : 1, username: params[0], role: 'driver', password_hash: passwordHash }];
+      return [{ id: params[0] === 'otherDriver' ? 2 : 1, username: params[0], role: 'driver', status: 'active', password_hash: passwordHash }];
     }
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
     if (sql.startsWith('SELECT s.id')) {

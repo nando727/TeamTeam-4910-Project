@@ -3,6 +3,7 @@ const db = require('../db');
 const { VALID_ROLES, DuplicateError, createUser, updateUserContact } = require('../users/store');
 const { createSponsor } = require('../sponsors/store');
 const { getAbout } = require('../about/store');
+const { passwordProblems } = require('../auth/password-policy');
 
 const router = express.Router();
 
@@ -48,6 +49,10 @@ router.post('/api/users', async (req, res, next) => {
       return res.status(400).json({
         error: `role must be one of: ${VALID_ROLES.join(', ')}`,
       });
+    }
+    const problems = passwordProblems(password);
+    if (problems.length) {
+      return res.status(400).json({ error: problems.join(' ') });
     }
 
     try {

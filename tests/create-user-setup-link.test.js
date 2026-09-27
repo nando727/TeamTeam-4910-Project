@@ -34,6 +34,10 @@ beforeEach(() => {
       return [{ id: 3, username: 'admin1', password_hash: adminHash, role: 'admin', status: 'active' }];
     }
     if (sql.startsWith('INSERT INTO login_attempts')) return [];
+    // The admin router re-reads the signed-in account on every request.
+    if (sql.includes('FROM users WHERE id')) {
+      return params[0] === 3 ? [{ id: 3, username: 'admin1', role: 'admin', status: 'active', name: null, email: null }] : [];
+    }
     if (sql.startsWith('SELECT id FROM users WHERE email')) return [];
     if (sql.startsWith('INSERT INTO users')) {
       const [name, email, username, passwordHash, role] = params;

@@ -1,24 +1,8 @@
 -- Authentication and driver sponsor applications.
 -- Runs against local MySQL now; point it at RDS later by changing .env.
 
-CREATE TABLE IF NOT EXISTS users (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  username VARCHAR(64) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
-  role ENUM('driver', 'sponsor', 'admin') NOT NULL,
-  status ENUM('active', 'disabled', 'revoked') NOT NULL DEFAULT 'active',
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
--- Audit log: every login attempt (graded requirement).
-CREATE TABLE IF NOT EXISTS login_attempts (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  username VARCHAR(64) NOT NULL,
-  success BOOLEAN NOT NULL
-);
-
--- Organizations are separate from individual sponsor user accounts.
+-- Organizations are separate from individual sponsor user accounts. Defined
+-- first because users.sponsor_id references it.
 CREATE TABLE IF NOT EXISTS sponsors (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
@@ -27,6 +11,26 @@ CREATE TABLE IF NOT EXISTS sponsors (
   address VARCHAR(255) NOT NULL,
   status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(64) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  role ENUM('driver', 'sponsor', 'admin') NOT NULL,
+  status ENUM('active', 'disabled', 'revoked') NOT NULL DEFAULT 'active',
+  -- Sponsor-role users act for one organization (see migration 007).
+  sponsor_id INT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_users_sponsor FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
+);
+
+-- Audit log: every login attempt (graded requirement).
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  username VARCHAR(64) NOT NULL,
+  success BOOLEAN NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sponsor_applications (
@@ -53,5 +57,17 @@ CREATE TABLE IF NOT EXISTS setup_tokens (
   expires_at DATETIME NOT NULL,
   used_at DATETIME NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- One-time password reset links (hash of the token only; see migration 006).
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_password_resets_user (user_id),
   FOREIGN KEY (user_id) REFERENCES users(id)
 );

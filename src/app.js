@@ -43,6 +43,9 @@ app.use((req, res, next) => {
   //console.log('sessionID:', req.sessionID, 'user:', req.session.user);
   res.locals.currentUser = req.session.user || null;
   res.locals.currentPath = req.path;
+  // While an admin acts as another user, every page shows a banner with a stop button.
+  res.locals.currentImpersonator = req.session.impersonator || null;
+  res.locals.impersonationToken = req.session.impersonator ? formToken(req) : null;
   next();
 });
 

@@ -3,7 +3,7 @@
     <div class="page-header">
       <span class="eyebrow">Administration</span>
       <h1>Create user</h1>
-      <p class="lede">Leave the password blank to send the new user a setup link so they choose their own.</p>
+      <p class="lede">Set a password that meets every rule under the field, or leave it blank to send the new user a setup link so they choose their own.</p>
     </div>
     <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
     <% if (created) { %>
@@ -37,8 +37,9 @@
       <input id="username" name="username" type="text" autocomplete="off" maxlength="64" required value="<%= values.username %>">
 
       <label for="password">Password <span class="muted">(optional)</span></label>
-      <input id="password" name="password" type="password" autocomplete="new-password" minlength="8">
-      <p class="hint">Leave blank to email a setup link instead. If you set one, use at least 8 characters.</p>
+      <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="<%= maxLength %>">
+      <p class="hint">Leave blank to email a setup link instead. If you set one, it must meet every rule below.</p>
+      <%- include('partials/password-rules', { inputId: 'password', rules }) %>
 
       <label for="role">Role</label>
       <select id="role" name="role" required>
@@ -51,4 +52,5 @@
       <button type="submit">Create user</button>
     </form>
   </section>
+  <script src="/password-rules.js" defer></script>
 <%- include('partials/foot') %>

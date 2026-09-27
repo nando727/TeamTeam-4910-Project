@@ -7,10 +7,9 @@ const db = require('../db');
 const { hashPassword } = require('../auth/password');
 const { findValidToken, consumeToken } = require('../auth/setup-tokens');
 const { formToken, requireFormToken } = require('../auth/form-token');
+const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
 
 const router = express.Router();
-
-const MIN_PASSWORD_LENGTH = 8;
 
 function renderExpired(res) {
   // 410 Gone: the link was real at some point but can't be used now.
@@ -21,7 +20,8 @@ function renderForm(req, res, { error = null, status = 200 } = {}) {
   return res.status(status).render('setup', {
     token: req.params.token,
     formToken: formToken(req),
-    minLength: MIN_PASSWORD_LENGTH,
+    rules: PUBLIC_RULES,
+    maxLength: MAX_PASSWORD_LENGTH,
     error,
   });
 }
@@ -46,11 +46,11 @@ router.post('/setup/:token', requireFormToken, async (req, res, next) => {
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     const confirmation = typeof req.body.confirmPassword === 'string' ? req.body.confirmPassword : '';
 
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      return renderForm(req, res, {
-        error: `Your password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
-        status: 400,
-      });
+    // Same complexity rules as every other password form; each failed rule
+    // gets its own sentence.
+    const problems = passwordProblems(password);
+    if (problems.length) {
+      return renderForm(req, res, { error: problems.join(' '), status: 400 });
     }
     if (password !== confirmation) {
       return renderForm(req, res, { error: 'Both passwords must match.', status: 400 });

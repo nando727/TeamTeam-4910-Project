@@ -1,7 +1,7 @@
 <%- include('partials/head', { title: 'Log In' }) %>
   <div class="page--center">
     <section class="card card--narrow login-card">
-      <%- include('partials/shield') %>
+      <%- include('partials/logo') %>
       <h1>Good Driver Incentive Program</h1>
       <p class="lede">Sign in to continue</p>
       <% if (locals.notice) { %>
@@ -19,6 +19,7 @@
 
         <button type="submit">Log In</button>
       </form>
+      <p class="hint" style="margin-top: 16px; text-align: center;"><a href="/forgot-password">Forgot your password?</a></p>
     </section>
   </div>
 <%- include('partials/foot') %>

@@ -137,6 +137,31 @@ describe('setting a password', () => {
     expect(tokenRow.used_at).toBeNull();
   });
 
+  test.each([
+    ['nouppercase1!', 'uppercase letter'],
+    ['NOLOWERCASE1!', 'lowercase letter'],
+    ['NoNumbersHere!', 'include a number'],
+    ['NoSpecial123', 'special character'],
+  ])('%s is refused with the failed rule named and the link is not spent', async (password, wording) => {
+    const agent = request.agent(app);
+    const { formToken } = await openSetupPage(agent);
+
+    const res = await agent.post(`/setup/${VALID_TOKEN}`).type('form').send({
+      token: formToken, password, confirmPassword: password,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.text).toContain(wording);
+    expect(passwordUpdates).toHaveLength(0);
+    expect(tokenRow.used_at).toBeNull();
+  });
+
+  test('the form shows the rules checklist', async () => {
+    const { page } = await openSetupPage(request.agent(app));
+    expect(page.text).toContain('data-for="password"');
+    expect(page.text).toContain('src="/password-rules.js"');
+  });
+
   test('mismatched passwords are refused and the link is not spent', async () => {
     const agent = request.agent(app);
     const { formToken } = await openSetupPage(agent);

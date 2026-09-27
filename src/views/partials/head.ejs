@@ -1,22 +1,35 @@
 <%
-  // Shared page chrome. `currentUser` and `currentPath` come from app.js locals.
+  // Shared page chrome. `currentUser`, `currentPath`, `currentImpersonator`
+  // and `impersonationToken` come from app.js locals.
   const me = (typeof currentUser !== 'undefined') ? currentUser : null;
+  const impersonator = (typeof currentImpersonator !== 'undefined') ? currentImpersonator : null;
   const path = (typeof currentPath !== 'undefined') ? currentPath : '';
-  const navLinks = [];
+
+  // Top-level items are links or dropdown groups ({ label, children }).
+  const navItems = [];
   if (me) {
-    navLinks.push({ href: '/', label: 'Home' });
-    if (me.role === 'driver') navLinks.push({ href: '/sponsors', label: 'Sponsors' });
+    navItems.push({ href: '/', label: 'Home' });
+    if (me.role === 'driver') navItems.push({ href: '/sponsors', label: 'Sponsors' });
     if (me.role === 'admin') {
-      navLinks.push({ href: '/admin/create-user', label: 'Create user' });
-      navLinks.push({ href: '/admin/manage-users', label: 'Manage users' });
-      navLinks.push({ href: '/admin/create-sponsor', label: 'Create sponsor' });
-      navLinks.push({ href: '/admin/sponsor-status', label: 'Sponsor status' });
+      navItems.push({ label: 'Users', children: [
+        { href: '/admin/create-user', label: 'Create user' },
+        { href: '/admin/manage-users', label: 'Manage users' },
+        { href: '/admin/admin-accounts', label: 'Admin accounts' },
+      ] });
+      navItems.push({ label: 'Sponsors', children: [
+        { href: '/admin/create-sponsor', label: 'Create sponsor' },
+        { href: '/admin/sponsor-status', label: 'Sponsor status' },
+      ] });
     }
   } else if (path !== '/login') {
-    navLinks.push({ href: '/login', label: 'Log in' });
+    navItems.push({ href: '/login', label: 'Log in' });
   }
-  navLinks.push({ href: '/about', label: 'About' });
+  navItems.push({ href: '/about', label: 'About' });
   const isActive = href => (href === '/' ? path === '/' : path.startsWith(href));
+  const groupActive = item => item.children.some(child => isActive(child.href));
+
+  // Same mark as partials/logo.ejs, flattened into a data URI for the tab icon.
+  const favicon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Ccircle cx='24' cy='24' r='19' fill='none' stroke='%231a5fb4' stroke-width='4.5'/%3E%3Cpath d='M7 24h8M33 24h8M24 33v8' fill='none' stroke='%231a5fb4' stroke-width='4.5' stroke-linecap='round'/%3E%3Ccircle cx='24' cy='24' r='9.5' fill='%231a5fb4'/%3E%3Cpath d='M24 18.6l1.6 3.4 3.7.4-2.8 2.5.8 3.6L24 26.7l-3.3 1.8.8-3.6-2.8-2.5 3.7-.4z' fill='%23fff'/%3E%3C/svg%3E";
 %>
 <!DOCTYPE html>
 <html lang="en">
@@ -24,19 +37,36 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= title %> – Good Driver Incentive Program</title>
+  <link rel="icon" type="image/svg+xml" href="<%= favicon %>">
   <link rel="stylesheet" href="/styles.css">
+  <% if (me) { %>
+    <%# Header scripts only for signed-in pages, so the login form stays script-free. %>
+    <script>document.documentElement.classList.add('js');</script>
+    <script src="/site.js" defer></script>
+  <% } %>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="site-header__inner">
       <a class="brand" href="<%= me ? '/' : '/login' %>">
-        <%- include('shield') %>
+        <%- include('logo') %>
         <span class="brand__name">Good Driver <span class="brand__accent">Incentive Program</span></span>
       </a>
-      <nav class="site-nav" aria-label="Main">
-        <% navLinks.forEach(link => { %>
-          <a class="site-nav__link<%= isActive(link.href) ? ' is-active' : '' %>" href="<%= link.href %>"<%- isActive(link.href) ? ' aria-current="page"' : '' %>><%= link.label %></a>
+      <nav id="site-nav" class="site-nav" aria-label="Main">
+        <% navItems.forEach(item => { %>
+          <% if (item.children) { %>
+            <details class="site-menu">
+              <summary class="site-nav__link<%= groupActive(item) ? ' is-active' : '' %>"><%= item.label %></summary>
+              <div class="site-menu__panel">
+                <% item.children.forEach(child => { %>
+                  <a class="site-menu__item<%= isActive(child.href) ? ' is-active' : '' %>" href="<%= child.href %>"<%- isActive(child.href) ? ' aria-current="page"' : '' %>><%= child.label %></a>
+                <% }); %>
+              </div>
+            </details>
+          <% } else { %>
+            <a class="site-nav__link<%= isActive(item.href) ? ' is-active' : '' %>" href="<%= item.href %>"<%- isActive(item.href) ? ' aria-current="page"' : '' %>><%= item.label %></a>
+          <% } %>
         <% }); %>
       </nav>
       <% if (me) { %>
@@ -51,6 +81,19 @@
           <%- include('logout') %>
         </div>
       <% } %>
+      <button class="nav-toggle" type="button" aria-controls="site-nav" aria-expanded="false">
+        <span class="nav-toggle__bars" aria-hidden="true"></span>
+        Menu
+      </button>
     </div>
   </header>
+  <% if (me && impersonator) { %>
+    <div class="impersonation-bar" role="status">
+      <span>You are acting as <strong><%= me.username %></strong> (<%= me.role %>). Signed in as admin <strong><%= impersonator.username %></strong>.</span>
+      <form method="POST" action="/impersonate/stop">
+        <input type="hidden" name="token" value="<%= impersonationToken %>">
+        <button type="submit" class="button--small">Stop impersonating</button>
+      </form>
+    </div>
+  <% } %>
   <main id="main" class="page">

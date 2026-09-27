@@ -3,22 +3,23 @@
     <section class="card card--narrow login-card">
       <%- include('partials/shield') %>
       <h1>Set your password</h1>
-      <p class="lede">Choose a password to finish setting up your account.</p>
+      <p class="lede">Choose a password that meets every rule below to finish setting up your account.</p>
       <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
       <form method="POST" action="/setup/<%= token %>">
         <input type="hidden" name="token" value="<%= formToken %>">
 
         <label for="password">New password</label>
         <input id="password" name="password" type="password" autocomplete="new-password"
-               minlength="<%= minLength %>" required>
-        <p class="hint">At least <%= minLength %> characters.</p>
+               minlength="8" maxlength="<%= maxLength %>" required>
+        <%- include('partials/password-rules', { inputId: 'password', rules }) %>
 
         <label for="confirmPassword">Confirm password</label>
         <input id="confirmPassword" name="confirmPassword" type="password"
-               autocomplete="new-password" minlength="<%= minLength %>" required>
+               autocomplete="new-password" required data-confirm-for="password">
 
         <button type="submit">Set password</button>
       </form>
     </section>
   </div>
+  <script src="/password-rules.js" defer></script>
 <%- include('partials/foot') %>
