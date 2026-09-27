@@ -9,8 +9,8 @@ const { app } = require('../src/app');
 const { hashPassword } = require('../src/auth/password');
 
 const users = {
-  admin1: { id: 3, username: 'admin1', role: 'admin' },
-  driver1: { id: 1, username: 'driver1', role: 'driver' },
+  admin1: { id: 3, username: 'admin1', role: 'admin', status: 'active' },
+  driver1: { id: 1, username: 'driver1', role: 'driver', status: 'active' },
 };
 const sponsors = [
   { id: 4, name: 'clemson', contactEmail: 'clemsonsponser@clemson.edu', status: 'active' },
@@ -24,6 +24,10 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
+    if (sql.includes('FROM users WHERE id')) {
+      const user = Object.values(users).find(u => u.id === params[0]);
+      return user ? [{ ...user, name: null, email: null }] : [];
+    }
     if (sql.includes('FROM users')) {
       const user = users[params[0]];
       return user ? [{ ...user, password_hash: passwordHash }] : [];

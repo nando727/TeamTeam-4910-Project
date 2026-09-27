@@ -32,7 +32,7 @@ beforeEach(() => {
       const [username] = params;
       const user = USERS[username];
       if (!user) return [];
-      return [{ id: user.id, username, password_hash: hashes[username], role: user.role }];
+      return [{ id: user.id, username, password_hash: hashes[username], role: user.role, status: 'active' }];
     }
     if (sql.startsWith('INSERT INTO login_attempts')) return [];
     throw new Error(`Unexpected query in test: ${sql}`);

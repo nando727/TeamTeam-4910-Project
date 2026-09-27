@@ -1,6 +1,6 @@
 <%- include('../partials/head', { title: 'Sponsor Home' }) %>
   <section class="hero">
-    <%- include('../partials/shield') %>
+    <%- include('../partials/logo') %>
     <div>
       <h1>Welcome, <%= user.username %></h1>
       <p>You are signed in as a sponsor user.</p>
@@ -8,14 +8,19 @@
   </section>
 
   <h2 class="section-title">Your account</h2>
-  <div class="actions">
+  <div class="actions actions--3">
     <a class="action" href="/profile">
-      <span class="action__icon" aria-hidden="true">@</span>
+      <span class="action__icon"><%- include('../partials/icon', { name: 'user-circle' }) %></span>
       <span class="action__title">View your profile</span>
       <span class="action__text">See and update your name and email.</span>
     </a>
+    <a class="action" href="/profile/password">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'key' }) %></span>
+      <span class="action__title">Change your password</span>
+      <span class="action__text">Choose a new password that meets the complexity rules.</span>
+    </a>
     <a class="action" href="/about">
-      <span class="action__icon" aria-hidden="true">i</span>
+      <span class="action__icon"><%- include('../partials/icon', { name: 'info' }) %></span>
       <span class="action__title">About this app</span>
       <span class="action__text">Team, version, and release information.</span>
     </a>

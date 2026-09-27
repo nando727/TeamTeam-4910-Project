@@ -23,7 +23,7 @@ beforeEach(() => {
     if (sql.startsWith('SELECT')) {
       const [username] = params;
       if (username === 'driver1') {
-        return [{ id: 1, username: 'driver1', password_hash: driverHash, role: 'driver' }];
+        return [{ id: 1, username: 'driver1', password_hash: driverHash, role: 'driver', status: 'active' }];
       }
       return [];
     }

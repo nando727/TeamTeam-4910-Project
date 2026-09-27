@@ -1,7 +1,11 @@
 const express = require('express');
-const { DuplicateError, findUserById, updateUserContact } = require('../users/store');
+const {
+  DuplicateError, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
+} = require('../users/store');
 const { getAbout } = require('../about/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
+const { verifyPassword } = require('../auth/password');
+const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
 const router = express.Router();
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -82,6 +86,48 @@ router.post('/profile', requireLogin, requireFormToken, loadProfile, async (req,
     }
     next(err);
   }
+});
+
+// ---- Change password (logged-in user) -------------------------------------
+
+function renderChangePassword(req, res, { error = null, status = 200 } = {}) {
+  return res.status(status).render('change-password', {
+    error, rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH, token: formToken(req),
+  });
+}
+
+router.get('/profile/password', requireLogin, (req, res) => {
+  renderChangePassword(req, res);
+});
+
+router.post('/profile/password', requireLogin, requireFormToken, async (req, res, next) => {
+  // Passwords are never trimmed: a leading or trailing space is part of the password.
+  const field = key => (typeof req.body[key] === 'string' ? req.body[key] : '');
+  const currentPassword = field('currentPassword');
+  const newPassword = field('newPassword');
+  const confirmPassword = field('confirmPassword');
+
+  try {
+    const account = await findUserCredentials(req.session.user.id);
+    if (!account) return res.status(404).send('Your account could not be found.');
+
+    if (!currentPassword || !(await verifyPassword(currentPassword, account.password_hash))) {
+      return renderChangePassword(req, res, { error: 'Your current password is incorrect.', status: 400 });
+    }
+    // Each failed rule gets its own sentence so the user knows exactly what to fix.
+    const problems = passwordProblems(newPassword);
+    if (problems.length) return renderChangePassword(req, res, { error: problems.join(' '), status: 400 });
+    if (newPassword === currentPassword) {
+      return renderChangePassword(req, res, { error: 'Choose a new password that is different from your current one.', status: 400 });
+    }
+    if (newPassword !== confirmPassword) {
+      return renderChangePassword(req, res, { error: 'The new password and confirmation do not match.', status: 400 });
+    }
+
+    await updateUserPassword(account.id, newPassword);
+    const profile = await findUserById(account.id);
+    renderProfile(req, res, profile, { success: 'Your password was changed.' });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

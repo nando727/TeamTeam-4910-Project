@@ -31,7 +31,7 @@ beforeEach(() => {
   savedApplication = null;
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.includes('FROM users')) {
-      return [{ id: 1, username: 'driver', role: 'driver', password_hash: passwordHash }];
+      return [{ id: 1, username: 'driver', role: 'driver', status: 'active', password_hash: passwordHash }];
     }
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
     if (sql.startsWith('SELECT s.id')) return sponsors;

@@ -16,7 +16,7 @@
       <input type="hidden" name="confirmId" value="<%= draft.confirmId %>">
       <div class="button-row">
         <button type="submit" class="button--danger">Confirm: set to <%= draft.status %></button>
-        <a class="button-link" href="/admin/manage-users">Cancel</a>
+        <a class="button-link" href="<%= draft.returnTo || '/admin/manage-users' %>">Cancel</a>
       </div>
     </form>
   </section>

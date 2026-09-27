@@ -2,19 +2,34 @@ const express = require('express');
 const { randomBytes } = require('crypto');
 const {
   VALID_ROLES, USER_STATUSES, DuplicateError, createUser, findUserById, listUsers, updateUserStatus,
+  updateUserPassword, countRecentFailedLogins,
 } = require('../users/store');
 const { createSponsor, listSponsors } = require('../sponsors/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
+const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
 const router = express.Router();
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Admin-only pages: creating users and sponsor organizations, managing user
 // status, viewing sponsor status.
-router.use((req, res, next) => {
+router.use(async (req, res, next) => {
   if (!req.session.user) return res.redirect('/login');
   if (req.session.user.role !== 'admin') return res.status(403).send('Only admins can manage users and sponsors.');
-  next();
+  try {
+    // The session only says who signed in. Re-read the account so an admin who
+    // was disabled, revoked, demoted, or deleted since then is cut off on their
+    // next admin request, not just at their next login.
+    const account = await findUserById(req.session.user.id);
+    const reason = !account ? 'missing' : account.status !== 'active' ? account.status : account.role !== 'admin' ? 'role' : null;
+    if (reason) {
+      return req.session.destroy(() => {
+        res.clearCookie('connect.sid');
+        res.redirect(`/login?reason=${encodeURIComponent(reason)}`);
+      });
+    }
+    next();
+  } catch (err) { next(err); }
 });
 router.use(requireFormToken);
 
@@ -27,6 +42,7 @@ const EMPTY_USER = { name: '', email: '', username: '', role: '' };
 function renderCreateUser(req, res, values, { error = null, created = null, status = 200 } = {}) {
   return res.status(status).render('create-user', {
     values, roles: VALID_ROLES, error, created, token: formToken(req),
+    rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH,
   });
 }
 
@@ -46,7 +62,7 @@ router.post('/create-user', async (req, res, next) => {
   if (!values.name || values.name.length > 255) problems.push('Enter a name (up to 255 characters).');
   if (!values.email || values.email.length > 255 || !EMAIL_PATTERN.test(values.email)) problems.push('Enter a valid email address.');
   if (!values.username || values.username.length > 64) problems.push('Enter a username (up to 64 characters).');
-  if (password.length < 8) problems.push('Password must be at least 8 characters.');
+  problems.push(...passwordProblems(password));
   if (!VALID_ROLES.includes(values.role)) problems.push('Choose a role: driver, sponsor, or admin.');
   if (problems.length) return renderCreateUser(req, res, values, { error: problems.join(' '), status: 400 });
 
@@ -123,19 +139,40 @@ function statusDraftFor(req) {
   return draft && draft.userId === req.targetUser.id ? draft : null;
 }
 
-// One-shot notice shown on the next visit to the list (success or no-op).
-function flashAndRedirect(req, res, notice) {
-  req.session.manageUsersNotice = notice;
-  res.redirect(303, '/admin/manage-users');
+// A status change can start from either list page. The form says which one
+// (hidden `from` field) and the admin is sent back there afterwards. Anything
+// not on this list falls back to the full user list.
+const STATUS_PAGES = { 'manage-users': '/admin/manage-users', 'admin-accounts': '/admin/admin-accounts' };
+const pageKey = value => (Object.prototype.hasOwnProperty.call(STATUS_PAGES, value) ? value : 'manage-users');
+const returnPathFor = req => STATUS_PAGES[pageKey(read(req, 'from'))];
+
+// One-shot notice shown on the next visit to a list page (success or no-op).
+function flashAndRedirect(req, res, notice, path = STATUS_PAGES['manage-users']) {
+  req.session.statusNotice = notice;
+  res.redirect(303, path);
+}
+function takeNotice(req) {
+  const notice = req.session.statusNotice || null;
+  delete req.session.statusNotice;
+  return notice;
 }
 
 router.get('/manage-users', async (req, res, next) => {
   try {
     const users = await listUsers();
-    const notice = req.session.manageUsersNotice || null;
-    delete req.session.manageUsersNotice;
     res.render('manage-users', {
-      users, statuses: USER_STATUSES, notice, currentUserId: req.session.user.id, token: formToken(req),
+      users, statuses: USER_STATUSES, notice: takeNotice(req), currentUserId: req.session.user.id, token: formToken(req),
+    });
+  } catch (err) { next(err); }
+});
+
+// Story: review and update the status of admin accounts. Same controls and
+// the same confirm step as the full list, filtered to the admin team.
+router.get('/admin-accounts', async (req, res, next) => {
+  try {
+    const admins = await listUsers({ role: 'admin' });
+    res.render('admin-accounts', {
+      admins, statuses: USER_STATUSES, notice: takeNotice(req), currentUserId: req.session.user.id, token: formToken(req),
     });
   } catch (err) { next(err); }
 });
@@ -143,22 +180,23 @@ router.get('/manage-users', async (req, res, next) => {
 router.post('/manage-users/:userId/status', async (req, res, next) => {
   const user = req.targetUser;
   const status = read(req, 'status');
+  const returnTo = returnPathFor(req);
   // A stale draft must never survive a new request for the same account.
   delete req.session.statusChange;
   if (!USER_STATUSES.includes(status)) return res.status(400).send('Choose a status: active, disabled, or revoked.');
   if (user.id === req.session.user.id && status !== 'active') {
-    return flashAndRedirect(req, res, { kind: 'error', text: 'You cannot disable or revoke your own account.' });
+    return flashAndRedirect(req, res, { kind: 'error', text: 'You cannot disable or revoke your own account.' }, returnTo);
   }
   if (status === user.status) {
-    return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, status is already ${status}.` });
+    return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, status is already ${status}.` }, returnTo);
   }
   try {
     if (status === 'active') {
       // Restoring access needs no confirmation.
       await updateUserStatus(user.id, status);
-      return flashAndRedirect(req, res, { kind: 'success', text: `Status for ${user.username} changed to ${status}.` });
+      return flashAndRedirect(req, res, { kind: 'success', text: `Status for ${user.username} changed to ${status}.` }, returnTo);
     }
-    req.session.statusChange = { userId: user.id, status, confirmId: randomBytes(32).toString('hex') };
+    req.session.statusChange = { userId: user.id, status, returnTo, confirmId: randomBytes(32).toString('hex') };
     res.redirect(303, `/admin/manage-users/${user.id}/confirm`);
   } catch (err) { next(err); }
 });
@@ -179,10 +217,76 @@ router.post('/manage-users/:userId/confirm', async (req, res, next) => {
     delete req.session.statusChange;
     // The account may have changed since the draft was made; re-check before writing.
     if (draft.status === user.status) {
-      return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, status is already ${user.status}.` });
+      return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, status is already ${user.status}.` }, draft.returnTo);
     }
     await updateUserStatus(user.id, draft.status);
-    flashAndRedirect(req, res, { kind: 'success', text: `Status for ${user.username} changed to ${draft.status}.` });
+    flashAndRedirect(req, res, { kind: 'success', text: `Status for ${user.username} changed to ${draft.status}.` }, draft.returnTo);
+  } catch (err) { next(err); }
+});
+
+// ---- Impersonation (drivers and sponsors only) -----------------------------
+
+// The admin's session becomes the target's, with the admin remembered so the
+// banner's stop button can switch back. Never admins, never inactive accounts.
+router.post('/impersonate/:userId', (req, res) => {
+  const target = req.targetUser;
+  const returnTo = returnPathFor(req);
+  const refuse = text => flashAndRedirect(req, res, { kind: 'error', text }, returnTo);
+  if (target.role === 'admin') {
+    return refuse(`Cannot sign in as ${target.username}: admin accounts cannot be impersonated.`);
+  }
+  if (target.status !== 'active') {
+    return refuse(`Cannot sign in as ${target.username}: that account is ${target.status}. Only active accounts can be impersonated.`);
+  }
+  const admin = req.session.user;
+  req.session.impersonator = { id: admin.id, username: admin.username, role: admin.role, returnTo };
+  req.session.user = { id: target.id, username: target.username, role: target.role };
+  delete req.session.statusChange;
+  console.log(`[impersonation] ${admin.username} (id ${admin.id}) started acting as ${target.username} (id ${target.id})`);
+  res.redirect(303, '/');
+});
+
+// ---- Reset a user's password on their behalf ------------------------------
+
+// Same rules and the same hashing helper as every other password form. The
+// audit log is left untouched; the page only shows the recent failure count.
+
+function renderResetPassword(req, res, { from, failedLogins, error = null, status = 200 }) {
+  return res.status(status).render('admin-reset-password', {
+    user: req.targetUser, rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH, token: formToken(req),
+    from, returnTo: STATUS_PAGES[from], failedLogins, error,
+  });
+}
+
+router.get('/manage-users/:userId/password', async (req, res, next) => {
+  // Your own password goes through the profile page, which asks for the current one.
+  if (req.targetUser.id === req.session.user.id) return res.redirect('/profile/password');
+  const from = pageKey(typeof req.query.from === 'string' ? req.query.from : '');
+  try {
+    const failedLogins = await countRecentFailedLogins(req.targetUser.username);
+    renderResetPassword(req, res, { from, failedLogins });
+  } catch (err) { next(err); }
+});
+
+router.post('/manage-users/:userId/password', async (req, res, next) => {
+  const user = req.targetUser;
+  const from = pageKey(read(req, 'from'));
+  if (user.id === req.session.user.id) {
+    return flashAndRedirect(req, res, { kind: 'error', text: 'Change your own password from your profile page.' }, STATUS_PAGES[from]);
+  }
+  // Passwords are never trimmed.
+  const field = key => (typeof req.body[key] === 'string' ? req.body[key] : '');
+  const newPassword = field('newPassword');
+  const confirmPassword = field('confirmPassword');
+  try {
+    const problems = passwordProblems(newPassword);
+    if (!problems.length && newPassword !== confirmPassword) problems.push('The new password and confirmation do not match.');
+    if (problems.length) {
+      const failedLogins = await countRecentFailedLogins(user.username);
+      return renderResetPassword(req, res, { from, failedLogins, error: problems.join(' '), status: 400 });
+    }
+    await updateUserPassword(user.id, newPassword);
+    flashAndRedirect(req, res, { kind: 'success', text: `Password for ${user.username} was reset.` }, STATUS_PAGES[from]);
   } catch (err) { next(err); }
 });
 

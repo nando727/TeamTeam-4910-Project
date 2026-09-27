@@ -1,0 +1,60 @@
+<%- include('partials/head', { title: 'Admin accounts' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Admin accounts</h1>
+      <p class="lede">Every admin account and whether it can sign in. Disabling or revoking an admin asks you to confirm first. You cannot change your own status.</p>
+    </div>
+    <% if (notice) { %>
+      <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %></p>
+    <% } %>
+    <% if (admins.length === 0) { %>
+      <p class="info" role="status">There are no admin accounts. <a href="/admin/create-user">Create a user</a> with the admin role.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Username</th>
+              <th scope="col">Status</th>
+              <th scope="col">Change status</th>
+              <th scope="col">Password</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% admins.forEach(admin => { %>
+              <tr>
+                <td class="cell-strong"><%= admin.username %><% if (admin.id === currentUserId) { %> <span class="muted small">(you)</span><% } %></td>
+                <td><span class="status-badge status-<%= admin.status %>"><%= admin.status %></span></td>
+                <td>
+                  <% if (admin.id === currentUserId) { %>
+                    <span class="muted small">Your own account cannot be changed here.</span>
+                  <% } else { %>
+                    <form class="status-form" method="POST" action="/admin/manage-users/<%= admin.id %>/status">
+                      <input type="hidden" name="token" value="<%= token %>">
+                      <input type="hidden" name="from" value="admin-accounts">
+                      <label for="status-<%= admin.id %>" class="sr-only">New status for <%= admin.username %></label>
+                      <select id="status-<%= admin.id %>" name="status">
+                        <% statuses.forEach(status => { %>
+                          <option value="<%= status %>" <%= status === admin.status ? 'selected' : '' %>><%= status %></option>
+                        <% }); %>
+                      </select>
+                      <button type="submit">Update</button>
+                    </form>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (admin.id === currentUserId) { %>
+                    <a class="button-link button--small" href="/profile/password">Change</a>
+                  <% } else { %>
+                    <a class="button-link button--small" href="/admin/manage-users/<%= admin.id %>/password?from=admin-accounts">Reset</a>
+                  <% } %>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+<%- include('partials/foot') %>

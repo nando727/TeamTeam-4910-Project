@@ -7,6 +7,7 @@ const apiRoutes = require('./routes/api');
 const sponsorRoutes = require('./sponsors/routes');
 const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
+const { formToken } = require('./auth/form-token');
 
 const app = express();
 
@@ -33,6 +34,9 @@ app.use(
 app.use((req, res, next) => {
   res.locals.currentUser = req.session.user || null;
   res.locals.currentPath = req.path;
+  // While an admin acts as another user, every page shows a banner with a stop button.
+  res.locals.currentImpersonator = req.session.impersonator || null;
+  res.locals.impersonationToken = req.session.impersonator ? formToken(req) : null;
   next();
 });
 

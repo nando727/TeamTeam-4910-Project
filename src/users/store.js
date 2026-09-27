@@ -46,9 +46,38 @@ async function findUserById(id) {
   return rows[0] || null;
 }
 
-// Read-only list for the admin "Manage users" page.
-async function listUsers() {
-  return db.query('SELECT id, username, role, status FROM users ORDER BY username, id');
+// Username + hash by id, for verifying the current password before a change.
+async function findUserCredentials(id) {
+  const rows = await db.query('SELECT id, username, password_hash FROM users WHERE id = ?', [id]);
+  return rows[0] || null;
+}
+
+// Replaces the stored hash. Every caller must run passwordProblems() first;
+// this function only hashes and saves.
+async function updateUserPassword(id, password) {
+  const passwordHash = await hashPassword(password);
+  const result = await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
+  return result.affectedRows > 0;
+}
+
+// Failed sign-ins for a username in the last 24 hours. Read-only: the audit
+// log is never modified, not even after an admin resets the password.
+async function countRecentFailedLogins(username) {
+  const rows = await db.query(
+    'SELECT COUNT(*) AS count FROM login_attempts WHERE username = ? AND success = 0 AND attempted_at > NOW() - INTERVAL 1 DAY',
+    [username]
+  );
+  return Number((rows[0] && rows[0].count) || 0);
+}
+
+// Read-only list for the admin "Manage users" page (every account) and the
+// "Admin accounts" page (role = 'admin').
+async function listUsers({ role } = {}) {
+  if (role === undefined) {
+    return db.query('SELECT id, username, role, status FROM users ORDER BY username, id');
+  }
+  if (!VALID_ROLES.includes(role)) throw new Error(`Invalid user role: ${role}`);
+  return db.query('SELECT id, username, role, status FROM users WHERE role = ? ORDER BY username, id', [role]);
 }
 
 // Sets an account's status; returns true when a row was updated.
@@ -86,5 +115,6 @@ async function updateUserContact(id, { name, email }) {
 
 module.exports = {
   VALID_ROLES, USER_STATUSES, DuplicateError,
-  createUser, findUserById, updateUserContact, listUsers, updateUserStatus,
+  createUser, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
+  listUsers, updateUserStatus, countRecentFailedLogins,
 };
