@@ -33,6 +33,19 @@ Sessions expire after 30 minutes of inactivity (story 22204). Set
 `SESSION_IDLE_MINUTES` in `.env` to change it — a small value such as `0.25`
 makes the timeout easy to demonstrate.
 
+## Account lockout (story 22214)
+
+Five failed sign-ins lock an account for 15 minutes. Only failures **since your
+last successful sign-in** count, so signing in successfully clears the tally.
+While locked, the correct password is refused too — that is the point — and the
+message says how many minutes remain. Every blocked attempt is still recorded in
+`login_attempts`.
+
+The lock is worked out from that audit table, so there is nothing to reset by
+hand and it expires on its own. Set `LOGIN_MAX_FAILURES` and
+`LOGIN_LOCKOUT_MINUTES` in `.env` to change the policy; `LOGIN_LOCKOUT_MINUTES=1`
+makes it easy to demonstrate.
+
 ## Sprint one: driver sponsor applications
 
 Run `npm run db:setup` to add the sponsor and application tables to an existing
