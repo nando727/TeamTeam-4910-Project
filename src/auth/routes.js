@@ -8,6 +8,7 @@ const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./passw
 const { updateUserPassword } = require('../users/store');
 const { createResetToken, findValidReset, consumeReset, TOKEN_PATTERN, EXPIRY_MINUTES } = require('./password-reset');
 const { sendPasswordResetLink } = require('./mailer');
+const { checkLockout, lockoutMessage } = require('./lockout');
 
 const router = express.Router();
 
@@ -69,6 +70,14 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
+    // Story 22214: refuse before checking the password, so a locked account
+    // can't be tested against. The attempt is still audited below.
+    const lockout = await checkLockout(username);
+    if (lockout.locked) {
+      await recordLoginAttempt(username, false);
+      return res.status(429).render('login', { error: lockoutMessage(lockout) });
+    }
+
     // Role comes from the database — the form never asks for a user type.
     const rows = await db.query(
       'SELECT id, username, password_hash, role, status, sponsor_id FROM users WHERE username = ?',
@@ -122,6 +131,13 @@ router.post('/api/login', async (req, res, next) => {
         success: false,
         error: 'Please enter both a username and a password.',
       });
+    }
+
+    // Story 22214: same lockout rule on the JSON route.
+    const lockout = await checkLockout(username);
+    if (lockout.locked) {
+      await recordLoginAttempt(username, false);
+      return res.status(429).json({ success: false, error: lockoutMessage(lockout) });
     }
 
     // Role comes from the database — the client never sends a user type.
