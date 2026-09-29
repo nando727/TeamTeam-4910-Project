@@ -32,6 +32,9 @@ beforeEach(() => {
   savedApplication = null;
   applications = [];
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
+    // Story 22214: every sign-in now checks the lockout first. No failures here.
+    if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
+
     if (sql.includes('FROM users')) {
       return [{ id: params[0] === 'otherDriver' ? 2 : 1, username: params[0], role: 'driver', status: 'active', password_hash: passwordHash }];
     }

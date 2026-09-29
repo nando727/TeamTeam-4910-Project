@@ -24,6 +24,9 @@ beforeAll(async () => {
 beforeEach(() => {
   statusUpdates = [];
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
+    // Story 22214: every sign-in now checks the lockout first. No failures here.
+    if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
+
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
     if (sql.includes('FROM users WHERE username')) {
       const user = users.find(u => u.username === params[0]);

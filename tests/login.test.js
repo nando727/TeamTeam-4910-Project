@@ -22,6 +22,9 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
+    // Story 22214: every sign-in now checks the lockout first. No failures here.
+    if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
+
     if (sql.startsWith('SELECT')) {
       const [username] = params;
       const account = ACCOUNTS[username];
@@ -110,7 +113,8 @@ describe('POST /login', () => {
       .type('form')
       .send({ username: "x' OR '1'='1", password: 'x' });
 
-    const selectCall = db.query.mock.calls.find(([sql]) => sql.startsWith('SELECT'));
+    // The lockout check also runs a SELECT, so target the user lookup itself.
+    const selectCall = db.query.mock.calls.find(([sql]) => sql.startsWith('SELECT id, username, password_hash'));
     expect(selectCall[0]).toContain('username = ?');
     expect(selectCall[1]).toEqual(["x' OR '1'='1"]);
   });
