@@ -15,11 +15,15 @@
         <input id="username" name="username" type="text" autocomplete="username" required>
 
         <label for="password">Password</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <input id="password" name="password" type="password" autocomplete="current-password" required
+               data-toggle-visibility>
 
         <button type="submit">Log In</button>
       </form>
       <p class="hint" style="margin-top: 16px; text-align: center;"><a href="/forgot-password">Forgot your password?</a></p>
     </section>
   </div>
+  <%# Story 22217: adds a Show/Hide button to the password field. The page
+     works without it; the script only enhances the field. %>
+  <script src="/password-toggle.js" defer></script>
 <%- include('partials/foot') %>

@@ -57,10 +57,15 @@ describe('pressing Enter submits the login form', () => {
     expect(res.text).toMatch(/<button[^>]*type="submit"/i);
   });
 
-  test('no script on the page can intercept the keypress', async () => {
+  test('nothing on the page can intercept the keypress', async () => {
     const res = await request(app).get('/login');
 
-    expect(res.text).not.toMatch(/<script/i);
+    // Story 22217 added one script: it creates the Show/Hide button and
+    // changes the field's type. It binds no key or submit handler, so Enter
+    // still reaches the form. Any other script here deserves a second look.
+    const scripts = res.text.match(/<script[^>]*>/gi) || [];
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0]).toContain('/password-toggle.js');
     expect(res.text).not.toMatch(/onkeydown|onkeypress|onsubmit/i);
   });
 

@@ -466,3 +466,16 @@ form > button { width: 100%; }
   font-size: 0.85rem;
   background: var(--surface-muted);
 }
+
+/* Show/Hide control on password fields (story 22217). */
+.password-field { position: relative; display: block; }
+.password-field input { padding-right: 88px; }
+.password-toggle {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  padding: 6px 12px; font-size: 0.85rem; font-weight: 600;
+  background: var(--surface-muted); color: var(--blue);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+.password-toggle:hover { background: var(--blue-soft); border-color: var(--blue); }
+.password-toggle:active { transform: translateY(-50%); }
