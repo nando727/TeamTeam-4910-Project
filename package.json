@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Good Driver Incentive Program - CPSC 4910 TeamTeam",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

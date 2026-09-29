@@ -15,6 +15,11 @@ const { listApplicationsForSponsor, setApplicationStatus } = require('./applicat
 
 const app = express();
 
+// Behind Elastic Beanstalk's reverse proxy the real client protocol and address
+// arrive in X-Forwarded-* headers; trust one hop so req.protocol, req.ip, and
+// the links built from them are right.
+app.set('trust proxy', 1);
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: false }));
