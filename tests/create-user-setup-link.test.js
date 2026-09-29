@@ -118,7 +118,9 @@ describe('creating a user without a password', () => {
     expect(insertedTokens[0].userId).toBe(42);
   });
 
-  test('the account gets a password nobody knows', async () => {
+  // bcrypt at 12 rounds, four times over, is slow enough to outrun the default
+  // 5s timeout when the suite runs files in parallel.
+  test('the account gets a password nobody knows', { timeout: 20000 }, async () => {
     const agent = await signInAsAdmin();
     await createUser(agent, { password: '' });
 
