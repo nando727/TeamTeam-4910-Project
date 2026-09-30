@@ -11,7 +11,7 @@ const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
 const setupRoutes = require('./setup/routes');
 const { formToken, requireFormToken } = require('./auth/form-token');
-const { listApplicationsForSponsor, setApplicationStatus } = require('./applications');
+const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES} = require('./applications');
 
 const app = express();
 
@@ -78,9 +78,11 @@ app.get('/', requireLogin, async (req, res, next) => {
 
   const locals = { user: req.session.user };
   if (req.session.user.role === 'sponsor') {
+    const filter = VALID_STATUSES.includes(req.query.status) ? req.query.status : null;
     try {
-      locals.applications = await listApplicationsForSponsor(req.session.user.sponsorId);
+      locals.applications = await listApplicationsForSponsor(req.session.user.sponsorId, filter);
       locals.formToken = formToken(req);
+      locals.filter = filter;
     } catch (err) {
       return next(err);
     }

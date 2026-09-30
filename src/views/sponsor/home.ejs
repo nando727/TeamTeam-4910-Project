@@ -28,6 +28,15 @@
 
   <h2 class="section-title">Driver Applications</h2>
   <div class="table-wrap">
+    <form method="GET" action="/" class="filter-form">
+      <label for="filter">filter by status:</label>
+      <select id="filter" name="status" onchange="this.form.submit()">
+        <option value="" <%= !filter ? 'selected' : '' %>>All</option>
+        <option value="pending" <%= filter === 'pending' ? 'selected' : '' %>>Pending</option>
+        <option value="approved" <%= filter === 'approved' ? 'selected' : '' %>>Approved</option>
+        <option value="rejected" <%= filter === 'rejected' ? 'selected' : '' %>>Rejected</option>
+      </select>
+    </form>
   <table class="table">
     <thead>
       <tr>
