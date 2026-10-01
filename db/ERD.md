@@ -4,6 +4,12 @@
 erDiagram
     users ||--o{ sponsor_applications : "applies as driver"
     sponsors ||--o{ sponsor_applications : receives
+    users ||--o| driver_sponsors : joins
+    sponsors ||--o{ driver_sponsors : enrolls
+    driver_sponsors { int driver_id PK,FK
+                      int sponsor_id FK
+                      int point_balance
+                      timestamp joined_at }
     users ||--o{ setup_tokens : "is issued"
     users { int id PK
             varchar username UK

@@ -44,6 +44,14 @@ async function main() {
       .sort();
 
     for (const file of files) {
+      if (file === '008_driver_sponsors.sql') {
+        const [conflicts] = await conn.query(
+          "SELECT driver_id FROM sponsor_applications WHERE status = 'approved' GROUP BY driver_id HAVING COUNT(DISTINCT sponsor_id) > 1"
+        );
+        if (conflicts.length) {
+          throw new Error('Some drivers have multiple approved sponsors. Resolve those application decisions before running membership migration 008.');
+        }
+      }
       const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
       await conn.query(sql);
       console.log(`Applied migration: ${file}`);

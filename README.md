@@ -67,26 +67,33 @@ Rejected applications also show the sponsor's reason, or a message if none was
 recorded. The driver's original `reason` for applying stays separate from
 `rejection_reason`. Refresh the page to see a changed decision.
 
-This covers viewing decisions; sponsor decision controls and email notifications
-are not included. To test locally in Workbench, find your test application ID:
+Sponsor users can now approve or reject pending applications from their homepage.
+Their account's `users.sponsor_id` must identify the organization they manage.
+Use these controls to test decisions: approval also creates the driver's membership.
+Updating only the application status manually bypasses that step.
 
-```sql
-SELECT id, driver_id, sponsor_id, status FROM gooddriver.sponsor_applications;
-```
+## Submission confirmation, sponsor memberships, and points
 
-Replace `123` below with that test application's ID and run one update at a time:
+After submission, drivers see a success message and a saved application reference
+on the Sponsors page. That reference remains visible after refreshing or signing
+in again. Confirmation means received; it does not mean approved.
 
-```sql
-UPDATE gooddriver.sponsor_applications
-SET status = 'approved', rejection_reason = NULL WHERE id = 123;
+Run `npm run db:migrate` before using **My sponsor and points**. Migration 008
+creates `driver_sponsors` and adds memberships for already-approved applications.
+New memberships start with 0 points. Rerunning the migration preserves balances.
+A driver can belong to one sponsor at a time. The migration stops if a driver
+already has multiple approved applications, so those decisions can be resolved
+without silently choosing a sponsor. `users.sponsor_id` continues to identify
+the organization managed by a sponsor-role account.
 
-UPDATE gooddriver.sponsor_applications
-SET status = 'rejected', rejection_reason = 'We are not accepting new drivers at this time.'
-WHERE id = 123;
-
-UPDATE gooddriver.sponsor_applications
-SET status = 'pending', rejection_reason = NULL WHERE id = 123;
-```
+Approving a pending application saves its decision and membership together.
+Completed decisions cannot be submitted again. Approval by a second sponsor is
+blocked without changing the original membership or balance. Drivers can see
+only their own approved program and current balance at `/driver/programs`.
+An inactive sponsor is labeled as inactive, and its balance remains visible.
+Point awards, deductions, redemption, and email confirmations are outside these
+stories. To demonstrate a nonzero balance locally, update a test membership's
+`point_balance` in Workbench and refresh the page.
 
 The React frontend in `client/` is separate from these Express/EJS driver pages.
 Continue using http://localhost:3000 for the driver application flow.

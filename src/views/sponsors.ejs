@@ -15,11 +15,13 @@
         <section class="sponsor">
           <h2><%= sponsor.name %></h2>
           <% if (sponsor.application_id) { %>
+            <p>Application #<%= sponsor.application_id %> received.</p>
             <p>Application status: <span class="status-badge status-<%= sponsor.application_status %>"><%= sponsor.application_status %></span></p>
             <% if (sponsor.application_status === 'pending') { %>
               <p>Your application is waiting for a sponsor decision.</p>
             <% } else if (sponsor.application_status === 'approved') { %>
               <p>Your application was approved. You can participate in this sponsor's incentive program.</p>
+              <a class="button-link" href="/driver/programs">View my sponsor and points</a>
             <% } else if (sponsor.application_status === 'rejected') { %>
               <p>Your application was rejected. You were not accepted into this sponsor's incentive program.</p>
               <p><strong>Reason for rejection:</strong></p>
