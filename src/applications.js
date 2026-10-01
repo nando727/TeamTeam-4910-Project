@@ -1,21 +1,40 @@
 const db = require('./db');
+const VALID_STATUSES = ['pending', 'approved', 'rejected'];
 
-async function listApplicationsForSponsor(sponsorId) {
+//helper to catch strange characters in filter entry
+function escapeLike(value) {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+// `sponsor_applications` INSERT — driver_id, sponsor_id, full_name,
+// contact_email, reason, plus status/rejection_reason seen in its SELECT.
+async function listApplicationsForSponsor(sponsorId,{ status = null, search = null } = {}) {
+  const params = [sponsorId];
+  const conditions = ['sponsor_id = ?'];
+
+  //for the status portion of the filter first
+  if (status && VALID_STATUSES.includes(status)){
+    conditions.push('status = ?');
+    params.push(status);
+  }
+
+  //currently not a real distinction between a filter for email or name: subject to change
+  if (search) {
+    conditions.push('(full_name LIKE ? OR contact_email LIKE ?)');
+    const pattern = `%${escapeLike(search)}%`;
+    params.push(pattern, pattern);
+  }
+
   return db.query(
     `SELECT id, full_name, contact_email, reason, status
      FROM sponsor_applications
-     WHERE sponsor_id = ?
+     WHERE ${conditions.join(' AND ')}
      ORDER BY id DESC`,
-    [sponsorId]
+     params
   );
 }
 
-// Scoped to sponsorId in the WHERE clause — not just the application id — so
-// one sponsor can't approve/reject another sponsor's applicant by guessing or
-// tampering with an id in the form post. Returns false if the row didn't
-// match (wrong sponsor, or id doesn't exist), so the caller can 404/403.
-//
-// status must be 'approved' or 'rejected' per the schema's enum.
+
 async function setApplicationStatus(applicationId, status, sponsorId, rejectionReason = null) {
   if (!sponsorId || !['approved', 'rejected'].includes(status)) return false;
   const conn = await db.pool.getConnection();
@@ -56,4 +75,4 @@ async function setApplicationStatus(applicationId, status, sponsorId, rejectionR
   }
 }
 
-module.exports = { listApplicationsForSponsor, setApplicationStatus };
+module.exports = { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES};
