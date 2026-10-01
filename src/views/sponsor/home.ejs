@@ -29,13 +29,17 @@
   <h2 class="section-title">Driver Applications</h2>
   <div class="table-wrap">
     <form method="GET" action="/" class="filter-form">
-      <label for="filter">filter by status:</label>
-      <select id="filter" name="status" onchange="this.form.submit()">
-        <option value="" <%= !filter ? 'selected' : '' %>>All</option>
-        <option value="pending" <%= filter === 'pending' ? 'selected' : '' %>>Pending</option>
-        <option value="approved" <%= filter === 'approved' ? 'selected' : '' %>>Approved</option>
-        <option value="rejected" <%= filter === 'rejected' ? 'selected' : '' %>>Rejected</option>
+      <label for="StatusFilter">Filter by status:</label>
+      <select id="StatusFilter" name="status" onchange="this.form.submit()">
+        <option value="" <%= !StatusFilter ? 'selected' : '' %>>All</option>
+        <option value="pending" <%= StatusFilter === 'pending' ? 'selected' : '' %>>Pending</option>
+        <option value="approved" <%= StatusFilter === 'approved' ? 'selected' : '' %>>Approved</option>
+        <option value="rejected" <%= StatusFilter === 'rejected' ? 'selected' : '' %>>Rejected</option>
       </select>
+
+      <label for="search">Name or email:</label>
+      <input type="text" id="search" name="search" value="<%= searchFilter %>" maxlength="128" placeholder="Search...">
+      <button type="submit">Filter</button>
     </form>
   <table class="table">
     <thead>

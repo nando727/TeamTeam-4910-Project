@@ -78,11 +78,16 @@ app.get('/', requireLogin, async (req, res, next) => {
 
   const locals = { user: req.session.user };
   if (req.session.user.role === 'sponsor') {
-    const filter = VALID_STATUSES.includes(req.query.status) ? req.query.status : null;
+    const StatusFilter = VALID_STATUSES.includes(req.query.status) ? req.query.status : null;
+    const searchFilter = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 128) : '';
     try {
-      locals.applications = await listApplicationsForSponsor(req.session.user.sponsorId, filter);
+      locals.applications = await listApplicationsForSponsor(req.session.user.sponsorId, {
+        status: StatusFilter,
+        search: searchFilter || null,
+      });
       locals.formToken = formToken(req);
-      locals.filter = filter;
+      locals.StatusFilter = StatusFilter;
+      locals.searchFilter = searchFilter;
     } catch (err) {
       return next(err);
     }
