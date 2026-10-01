@@ -32,6 +32,9 @@ beforeEach(() => {
   savedApplication = null;
   applications = [];
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
+    // Story 22214: every sign-in now checks the lockout first. No failures here.
+    if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
+
     if (sql.includes('FROM users')) {
       return [{ id: params[0] === 'otherDriver' ? 2 : 1, username: params[0], role: 'driver', status: 'active', password_hash: passwordHash }];
     }
@@ -129,7 +132,11 @@ test('submission saves the reviewed information for the selected sponsor', async
   expect(savedApplication).toEqual([1, 8, details.fullName, details.contactEmail, details.reason]);
   const page = await agent.get('/sponsors');
   expect(page.text).toContain('Your application to Second Sponsor was submitted.');
+  expect(page.text).toContain('Application #1 received.');
   expect(page.text).toContain('Your application is waiting for a sponsor decision.');
+  const refreshed = await agent.get('/sponsors').expect(200);
+  expect(refreshed.text).toContain('Application #1 received.');
+  expect(refreshed.text).not.toContain('Your application to Second Sponsor was submitted.');
 });
 
 test('driver must review the application before submitting', async () => {
@@ -138,6 +145,17 @@ test('driver must review the application before submitting', async () => {
   const token = hiddenValue(form, 'token');
   await agent.post('/sponsors/8/apply').type('form').send({ token, ...details }).expect(400);
   expect(savedApplication).toBeNull();
+});
+
+test('failed submission does not display a receipt or success message', async () => {
+  const agent = await login();
+  const { token, reviewId } = await reviewApplication(agent);
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  db.query.mockResolvedValueOnce([sponsors[1]]).mockRejectedValueOnce(new Error('Database unavailable'));
+  await agent.post('/sponsors/8/apply').type('form').send({ token, reviewId }).expect(500);
+  const page = await agent.get('/sponsors').expect(200);
+  expect(page.text).not.toContain('was submitted.');
+  expect(page.text).not.toContain('received.');
 });
 
 test('driver sees a pending application change to approved when the page is refreshed', async () => {

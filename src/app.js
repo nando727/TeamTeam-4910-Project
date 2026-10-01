@@ -7,6 +7,7 @@ const { sessionTimeout } = require('./auth/session-timeout');
 const { rememberAndRedirect } = require('./auth/return-to');
 const apiRoutes = require('./routes/api');
 const sponsorRoutes = require('./sponsors/routes');
+const driverRoutes = require('./driver/routes');
 const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
 const setupRoutes = require('./setup/routes');
@@ -15,6 +16,11 @@ const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES} = requ
 const db = require('./db');
 
 const app = express();
+
+// Behind Elastic Beanstalk's reverse proxy the real client protocol and address
+// arrive in X-Forwarded-* headers; trust one hop so req.protocol, req.ip, and
+// the links built from them are right.
+app.set('trust proxy', 1);
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -53,6 +59,7 @@ app.use((req, res, next) => {
 app.use(authRoutes);
 app.use(apiRoutes);
 app.use('/sponsors', sponsorRoutes);
+app.use('/driver', driverRoutes);
 app.use(accountRoutes);
 app.use('/admin', adminRoutes);
 // Story 22255: claiming a new account. No login required; the link is the credential.
@@ -101,7 +108,10 @@ app.post('/applications/:id/approve', requireLogin, requireSponsor, requireFormT
     const ok = await setApplicationStatus(req.params.id, 'approved', req.session.user.sponsorId);
     if (!ok) return res.status(404).send('Application not found.');
     res.redirect('/');
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.code === 'DRIVER_ALREADY_SPONSORED') return res.status(409).send(err.message);
+    next(err);
+  }
 });
 
 app.post('/applications/:id/reject', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {

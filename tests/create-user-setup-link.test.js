@@ -28,6 +28,9 @@ beforeEach(() => {
   process.env.MAIL_TRANSPORT = 'silent';
 
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
+    // Story 22214: every sign-in now checks the lockout first. No failures here.
+    if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
+
     if (sql.startsWith('SELECT id, username, password_hash')) {
       const [username] = params;
       if (username !== 'admin1') return [];
@@ -115,7 +118,9 @@ describe('creating a user without a password', () => {
     expect(insertedTokens[0].userId).toBe(42);
   });
 
-  test('the account gets a password nobody knows', async () => {
+  // bcrypt at 12 rounds, four times over, is slow enough to outrun the default
+  // 5s timeout when the suite runs files in parallel.
+  test('the account gets a password nobody knows', { timeout: 20000 }, async () => {
     const agent = await signInAsAdmin();
     await createUser(agent, { password: '' });
 

@@ -219,3 +219,7 @@ mnesia/
 rabbitmq/
 rabbitmq-data/
 activemq-data/
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml

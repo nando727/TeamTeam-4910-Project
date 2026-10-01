@@ -30,6 +30,9 @@ beforeEach(() => {
   passwordUpdates = [];
 
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
+    // Story 22214: every sign-in now checks the lockout first. No failures here.
+    if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
+
     if (sql.startsWith('SELECT id, user_id, token_hash')) {
       const [tokenHash] = params;
       return tokenHash === tokenRow.token_hash ? [tokenRow] : [];
