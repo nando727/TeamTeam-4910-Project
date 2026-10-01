@@ -48,6 +48,17 @@ CREATE TABLE IF NOT EXISTS sponsor_applications (
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );
 
+-- Each approved driver belongs to one sponsor and starts with zero points.
+CREATE TABLE IF NOT EXISTS driver_sponsors (
+  driver_id INT NOT NULL,
+  sponsor_id INT NOT NULL,
+  point_balance INT NOT NULL DEFAULT 0,
+  joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (driver_id),
+  FOREIGN KEY (driver_id) REFERENCES users(id),
+  FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
+);
+
 -- Story 22255: single-use setup links for newly created accounts. Only the
 -- SHA-256 hash of the token is stored, never the raw value.
 CREATE TABLE IF NOT EXISTS setup_tokens (

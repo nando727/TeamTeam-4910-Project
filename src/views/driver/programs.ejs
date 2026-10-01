@@ -1,0 +1,25 @@
+<%- include('../partials/head', { title: 'My sponsor and points' }) %>
+  <section class="card card--form">
+    <div class="page-header">
+      <span class="eyebrow">Your incentive program</span>
+      <h1>My sponsor and points</h1>
+      <p class="lede">View your sponsor and current point balance. Refresh this page to see updates.</p>
+    </div>
+    <% if (programs.length === 0) { %>
+      <p class="info">You have not joined a sponsor program yet. An approved application is required.</p>
+      <a class="button-link" href="/sponsors">View sponsors and applications</a>
+    <% } %>
+    <div class="sponsor-list">
+      <% programs.forEach(program => { %>
+        <section class="sponsor">
+          <h2><%= program.name %></h2>
+          <p>You are a member of this sponsor's incentive program.</p>
+          <p>Current point balance: <strong><%= Number(program.point_balance).toLocaleString('en-US') %> points</strong></p>
+          <% if (program.status === 'inactive') { %>
+            <p class="info">This sponsor is currently inactive. Your point balance is retained.</p>
+          <% } %>
+        </section>
+      <% }); %>
+    </div>
+  </section>
+<%- include('../partials/foot') %>
