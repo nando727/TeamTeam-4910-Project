@@ -1,0 +1,21 @@
+<%- include('../partials/head', { title: 'Your Organization' }) %>
+  <section class="hero">
+    <%- include('../partials/shield') %>
+    <div>
+      <h1><%= organization.name %></h1>
+      <p>Organization details on file.</p>
+    </div>
+  </section>
+
+  <table class="table">
+    <tbody>
+      <tr><th>Name</th><td><%= organization.name %></td></tr>
+      <tr><th>Contact email</th><td><%= organization.contact_email %></td></tr>
+      <tr><th>Contact phone</th><td><%= organization.contact_phone || '—' %></td></tr>
+      <tr><th>Address</th><td><%= organization.address %></td></tr>
+      <tr><th>Status</th><td><%= organization.status %></td></tr>
+    </tbody>
+  </table>
+
+  <p><a href="/">&larr; Back to home</a></p>
+<%- include('../partials/foot') %>
