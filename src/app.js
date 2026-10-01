@@ -12,7 +12,8 @@ const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
 const setupRoutes = require('./setup/routes');
 const { formToken, requireFormToken } = require('./auth/form-token');
-const { listApplicationsForSponsor, setApplicationStatus } = require('./applications');
+const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES} = require('./applications');
+const db = require('./db');
 
 const app = express();
 
@@ -46,7 +47,7 @@ app.use(sessionTimeout);
 // Template-only locals for the shared header and nav (partials/head.ejs).
 app.use((req, res, next) => {
   //debug line to try and find log out bug
-  //console.log('sessionID:', req.sessionID, 'user:', req.session.user);
+  console.log('sessionID:', req.sessionID, 'user:', req.session.user);
   res.locals.currentUser = req.session.user || null;
   res.locals.currentPath = req.path;
   // While an admin acts as another user, every page shows a banner with a stop button.
@@ -85,9 +86,16 @@ app.get('/', requireLogin, async (req, res, next) => {
 
   const locals = { user: req.session.user };
   if (req.session.user.role === 'sponsor') {
+    const StatusFilter = VALID_STATUSES.includes(req.query.status) ? req.query.status : null;
+    const searchFilter = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 128) : '';
     try {
-      locals.applications = await listApplicationsForSponsor(req.session.user.sponsorId);
+      locals.applications = await listApplicationsForSponsor(req.session.user.sponsorId, {
+        status: StatusFilter,
+        search: searchFilter || null,
+      });
       locals.formToken = formToken(req);
+      locals.StatusFilter = StatusFilter;
+      locals.searchFilter = searchFilter;
     } catch (err) {
       return next(err);
     }
@@ -115,6 +123,18 @@ app.post('/applications/:id/reject', requireLogin, requireSponsor, requireFormTo
     const ok = await setApplicationStatus(req.params.id, 'rejected', req.session.user.sponsorId, reason);
     if (!ok) return res.status(404).send('Application not found.');
     res.redirect('/');
+  } catch (err) { next(err); }
+});
+
+app.get('/organization', requireLogin, requireSponsor, async (req, res, next) => {
+  try {
+    const rows = await db.query(
+      'SELECT id, name, contact_email, contact_phone, address, status FROM sponsors WHERE id = ?',
+      [req.session.user.sponsorId]
+    );
+    const organization = rows[0];
+    if (!organization) return res.status(404).send('Organization not found.');
+    res.render('sponsor/organization', { organization });
   } catch (err) { next(err); }
 });
 

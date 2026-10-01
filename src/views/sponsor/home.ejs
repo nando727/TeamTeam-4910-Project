@@ -19,6 +19,11 @@
       <span class="action__title">Change your password</span>
       <span class="action__text">Choose a new password that meets the complexity rules.</span>
     </a>
+    <a class="action" href="/organization">
+      <span class="action__icon" >#</span>
+      <span class="action__title">Your organization</span>
+      <span class="action__text">View your sponsor organization's details.</span>
+    </a>
     <a class="action" href="/about">
       <span class="action__icon"><%- include('../partials/icon', { name: 'info' }) %></span>
       <span class="action__title">About this app</span>
@@ -28,6 +33,19 @@
 
   <h2 class="section-title">Driver Applications</h2>
   <div class="table-wrap">
+    <form method="GET" action="/" class="filter-form">
+      <label for="StatusFilter">Filter by status:</label>
+      <select id="StatusFilter" name="status" onchange="this.form.submit()">
+        <option value="" <%= !StatusFilter ? 'selected' : '' %>>All</option>
+        <option value="pending" <%= StatusFilter === 'pending' ? 'selected' : '' %>>Pending</option>
+        <option value="approved" <%= StatusFilter === 'approved' ? 'selected' : '' %>>Approved</option>
+        <option value="rejected" <%= StatusFilter === 'rejected' ? 'selected' : '' %>>Rejected</option>
+      </select>
+
+      <label for="search">Name or email:</label>
+      <input type="text" id="search" name="search" value="<%= searchFilter %>" maxlength="128" placeholder="Search...">
+      <button type="submit">Filter</button>
+    </form>
   <table class="table">
     <thead>
       <tr>
