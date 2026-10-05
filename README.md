@@ -123,3 +123,38 @@ npm run test-run
 ```bash
 npm run test
 ```
+
+## Deployment (GitHub Actions to AWS Elastic Beanstalk)
+
+The app is hosted on AWS Elastic Beanstalk (application `gooddriver`,
+environment `team13-gooddriver`, Node.js 22, region `us-east-1`) and reads from
+the team's MySQL database on RDS.
+
+Every push or merge to `master` runs `.github/workflows/deploy.yml`:
+
+1. **Test** - `npm ci`, then the full suite with `npm run test-run`.
+2. **Deploy** - only if every test passed. The workflow zips the commit with
+   `git archive`, uploads it to Beanstalk's S3 bucket, registers it as a new
+   application version (`gh-<commit>-<run>`), updates the environment, and waits
+   until it is Ready on that version.
+3. **Smoke test** - requests the live `/about` page, which reads from the
+   database, and fails the run unless it returns 200.
+
+Things to know:
+
+- **No secrets are deployed or stored in the repo.** `.env` is gitignored, so it
+  is never in the bundle, and the workflow refuses to deploy if an env file is
+  ever committed. Database and session settings are set on the Beanstalk
+  environment (Configuration -> Updates, monitoring, and logging -> Environment
+  properties). Change them there, not in code.
+- **AWS access** comes from the repository secrets `AWS_ACCESS_KEY_ID` and
+  `AWS_SECRET_ACCESS_KEY`. Pull requests do not trigger the workflow.
+- **One deploy at a time.** A second push waits for the running deploy to
+  finish instead of overlapping it.
+- **Redeploy without pushing:** GitHub -> Actions -> "Test and deploy" ->
+  Run workflow -> branch `master`.
+- **If a deploy fails**, Beanstalk keeps serving the previous version. Open the
+  failed run in the Actions tab to see which step failed; a failed test never
+  reaches AWS.
+- Database schema changes are not applied by a deploy. Run new migrations
+  against RDS separately, after the team agrees.
