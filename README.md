@@ -124,6 +124,26 @@ npm run test-run
 npm run test
 ```
 
+## Driver Point Tracking report (stories AD-18 to AD-22)
+
+Sponsors and admins open **Reports** in the header (or `/reports/points`) to see
+every point award and deduction: driver, date, change, the sponsor it belongs
+to, who made it, and the reason, with each driver's current total above the
+table. A sponsor sees only drivers in their own organization; an admin sees all
+drivers and can narrow to one sponsor. Filter by one driver or all, and by a
+date range (date pickers plus quick ranges). **Download CSV** exports exactly
+the rows on screen with the same filters.
+
+Point history lives in `point_transactions` (migration 009). The driver's
+current total is still `driver_sponsors.point_balance`, so anything that awards
+or deducts points must insert a `point_transactions` row and update that
+balance in the same database transaction. No page awards points yet.
+
+Sample data: `npm run db:seed:points` creates a second demo driver
+(`driver2` / `DriverPass2!`, approved under Demo Sponsor) and inserts point
+changes for both demo drivers over the last 60 days. It skips drivers that
+already have history, so it is safe to rerun.
+
 ## Deployment (GitHub Actions to AWS Elastic Beanstalk)
 
 The app is hosted on AWS Elastic Beanstalk (application `gooddriver`,

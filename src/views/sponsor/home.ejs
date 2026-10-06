@@ -7,6 +7,20 @@
     </div>
   </section>
 
+  <h2 class="section-title">Your program</h2>
+  <div class="actions actions--2">
+    <a class="action" href="/organization">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'building' }) %></span>
+      <span class="action__title">Your organization</span>
+      <span class="action__text">View your sponsor organization's details.</span>
+    </a>
+    <a class="action" href="/reports/points">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'chart' }) %></span>
+      <span class="action__title">Driver point report</span>
+      <span class="action__text">Review your drivers' point changes by driver and date, or download a CSV.</span>
+    </a>
+  </div>
+
   <h2 class="section-title">Your account</h2>
   <div class="actions actions--3">
     <a class="action" href="/profile">
@@ -18,11 +32,6 @@
       <span class="action__icon"><%- include('../partials/icon', { name: 'key' }) %></span>
       <span class="action__title">Change your password</span>
       <span class="action__text">Choose a new password that meets the complexity rules.</span>
-    </a>
-    <a class="action" href="/organization">
-      <span class="action__icon" >#</span>
-      <span class="action__title">Your organization</span>
-      <span class="action__text">View your sponsor organization's details.</span>
     </a>
     <a class="action" href="/about">
       <span class="action__icon"><%- include('../partials/icon', { name: 'info' }) %></span>

@@ -11,6 +11,7 @@
     navItems.push({ href: '/', label: 'Home' });
     if (me.role === 'driver') navItems.push({ href: '/sponsors', label: 'Sponsors' });
     if (me.role === 'driver') navItems.push({ href: '/driver/programs', label: 'My points' });
+    if (me.role === 'sponsor' || me.role === 'admin') navItems.push({ href: '/reports/points', label: 'Reports' });
     if (me.role === 'admin') {
       navItems.push({ label: 'Users', children: [
         { href: '/admin/create-user', label: 'Create user' },
