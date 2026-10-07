@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { rememberAndRedirect } = require('../auth/return-to');
 const { denyAccess } = require('../auth/deny');
+const { listPointChanges } = require('../reports/store');
 const router = express.Router();
 
 router.get('/programs', async (req, res, next) => {
@@ -16,6 +17,20 @@ router.get('/programs', async (req, res, next) => {
       [req.session.user.id]
     );
     res.render('driver/programs', { programs });
+  } catch (err) { next(err); }
+});
+
+router.get('/points/history', async (req, res, next) => {
+  if (!req.session.user) return rememberAndRedirect(req, res);
+  if (req.session.user.role !== 'driver') return denyAccess(req, res, { needs: 'driver' });
+  try {
+    // Use the signed-in driver only. No date or sponsor filter: include all
+    // recorded history, even if the driver no longer has that membership.
+    const rows = await listPointChanges({ driverId: req.session.user.id });
+    res.render('driver/point-history', {
+      rows,
+      formatStamp: value => new Date(value).toISOString().slice(0, 19).replace('T', ' '),
+    });
   } catch (err) { next(err); }
 });
 
