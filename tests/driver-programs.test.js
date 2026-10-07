@@ -10,17 +10,20 @@ const { setApplicationStatus } = require('../src/applications');
 let hash;
 let programs;
 let conn;
+let history;
 
 beforeAll(async () => { hash = await hashPassword('Password1!'); });
 beforeEach(() => {
   programs = [];
+  history = [];
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     if (sql.includes('FROM users')) return [{ id: 1, username: params[0],
-      role: params[0] === 'sponsor' ? 'sponsor' : 'driver', status: 'active',
+      role: ['sponsor', 'admin'].includes(params[0]) ? params[0] : 'driver', status: 'active',
       sponsor_id: 7, password_hash: hash }];
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
     if (sql.includes('FROM driver_sponsors')) return programs;
+    if (sql.includes('FROM point_transactions')) return history;
     if (sql.includes('FROM sponsor_applications')) return [];
     throw new Error(`Unexpected query: ${sql}`);
   });
@@ -127,4 +130,51 @@ test('a second sponsor approval is rolled back when the driver already has a mem
   await expect(setApplicationStatus(6, 'approved', 8)).rejects.toMatchObject({ code: 'DRIVER_ALREADY_SPONSORED' });
   expect(conn.rollback).toHaveBeenCalledOnce();
   expect(conn.commit).not.toHaveBeenCalled();
+});
+
+test('point history requires a driver login', async () => {
+  await request(app).get('/driver/points/history').expect(302);
+  for (const role of ['sponsor', 'admin']) {
+    const agent = await login(role);
+    await agent.get('/driver/points/history').expect(403);
+  }
+  expect(db.query.mock.calls.some(([sql]) => sql.includes('FROM point_transactions'))).toBe(false);
+});
+
+test('history shows signed amounts, dates, sponsor names, and safely escaped reasons', async () => {
+  history = [
+    { id: 2, changedAt: new Date('2026-10-07T12:00:00Z'), sponsorName: 'First Sponsor', pointsChange: -25, reason: 'Late delivery' },
+    { id: 1, changedAt: new Date('2026-10-06T10:30:00Z'), sponsorName: 'First Sponsor', pointsChange: 1250, reason: 'Safe driving <bonus>' },
+  ];
+  const agent = await login();
+  const page = await agent.get('/driver/points/history').expect(200);
+  expect(page.text).toContain('2026-10-07 12:00:00');
+  expect(page.text).toContain('First Sponsor');
+  expect(page.text).toContain('-25');
+  expect(page.text).toContain('+1,250');
+  expect(page.text).toContain('Late delivery');
+  expect(page.text).toContain('Safe driving &lt;bonus&gt;');
+  expect(page.text.indexOf('Late delivery')).toBeLessThan(page.text.indexOf('Safe driving &lt;bonus&gt;'));
+});
+
+test('entire history uses session identity with no date, membership, or result limit', async () => {
+  history = Array.from({ length: 120 }, (_, i) => ({ id: 120 - i,
+    changedAt: new Date('2025-01-01T00:00:00Z'), sponsorName: 'Previous Sponsor',
+    pointsChange: 1, reason: `Recorded change ${120 - i}` }));
+  const agent = await login();
+  const page = await agent.get('/driver/points/history?driver=99&driverId=99&sponsor=99&from=2026-10-01').expect(200);
+  expect((page.text.match(/Recorded change /g) || []).length).toBe(120);
+  expect(page.text).toContain('Previous Sponsor');
+  const [sql, params] = db.query.mock.calls.find(([query]) => query.includes('FROM point_transactions'));
+  expect(params).toEqual([1]);
+  expect(sql).toContain('WHERE t.driver_id = ?');
+  expect(sql).toContain('ORDER BY t.created_at DESC, t.id DESC');
+  expect(sql).not.toMatch(/LIMIT|driver_sponsors|t.created_at >=|t.sponsor_id = \?/);
+});
+
+test('no history shows an empty message and history is linked from driver pages', async () => {
+  const agent = await login();
+  expect((await agent.get('/driver/points/history').expect(200)).text).toContain('You have no recorded point changes yet.');
+  expect((await agent.get('/')).text).toContain('href="/driver/points/history"');
+  expect((await agent.get('/driver/programs')).text).toContain('href="/driver/points/history"');
 });

@@ -142,6 +142,23 @@ link, chooses their own password, and is sent to the login page.
 Links expire after 48 hours; set `SETUP_LINK_HOURS` in `.env` to change that.
 A link works once: reusing it shows a "no longer works" page.
 
+## Driver point history (DF-17, DF-20, DF-22)
+
+Drivers can open **View my point history** from their homepage or **My sponsor
+and points**. The page at `/driver/points/history` shows all of the signed-in
+driver's recorded transactions, newest first, including the UTC date, sponsor,
+positive or negative point change, and reason. History remains available even
+without a current sponsor membership. Other drivers' records are not accessible.
+
+This uses the existing `point_transactions` table from migration 009 and the
+shared report query. No new migration is required; if 009 has not been applied,
+run `npm run db:migrate` before using the page. Direct edits to `point_balance`
+do not create transaction history; earlier unrecorded changes cannot be recovered
+by this page. Awarding or deducting points is outside these viewing stories.
+
+Sponsor affiliation (DF-12) was already implemented on **My sponsor and points**
+and is unchanged.
+
 ## Automated Testing
 
 Story 23794 uses Vitest and supertest for automated testing. Test files go in `tests/`
