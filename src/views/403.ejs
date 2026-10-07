@@ -1,0 +1,28 @@
+<%- include('partials/head', { title: 'Access denied' }) %>
+  <div class="page--center">
+    <section class="card card--narrow login-card">
+      <%- include('partials/logo') %>
+      <h1>You don't have access to this page</h1>
+
+      <% if (detail) { %>
+        <p><%= detail %></p>
+      <% } else if (needed.length && yourRole) { %>
+        <p>This page is for <%= needed.join(' and ') %> accounts.
+           You are signed in as a <%= yourRole %>.</p>
+      <% } else { %>
+        <p>Your account cannot use this page.</p>
+      <% } %>
+
+      <p class="muted small">If you think this is a mistake, ask an administrator
+         to check the role on your account.</p>
+
+      <div class="button-row">
+        <% if (yourRole) { %>
+          <a class="button-link" href="/">Back to your home page</a>
+        <% } else { %>
+          <a class="button-link" href="/login">Go to the login page</a>
+        <% } %>
+      </div>
+    </section>
+  </div>
+<%- include('partials/foot') %>
