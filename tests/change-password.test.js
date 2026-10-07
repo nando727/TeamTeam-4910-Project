@@ -178,7 +178,10 @@ describe('admin create-user uses the same rules', () => {
   });
 
   test('the JSON API applies the rules as well', async () => {
-    const res = await request(app).post('/api/users').send({ ...account, password: 'weakpassword' }).expect(400);
+    // Story 22251: the endpoint is admin-only now, so sign in before checking
+    // that the password rules still apply to it.
+    const agent = await login('admin1');
+    const res = await agent.post('/api/users').send({ ...account, password: 'weakpassword' }).expect(400);
     expect(res.body.error).toContain('uppercase letter');
     expect(inserts).toEqual([]);
   });
