@@ -6,6 +6,7 @@ const { getAbout } = require('../about/store');
 const { passwordProblems } = require('../auth/password-policy');
 
 const { requireApiLogin, requireApiRole } = require('../auth/api-guard');
+const { findUserById } = require('../users/store');
 
 const router = express.Router();
 
@@ -69,19 +70,15 @@ router.post('/api/users', requireApiLogin, requireApiRole('admin'), async (req, 
   }
 });
 
-// The API profile is the first seeded admin until the React client has sessions.
-async function findFirstAdmin() {
-  const rows = await db.query(
-    "SELECT id, name, email, username, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1"
-  );
-  return rows[0] || null;
-}
-
-router.get('/api/profile', async (req, res, next) => {
+// Story 22251: the profile endpoints act on whoever is signed in. They used to
+// read and write "the first seeded admin" regardless of the caller, so any
+// session could edit that administrator's name and email.
+router.get('/api/profile', requireApiLogin, async (req, res, next) => {
   try {
-    const profile = await findFirstAdmin();
+    const profile = await findUserById(req.session.user.id);
     if (!profile) {
-      return res.status(404).json({ error: 'No admin user has been seeded yet.' });
+      // The session points at an account that no longer exists.
+      return res.status(404).json({ error: 'Your account could not be found.' });
     }
     return res.json(profile);
   } catch (err) {
@@ -89,7 +86,7 @@ router.get('/api/profile', async (req, res, next) => {
   }
 });
 
-router.put('/api/profile', async (req, res, next) => {
+router.put('/api/profile', requireApiLogin, async (req, res, next) => {
   try {
     const name = (req.body.name || '').trim();
     const email = (req.body.email || '').trim();
@@ -98,13 +95,11 @@ router.put('/api/profile', async (req, res, next) => {
       return res.status(400).json({ error: 'name and email are required.' });
     }
 
-    const profile = await findFirstAdmin();
-    if (!profile) {
-      return res.status(404).json({ error: 'No admin user has been seeded yet.' });
-    }
-
     try {
-      const updated = await updateUserContact(profile.id, { name, email });
+      // The id comes from the session, never from the request body, so a
+      // caller cannot aim this at someone else's account.
+      const updated = await updateUserContact(req.session.user.id, { name, email });
+      if (!updated) return res.status(404).json({ error: 'Your account could not be found.' });
       return res.json(updated);
     } catch (err) {
       if (err instanceof DuplicateError) return res.status(409).json({ error: err.message });

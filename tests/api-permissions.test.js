@@ -21,6 +21,7 @@ const ACCOUNTS = {
 let passwordHash;
 let insertedUsers;
 let insertedSponsors;
+let contactUpdates;
 
 beforeAll(async () => {
   passwordHash = await hashPassword(PASSWORD);
@@ -29,6 +30,7 @@ beforeAll(async () => {
 beforeEach(() => {
   insertedUsers = [];
   insertedSponsors = [];
+  contactUpdates = [];
 
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
@@ -48,6 +50,19 @@ beforeEach(() => {
       insertedSponsors.push(params);
       return { insertId: 55 };
     }
+    if (sql.includes('FROM users WHERE id')) {
+      const [id] = params;
+      const entry = Object.entries(ACCOUNTS).find(([, a]) => a.id === id);
+      if (!entry) return [];
+      const [username, account] = entry;
+      return [{ id: account.id, name: username, email: `${username}@example.com`, username, role: account.role, status: 'active' }];
+    }
+    if (sql.startsWith('UPDATE users SET name')) {
+      const [name, email, id] = params;
+      contactUpdates.push({ name, email, id });
+      return { affectedRows: 1 };
+    }
+    if (sql.startsWith('SELECT id FROM users WHERE email = ? AND id')) return [];
     return [];
   });
 });
@@ -157,5 +172,65 @@ describe('the public endpoint stays public', () => {
     expect([200, 404]).toContain(res.status);
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
+  });
+});
+
+describe('the profile endpoints act on the signed-in user', () => {
+  test('an anonymous request cannot read a profile', async () => {
+    const res = await request(app).get('/api/profile');
+
+    expect(res.status).toBe(401);
+    expect(res.body.name).toBeUndefined();
+  });
+
+  test('a driver reads their own profile, not the first admin', async () => {
+    const agent = await signIn('driver1');
+    const res = await agent.get('/api/profile');
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(ACCOUNTS.driver1.id);
+    expect(res.body.role).toBe('driver');
+  });
+
+  test('an admin reads their own profile', async () => {
+    const agent = await signIn('admin1');
+    const res = await agent.get('/api/profile');
+
+    expect(res.body.id).toBe(ACCOUNTS.admin1.id);
+  });
+
+  test('an update changes the signed-in account, not the first admin', async () => {
+    const agent = await signIn('driver1');
+    const res = await agent.put('/api/profile').send({ name: 'New Name', email: 'new@example.com' });
+
+    expect(res.status).toBe(200);
+    // Previously this wrote to whichever admin had the lowest id.
+    expect(contactUpdates).toHaveLength(1);
+    expect(contactUpdates[0].id).toBe(ACCOUNTS.driver1.id);
+  });
+
+  test('an id in the request body is ignored', async () => {
+    const agent = await signIn('driver1');
+    await agent.put('/api/profile').send({
+      id: ACCOUNTS.admin1.id, userId: ACCOUNTS.admin1.id,
+      name: 'Not The Admin', email: 'nope@example.com',
+    });
+
+    expect(contactUpdates[0].id).toBe(ACCOUNTS.driver1.id);
+  });
+
+  test('an anonymous update is refused and writes nothing', async () => {
+    const res = await request(app).put('/api/profile').send({ name: 'X', email: 'x@example.com' });
+
+    expect(res.status).toBe(401);
+    expect(contactUpdates).toHaveLength(0);
+  });
+
+  test('name and email are still required', async () => {
+    const agent = await signIn('driver1');
+    const res = await agent.put('/api/profile').send({ name: '', email: '' });
+
+    expect(res.status).toBe(400);
+    expect(contactUpdates).toHaveLength(0);
   });
 });
