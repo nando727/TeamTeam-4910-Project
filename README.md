@@ -67,6 +67,18 @@ linked to an organization yet.
 added without a guard fails there. `tests/denied-access.test.js` covers the
 wrong-role page for each role.
 
+### The JSON API (`/api/*`)
+
+API routes use `requireApiLogin` and `requireApiRole(...)` from
+`src/auth/api-guard.js` instead, so a refused call gets a status and a JSON body
+rather than a login page it cannot read: **401** when signed out, **403** for the
+wrong role. `POST /api/users` and `POST /api/sponsors` are admin-only;
+`GET /api/about` is public.
+
+Endpoints that act on "your" account take the id from `req.session.user.id`,
+never from the request body, so a caller cannot aim them at someone else.
+Covered by `tests/api-permissions.test.js`.
+
 ## Sprint one: driver sponsor applications
 
 Run `npm run db:setup` to add the sponsor and application tables to an existing
