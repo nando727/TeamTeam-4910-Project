@@ -5,9 +5,11 @@ const { createSponsor } = require('../sponsors/store');
 const { getAbout } = require('../about/store');
 const { passwordProblems } = require('../auth/password-policy');
 
+const { requireApiLogin, requireApiRole } = require('../auth/api-guard');
+
 const router = express.Router();
 
-router.post('/api/sponsors', async (req, res, next) => {
+router.post('/api/sponsors', requireApiLogin, requireApiRole('admin'), async (req, res, next) => {
   try {
     const name = (req.body.name || req.body.organizationName || '').trim();
     const contactEmail = (req.body.contactEmail || req.body.email || '').trim();
@@ -32,7 +34,7 @@ router.post('/api/sponsors', async (req, res, next) => {
   }
 });
 
-router.post('/api/users', async (req, res, next) => {
+router.post('/api/users', requireApiLogin, requireApiRole('admin'), async (req, res, next) => {
   try {
     const name = (req.body.name || '').trim();
     const email = (req.body.email || '').trim();
