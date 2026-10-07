@@ -8,6 +8,7 @@ const { createSponsor, listSponsors } = require('../sponsors/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
 const { rememberAndRedirect } = require('../auth/return-to');
+const { denyAccess } = require('../auth/deny');
 const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('../auth/setup-tokens');
 const { sendMail } = require('../mail/mailer');
 const router = express.Router();
@@ -18,7 +19,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // status, viewing sponsor status.
 router.use(async (req, res, next) => {
   if (!req.session.user) return rememberAndRedirect(req, res);
-  if (req.session.user.role !== 'admin') return res.status(403).send('Only admins can manage users and sponsors.');
+  if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
   try {
     // The session only says who signed in. Re-read the account so an admin who
     // was disabled, revoked, demoted, or deleted since then is cut off on their

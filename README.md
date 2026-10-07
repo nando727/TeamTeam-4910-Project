@@ -46,6 +46,27 @@ hand and it expires on its own. Set `LOGIN_MAX_FAILURES` and
 `LOGIN_LOCKOUT_MINUTES` in `.env` to change the policy; `LOGIN_LOCKOUT_MINUTES=1`
 makes it easy to demonstrate.
 
+## Role permissions (stories 22251, 22252, 22253)
+
+Every route group guards itself in two steps: no session sends the visitor to
+the login page, and a session with the wrong role is refused.
+
+- **No session** → `rememberAndRedirect()` from `src/auth/return-to.js` saves the
+  page they asked for and redirects to `/login`. After signing in they land back
+  on that page rather than the home page.
+- **Wrong role** → `denyAccess()` from `src/auth/deny.js` renders `views/403.ejs`
+  with a 403: a real page in the site layout naming the role the page needs and
+  the role the account has, plus a link home.
+
+Use `denyAccess(req, res, { needs: 'admin' })` rather than
+`res.status(403).send('...')` so every refusal reads the same. Pass `detail` for
+a case the role name alone does not explain, e.g. a sponsor account that is not
+linked to an organization yet.
+
+`tests/protected-routes.test.js` checks one page per route group, so a new group
+added without a guard fails there. `tests/denied-access.test.js` covers the
+wrong-role page for each role.
+
 ## Sprint one: driver sponsor applications
 
 Run `npm run db:setup` to add the sponsor and application tables to an existing

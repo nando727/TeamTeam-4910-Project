@@ -1,5 +1,6 @@
 const express = require('express');
 const { rememberAndRedirect } = require('../auth/return-to');
+const { denyAccess } = require('../auth/deny');
 const { listSponsors } = require('../sponsors/store');
 const { listDriversInScope, listPointChanges } = require('./store');
 
@@ -15,10 +16,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 router.use((req, res, next) => {
   if (!req.session.user) return rememberAndRedirect(req, res);
   if (!REPORT_ROLES.includes(req.session.user.role)) {
-    return res.status(403).send('Only sponsors and admins can run reports.');
+    return denyAccess(req, res, { needs: REPORT_ROLES });
   }
   if (req.session.user.role === 'sponsor' && !req.session.user.sponsorId) {
-    return res.status(403).send('Your account is not linked to a sponsor organization. Contact an administrator.');
+    return denyAccess(req, res, {
+      detail: 'Your account is not linked to a sponsor organization yet, so there are no drivers to report on. An administrator can link it.',
+    });
   }
   next();
 });
