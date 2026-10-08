@@ -82,3 +82,20 @@ CREATE TABLE IF NOT EXISTS password_resets (
   INDEX idx_password_resets_user (user_id),
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
+
+-- Point history (see migration 009). driver_sponsors.point_balance is the
+-- current total; every award or deduction writes a row here and updates it.
+CREATE TABLE IF NOT EXISTS point_transactions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  driver_id INT NOT NULL,
+  sponsor_id INT NOT NULL,
+  changed_by_user_id INT NULL,
+  points_change INT NOT NULL,
+  reason VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_point_tx_driver_date (driver_id, created_at),
+  INDEX idx_point_tx_sponsor_date (sponsor_id, created_at),
+  FOREIGN KEY (driver_id) REFERENCES users(id),
+  FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
+  FOREIGN KEY (changed_by_user_id) REFERENCES users(id)
+);

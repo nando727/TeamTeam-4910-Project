@@ -1,0 +1,36 @@
+<%- include('../partials/head', { title: 'My point history' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Your points</span>
+      <h1>My point history</h1>
+      <p class="lede">All your recorded point changes, newest first. Positive amounts add points; negative amounts deduct points.</p>
+      <a class="button-link" href="/driver/programs">My sponsor and current balance</a>
+    </div>
+    <% if (rows.length === 0) { %>
+      <p class="info" role="status">You have no recorded point changes yet.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Date (UTC)</th>
+              <th scope="col">Sponsor</th>
+              <th scope="col">Point change</th>
+              <th scope="col">Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% rows.forEach(row => { %>
+              <tr>
+                <td class="nowrap"><%= formatStamp(row.changedAt) %></td>
+                <td><%= row.sponsorName %></td>
+                <td><span class="delta <%= row.pointsChange < 0 ? 'delta--neg' : 'delta--pos' %>"><%= row.pointsChange > 0 ? '+' : '' %><%= Number(row.pointsChange).toLocaleString('en-US') %></span></td>
+                <td><%= row.reason && row.reason.trim() ? row.reason : 'No reason was recorded.' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+<%- include('../partials/foot') %>

@@ -1,0 +1,137 @@
+# Tests every push to master, then deploys it to Elastic Beanstalk.
+# Also runnable by hand: Actions tab -> "Test and deploy" -> Run workflow.
+#
+# Not triggered by pull requests, so code from a fork can never reach the AWS
+# secrets. Database settings live on the Beanstalk environment, not here.
+name: Test and deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time. A newer run waits for the one in progress instead of
+# cancelling it, so Beanstalk never receives two updates at once. If several
+# pushes pile up while one deploys, GitHub keeps only the newest waiting run.
+concurrency:
+  group: deploy-team13-gooddriver
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  EB_APPLICATION: gooddriver
+  EB_ENVIRONMENT: team13-gooddriver
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The suite mocks the database, so no credentials are needed here.
+      - name: Run the full test suite
+        run: npm run test-run
+
+  deploy:
+    name: Deploy to Elastic Beanstalk
+    needs: test
+    # "Run workflow" can be started from any branch; only master is deployed.
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      # git archive packs only files tracked in the commit. .env is gitignored,
+      # so it cannot be in the bundle; the check below fails the run if an env
+      # file is ever committed by mistake.
+      - name: Build the deploy bundle from tracked files only
+        run: |
+          git archive --format=zip --output=deploy.zip HEAD
+          leaked=$(unzip -Z1 deploy.zip | grep -E '(^|/)\.env($|\.)' | grep -vE '(^|/)\.env\.example$' || true)
+          if [ -n "$leaked" ]; then
+            echo "::error::Refusing to deploy: env file(s) found in the bundle: $leaked"
+            exit 1
+          fi
+          echo "Bundle: $(unzip -Z1 deploy.zip | wc -l) files, $(du -h deploy.zip | cut -f1)"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Upload the bundle and register an application version
+        id: version
+        run: |
+          # Unique per run and per re-run, and traceable to the commit.
+          VERSION="gh-${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          # Beanstalk's own bucket for this account and region (created on first use).
+          BUCKET=$(aws elasticbeanstalk create-storage-location --query S3Bucket --output text)
+          echo "::add-mask::$BUCKET"
+          KEY="$EB_APPLICATION/$VERSION.zip"
+          aws s3 cp deploy.zip "s3://$BUCKET/$KEY" --only-show-errors
+          aws elasticbeanstalk create-application-version \
+            --application-name "$EB_APPLICATION" \
+            --version-label "$VERSION" \
+            --description "$(git log -1 --format=%s | cut -c1-200)" \
+            --source-bundle "S3Bucket=$BUCKET,S3Key=$KEY" \
+            --no-auto-create-application > /dev/null
+          echo "label=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Registered application version $VERSION"
+
+      - name: Deploy the version to the environment
+        env:
+          VERSION: ${{ steps.version.outputs.label }}
+        run: |
+          aws elasticbeanstalk update-environment \
+            --application-name "$EB_APPLICATION" \
+            --environment-name "$EB_ENVIRONMENT" \
+            --version-label "$VERSION" > /dev/null
+          echo "Update started. Waiting for the environment to settle..."
+          for attempt in $(seq 1 80); do
+            sleep 15
+            read -r STATUS HEALTH LABEL < <(aws elasticbeanstalk describe-environments \
+              --application-name "$EB_APPLICATION" --environment-names "$EB_ENVIRONMENT" \
+              --query 'Environments[0].[Status,Health,VersionLabel]' --output text)
+            echo "[$attempt] status=$STATUS health=$HEALTH version=$LABEL"
+            if [ "$STATUS" = "Ready" ]; then break; fi
+          done
+          if [ "$STATUS" != "Ready" ]; then
+            echo "::error::The environment did not finish updating in time (status: $STATUS)."
+            exit 1
+          fi
+          # Beanstalk rolls back to the previous version when a deploy fails.
+          if [ "$LABEL" != "$VERSION" ]; then
+            echo "::error::Deploy failed: the environment is running $LABEL, not $VERSION. Recent events:"
+            aws elasticbeanstalk describe-events --environment-name "$EB_ENVIRONMENT" \
+              --max-items 15 --query 'Events[].[EventDate,Severity,Message]' --output text
+            exit 1
+          fi
+          echo "Environment is Ready on $VERSION (health: $HEALTH)"
+
+      # /about is public and reads from the database, so a 200 here means the
+      # new code is serving requests and can reach RDS.
+      - name: Smoke test the live About page
+        run: |
+          CNAME=$(aws elasticbeanstalk describe-environments \
+            --application-name "$EB_APPLICATION" --environment-names "$EB_ENVIRONMENT" \
+            --query 'Environments[0].CNAME' --output text)
+          curl --fail --silent --show-error --retry 6 --retry-delay 10 --retry-all-errors \
+            --max-time 20 --output /dev/null --write-out "GET /about -> HTTP %{http_code}\n" \
+            "http://$CNAME/about"

@@ -1,0 +1,100 @@
+<%- include('../partials/head', { title: 'Driver point report' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Reports</span>
+      <h1>Driver Point Tracking</h1>
+      <p class="lede">Every point award and deduction<%= scopeSponsor ? ` for ${scopeSponsor}` : ' across all sponsors' %>. Filter by driver or date, then download the same view as a CSV.</p>
+    </div>
+
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+    <form class="filters" method="GET" action="/reports/points">
+      <% if (isAdmin) { %>
+        <div class="filters__field">
+          <label for="sponsor">Sponsor</label>
+          <select id="sponsor" name="sponsor">
+            <option value="all">All sponsors</option>
+            <% sponsors.forEach(sponsor => { %>
+              <option value="<%= sponsor.id %>" <%= filters.sponsorId === sponsor.id ? 'selected' : '' %>><%= sponsor.name %></option>
+            <% }); %>
+          </select>
+        </div>
+      <% } %>
+      <div class="filters__field">
+        <label for="driver">Driver</label>
+        <select id="driver" name="driver">
+          <option value="all">All drivers</option>
+          <% drivers.forEach(driver => { %>
+            <option value="<%= driver.id %>" <%= filters.driverId === driver.id ? 'selected' : '' %>><%= driver.displayName %><%= driver.displayName !== driver.username ? ` (${driver.username})` : '' %></option>
+          <% }); %>
+        </select>
+      </div>
+      <div class="filters__field">
+        <label for="from">From</label>
+        <input id="from" name="from" type="date" value="<%= filters.from || '' %>" max="<%= today %>">
+      </div>
+      <div class="filters__field">
+        <label for="to">To</label>
+        <input id="to" name="to" type="date" value="<%= filters.to || '' %>" max="<%= today %>">
+      </div>
+      <div class="filters__actions">
+        <button type="submit">Apply</button>
+        <a class="button-link" href="/reports/points">Clear</a>
+      </div>
+    </form>
+    <p class="quick-ranges">
+      <span class="muted small">Quick ranges:</span>
+      <% quickRanges.forEach(range => { %>
+        <a class="chip<%= range.active ? ' is-active' : '' %>" href="<%= range.href %>"<%- range.active ? ' aria-current="true"' : '' %>><%= range.label %></a>
+      <% }); %>
+    </p>
+
+    <% if (totals.length) { %>
+      <h2 class="section-title">Current totals</h2>
+      <div class="totals">
+        <% totals.forEach(driver => { %>
+          <div class="total">
+            <span class="total__label"><%= driver.displayName %><% if (isAdmin) { %> <span class="muted small">· <%= driver.sponsorName %></span><% } %></span>
+            <span class="total__value"><%= Number(driver.balance).toLocaleString('en-US') %> pts</span>
+          </div>
+        <% }); %>
+      </div>
+    <% } %>
+
+    <div class="report-bar">
+      <span class="muted small"><%= rows.length %> point change<%= rows.length === 1 ? '' : 's' %><%= rangeLabel %></span>
+      <a class="button-link button--small" href="<%= csvHref %>">Download CSV</a>
+    </div>
+
+    <% if (rows.length === 0) { %>
+      <p class="info" role="status">No point activity<%= rangeLabel %> for these filters. <a href="/reports/points">Clear the filters</a> to see everything.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Date (UTC)</th>
+              <th scope="col">Driver</th>
+              <th scope="col">Change</th>
+              <th scope="col">Sponsor</th>
+              <th scope="col">Made by</th>
+              <th scope="col">Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% rows.forEach(row => { %>
+              <tr>
+                <td class="nowrap"><%= formatStamp(row.changedAt) %></td>
+                <td class="cell-strong"><%= row.driverName %></td>
+                <td><span class="delta <%= row.pointsChange < 0 ? 'delta--neg' : 'delta--pos' %>"><%= row.pointsChange > 0 ? '+' : '' %><%= Number(row.pointsChange).toLocaleString('en-US') %></span></td>
+                <td><%= row.sponsorName %></td>
+                <td><%= row.changedBy || 'system' %></td>
+                <td><%= row.reason %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+<%- include('../partials/foot') %>

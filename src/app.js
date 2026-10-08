@@ -5,9 +5,11 @@ const session = require('express-session');
 const authRoutes = require('./auth/routes');
 const { sessionTimeout } = require('./auth/session-timeout');
 const { rememberAndRedirect } = require('./auth/return-to');
+const { denyAccess } = require('./auth/deny');
 const apiRoutes = require('./routes/api');
 const sponsorRoutes = require('./sponsors/routes');
 const driverRoutes = require('./driver/routes');
+const reportRoutes = require('./reports/routes');
 const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
 const setupRoutes = require('./setup/routes');
@@ -60,6 +62,7 @@ app.use(authRoutes);
 app.use(apiRoutes);
 app.use('/sponsors', sponsorRoutes);
 app.use('/driver', driverRoutes);
+app.use('/reports', reportRoutes);
 app.use(accountRoutes);
 app.use('/admin', adminRoutes);
 // Story 22255: claiming a new account. No login required; the link is the credential.
@@ -76,13 +79,13 @@ const HOME_VIEWS = { driver: 'driver/home', sponsor: 'sponsor/home', admin: 'adm
 
 
 function requireSponsor(req, res, next) {
-  if (req.session.user.role !== 'sponsor') return res.status(403).send('Sponsors only.');
+  if (req.session.user.role !== 'sponsor') return denyAccess(req, res, { needs: 'sponsor' });
   next();
 }
 
 app.get('/', requireLogin, async (req, res, next) => {
   const view = HOME_VIEWS[req.session.user.role];
-  if (!view) return res.status(403).send('Your account has no homepage. Contact an admin.');
+  if (!view) return denyAccess(req, res, { detail: 'Your account has no home page yet. An administrator needs to set its role.' });
 
   const locals = { user: req.session.user };
   if (req.session.user.role === 'sponsor') {
