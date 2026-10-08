@@ -1,0 +1,32 @@
+<%- include('../partials/head', { title: 'Edit Organization' }) %>
+  <section class="hero">
+    <%- include('../partials/shield') %>
+    <div>
+      <h1>Edit <%= organization.name %></h1>
+      <p>Update your organization's contact details.</p>
+    </div>
+  </section>
+
+  <% if (error) { %>
+    <p class="error"><%= error %></p>
+  <% } %>
+
+  <form method="POST" action="/organization/edit">
+    <input type="hidden" name="token" value="<%= formToken %>">
+
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="<%= values.name %>" maxlength="255" required>
+
+    <label for="contact_email">Contact email</label>
+    <input type="email" id="contact_email" name="contact_email" value="<%= values.contact_email %>" maxlength="255" required>
+
+    <label for="contact_phone">Contact phone</label>
+    <input type="text" id="contact_phone" name="contact_phone" value="<%= values.contact_phone %>" maxlength="32">
+
+    <label for="address">Address</label>
+    <input type="text" id="address" name="address" value="<%= values.address %>" maxlength="255" required>
+
+    <button type="submit">Save</button>
+    <a href="/organization">Cancel</a>
+  </form>
+<%- include('../partials/foot') %>

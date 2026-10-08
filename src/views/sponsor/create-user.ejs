@@ -1,0 +1,42 @@
+<%- include('../partials/head', { title: 'Add a Sponsor User' }) %>
+  <section class="hero">
+    <%- include('../partials/shield') %>
+    <div>
+      <h1>Add a Sponsor User</h1>
+      <p>Create another sponsor account for your organization.</p>
+    </div>
+  </section>
+
+  <% if (error) { %>
+    <p class="error"><%= error %></p>
+  <% } %>
+
+  <% if (created) { %>
+    <p class="success">Account for <%= created.username %> was created.</p>
+    <% if (setupLink) { %>
+      <p>A setup email was sent to <%= created.email %>. Setup link (for reference):<br>
+      <code><%= setupLink %></code></p>
+    <% } %>
+  <% } %>
+
+  <form method="POST" action="/sponsor-users/create">
+    <input type="hidden" name="token" value="<%= token %>">
+
+    <label for="name">Full name</label>
+    <input type="text" id="name" name="name" value="<%= values.name %>" maxlength="255" required>
+
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" value="<%= values.email %>" maxlength="255" required>
+
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" value="<%= values.username %>" maxlength="64" required>
+
+    <label for="password">Password (optional — leave blank to email a setup link instead)</label>
+    <input type="password" id="password" name="password" maxlength="<%= maxLength %>">
+    <p class="hint">Must be at least 8 characters, with at least one Uppercase character, one number, and one special character.</p>
+
+    <button type="submit">Create account</button>
+  </form>
+
+  <p><a href="/">&larr; Back to home</a></p>
+<%- include('../partials/foot') %>
