@@ -141,6 +141,74 @@ app.get('/organization', requireLogin, requireSponsor, async (req, res, next) =>
   } catch (err) { next(err); }
 });
 
+function renderOrganizationEdit(req, res, organization, values, error = null, status = 200) {
+  return res.status(status).render('sponsor/organization-edit', {
+    organization, values, error, formToken: formToken(req),
+  });
+}
+
+app.get('/organization/edit', requireLogin, requireSponsor, async (req, res, next) => {
+  try {
+    const rows = await db.query(
+      'SELECT id, name, contact_email, contact_phone, address, status FROM sponsors WHERE id = ?',
+      [req.session.user.sponsorId]
+    );
+    const organization = rows[0];
+    if (!organization) return res.status(404).send('Organization not found.');
+    renderOrganizationEdit(req, res, organization, {
+      name: organization.name,
+      contact_email: organization.contact_email,
+      contact_phone: organization.contact_phone || '',
+      address: organization.address,
+    });
+  } catch (err) { next(err); }
+});
+
+app.post('/organization/edit', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const read = (key) => (typeof req.body[key] === 'string' ? req.body[key].trim() : '');
+  const values = {
+    name: read('name'),
+    contact_email: read('contact_email'),
+    contact_phone: read('contact_phone'),
+    address: read('address'),
+  };
+
+  let organization;
+  try {
+    const rows = await db.query(
+      'SELECT id, name, contact_email, contact_phone, address, status FROM sponsors WHERE id = ?',
+      [req.session.user.sponsorId]
+    );
+    organization = rows[0];
+    if (!organization) return res.status(404).send('Organization not found.');
+  } catch (err) { return next(err); }
+
+  if (
+    !values.name || values.name.length > 255 ||
+    !values.contact_email || values.contact_email.length > 255 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.contact_email) ||
+    values.contact_phone.length > 32 ||
+    !values.address || values.address.length > 255
+  ) {
+    return renderOrganizationEdit(req, res, organization, values,
+      'Enter a name, a valid contact email, and an address (phone is optional).', 400);
+  }
+
+  try {
+    await db.query(
+      'UPDATE sponsors SET name = ?, contact_email = ?, contact_phone = ?, address = ? WHERE id = ?',
+      [values.name, values.contact_email, values.contact_phone || null, values.address, req.session.user.sponsorId]
+    );
+    res.redirect('/organization');
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return renderOrganizationEdit(req, res, organization, values,
+        'That contact email is already in use by another organization.', 409);
+    }
+    next(err);
+  }
+});
+
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).send('Something went wrong.');
