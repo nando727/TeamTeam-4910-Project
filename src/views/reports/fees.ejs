@@ -1,0 +1,79 @@
+<%- include('../partials/head', { title: 'Sponsor fees' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Reports</span>
+      <h1>Sponsor fees</h1>
+      <p class="lede">Each sponsor owes <%= feePercent %>% of what its drivers purchased with points during the month. Pick a month, then download the figures as a CSV for billing.</p>
+      <dl class="report-summary" aria-label="Report covers">
+        <div class="report-summary__item"><dt>Month</dt><dd><%= monthLabel %></dd></div>
+        <div class="report-summary__item"><dt>Fee rate</dt><dd><%= feePercent %>% of purchases</dd></div>
+        <div class="report-summary__item"><dt>Sponsors</dt><dd><%= rows.length %></dd></div>
+      </dl>
+    </div>
+
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+    <form class="filters" method="GET" action="/reports/fees" data-report-form>
+      <div class="filters__field">
+        <label for="month">Month</label>
+        <input id="month" name="month" type="month" value="<%= month %>" required>
+      </div>
+      <div class="filters__actions">
+        <button type="submit">Apply</button>
+      </div>
+    </form>
+    <p class="quick-ranges">
+      <span class="muted small">Months with purchases:</span>
+      <% months.forEach(m => { %>
+        <a class="chip<%= m.active ? ' is-active' : '' %>" href="/reports/fees?month=<%= m.value %>" data-busy="Generating report…"><%= m.label %></a>
+      <% }); %>
+    </p>
+    <p class="report-status" id="report-status" role="status" aria-live="polite" hidden>
+      <span class="spinner" aria-hidden="true"></span> <span class="report-status__text">Generating report…</span>
+    </p>
+
+    <div class="report-bar">
+      <span class="muted small"><%= sum.purchases %> purchase<%= sum.purchases === 1 ? '' : 's' %> in <%= monthLabel %>, <%= dollars(sum.totalCents) %> total, <%= dollars(sum.feeCents) %> in fees</span>
+      <a class="button-link button--small" href="<%= csvHref %>" data-busy="Preparing the CSV download…" data-busy-reset="4000">Download CSV</a>
+    </div>
+
+    <% if (rows.length === 0) { %>
+      <p class="info" role="status">There are no sponsors yet, so there is nothing to bill.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Sponsor</th>
+              <th scope="col">Status</th>
+              <th scope="col" class="num">Purchases</th>
+              <th scope="col" class="num">Purchase total</th>
+              <th scope="col" class="num">Fee owed (<%= feePercent %>%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% rows.forEach(row => { %>
+              <tr<%- row.purchases === 0 ? ' class="is-muted"' : '' %>>
+                <td class="cell-strong"><%= row.name %></td>
+                <td><span class="status-badge status-<%= row.status %>"><%= row.status %></span></td>
+                <td class="num"><%= row.purchases %></td>
+                <td class="num"><%= dollars(row.totalCents) %></td>
+                <td class="num cell-strong"><%= dollars(row.feeCents) %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row" colspan="2">All sponsors</th>
+              <td class="num"><%= sum.purchases %></td>
+              <td class="num"><%= dollars(sum.totalCents) %></td>
+              <td class="num cell-strong"><%= dollars(sum.feeCents) %></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="hint">A sponsor with no purchases in the month owes nothing and is listed for completeness. Fees are 1% of the purchase total, rounded to the cent.</p>
+    <% } %>
+  </section>
+  <script src="/report.js" defer></script>
+<%- include('../partials/foot') %>

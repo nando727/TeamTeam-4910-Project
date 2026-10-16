@@ -99,3 +99,19 @@ CREATE TABLE IF NOT EXISTS point_transactions (
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
   FOREIGN KEY (changed_by_user_id) REFERENCES users(id)
 );
+
+-- Driver purchases made with points (see migration 010). The admin fee report
+-- bills each sponsor 1% of its drivers' purchases per month, so the catalog and
+-- redemption flow must insert one row here per completed purchase.
+CREATE TABLE IF NOT EXISTS purchases (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  driver_id INT NOT NULL,
+  sponsor_id INT NOT NULL,
+  description VARCHAR(255) NOT NULL,
+  amount_cents INT NOT NULL,
+  points_spent INT NOT NULL,
+  purchased_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_purchases_sponsor_date (sponsor_id, purchased_at),
+  FOREIGN KEY (driver_id) REFERENCES users(id),
+  FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
+);

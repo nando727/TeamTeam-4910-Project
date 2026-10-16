@@ -189,10 +189,36 @@ current total is still `driver_sponsors.point_balance`, so anything that awards
 or deducts points must insert a `point_transactions` row and update that
 balance in the same database transaction. No page awards points yet.
 
+The report header lists the filters in effect (sponsor, driver, dates, sort,
+result count). Columns sort by clicking their headers, results page at 25 rows,
+and a chart above the table shows net points per day (bars) with a running
+total (line) for the filtered range. The CSV always exports every filtered row
+in the on-screen sort order, not just the current page. When a range has no
+changes the page says so explicitly rather than showing an empty table.
+
 Sample data: `npm run db:seed:points` creates a second demo driver
 (`driver2` / `DriverPass2!`, approved under Demo Sponsor) and inserts point
 changes for both demo drivers over the last 60 days. It skips drivers that
 already have history, so it is safe to rerun.
+
+## Sponsor fee report and the purchases table (story AD-11)
+
+Admins open **Reports -> Sponsor fees** (`/reports/fees`) to see, for one
+calendar month, each sponsor's driver purchases and the **1% fee** it owes,
+rounded to the cent, with a CSV download for billing.
+
+The figures come from the `purchases` table (migration 010): one row per
+completed purchase with `driver_id`, `sponsor_id`, `description`,
+`amount_cents` (dollar value in cents, so sums are exact), `points_spent`, and
+`purchased_at`. **No catalog or redemption page exists yet.** Whoever builds
+driver redemption must insert a `purchases` row for every completed purchase,
+in the same database transaction as the matching negative `point_transactions`
+row and the `driver_sponsors.point_balance` update, so the fee report, the point
+report, and the driver's balance all agree.
+
+Sample data: `npm run db:seed:purchases` adds purchases for the demo drivers
+under Demo Sponsor spread over the last three months. It skips a sponsor that
+already has purchases, so it is safe to rerun.
 
 ## Deployment (GitHub Actions to AWS Elastic Beanstalk)
 

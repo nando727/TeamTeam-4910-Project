@@ -36,7 +36,7 @@ beforeEach(() => {
     if (sql.startsWith('INSERT INTO login_attempts')) return [];
     // The admin guard re-reads the account on every admin request, so a
     // disabled or demoted admin is cut off mid-session.
-    if (sql.startsWith('SELECT id, name, email, username, role, status FROM users WHERE id')) {
+    if (sql.includes('FROM users WHERE id')) {
       const [id] = params;
       const entry = Object.entries(ACCOUNTS).find(([, a]) => a.id === id);
       if (!entry) return [];

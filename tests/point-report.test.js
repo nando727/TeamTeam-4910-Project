@@ -55,8 +55,9 @@ beforeEach(() => {
     if (sql.startsWith('SELECT ds.driver_id AS id')) {
       return sql.includes('WHERE ds.sponsor_id = ?') ? drivers.filter(d => d.sponsorId === params[0]) : drivers;
     }
-    if (sql.startsWith('SELECT t.id')) {
-      // Apply the same conditions the SQL carries, in parameter order.
+    // The list, the count, and the chart totals share one WHERE clause; apply
+    // the same conditions the SQL carries, in parameter order.
+    const filtered = () => {
       let rows = changes;
       let i = 0;
       if (sql.includes('t.sponsor_id = ?')) { const v = params[i++]; rows = rows.filter(r => r.sponsorId === v); }
@@ -64,10 +65,37 @@ beforeEach(() => {
       if (sql.includes('t.created_at >= ?')) { const v = params[i++]; rows = rows.filter(r => r.changedAt.toISOString().slice(0, 10) >= v); }
       if (sql.includes('t.created_at < DATE_ADD(?, INTERVAL 1 DAY)')) { const v = params[i++]; rows = rows.filter(r => r.changedAt.toISOString().slice(0, 10) <= v); }
       expect(params).toHaveLength(i);
-      return rows.map(r => ({
-        id: r.id, driverId: r.driverId, driverName: driverRow(r.driverId).displayName, driverUsername: driverRow(r.driverId).username,
-        pointsChange: r.pointsChange, reason: r.reason, changedAt: r.changedAt, sponsorName: sponsorName(r.sponsorId), changedBy: r.changedBy,
-      }));
+      return rows;
+    };
+    const shape = r => ({
+      id: r.id, driverId: r.driverId, driverName: driverRow(r.driverId).displayName, driverUsername: driverRow(r.driverId).username,
+      pointsChange: r.pointsChange, reason: r.reason, changedAt: r.changedAt, sponsorName: sponsorName(r.sponsorId), changedBy: r.changedBy,
+    });
+    if (sql.startsWith('SELECT t.id')) {
+      const order = sql.match(/ORDER BY (\S+) (ASC|DESC), t\.id DESC/);
+      expect(order).not.toBeNull();
+      const key = { 't.created_at': 'changedAt', driverName: 'driverName', 't.points_change': 'pointsChange', 's.name': 'sponsorName', 'b.username': 'changedBy', 't.reason': 'reason' }[order[1]];
+      expect(key).toBeDefined();
+      let rows = filtered().map(shape).sort((a, b) => {
+        const av = a[key] ?? ''; const bv = b[key] ?? '';
+        const cmp = av instanceof Date ? av - bv : typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
+        return (order[2] === 'ASC' ? cmp : -cmp) || b.id - a.id;
+      });
+      const paging = sql.match(/LIMIT (\d+) OFFSET (\d+)$/);
+      if (paging) rows = rows.slice(Number(paging[2]), Number(paging[2]) + Number(paging[1]));
+      else expect(sql).not.toContain('LIMIT');
+      return rows;
+    }
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM point_transactions t')) return [{ total: filtered().length }];
+    if (sql.startsWith("SELECT DATE_FORMAT(t.created_at, '%Y-%m-%d') AS day")) {
+      const days = new Map();
+      for (const r of filtered()) {
+        const day = r.changedAt.toISOString().slice(0, 10);
+        const d = days.get(day) || { day, awarded: 0, deducted: 0, net: 0 };
+        if (r.pointsChange > 0) d.awarded += r.pointsChange; else d.deducted += r.pointsChange;
+        d.net += r.pointsChange; days.set(day, d);
+      }
+      return [...days.values()].sort((a, b) => a.day.localeCompare(b.day));
     }
     if (sql.includes('FROM sponsor_applications')) return [];
     throw new Error(`Unexpected query: ${sql}`);
@@ -170,6 +198,7 @@ describe('AD-18 / AD-21: running the report', () => {
     try {
       const page = await agent.get('/reports/points').expect(200);
       expect(page.text).toContain('No point activity for these filters.');
+      expect(page.text).toContain('The report ran successfully and found no point changes');
       expect(page.text).not.toContain('<tbody>');
       expect(page.text).toContain('0 point changes');
     } finally {
@@ -253,10 +282,10 @@ describe('AD-20: date range', () => {
     expect(page.text).toContain('type="date"');
     const today = new Date().toISOString().slice(0, 10);
     const week = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
-    expect(page.text).toContain(`href="/reports/points?driver=5&amp;from=${week}&amp;to=${today}"`);
+    expect(page.text).toContain(`href="/reports/points?driver=5&amp;from=${week}&amp;to=${today}&amp;sort=date&amp;dir=desc"`);
     expect(page.text).toContain('Last 30 days');
     expect(page.text).toContain('Last 90 days');
-    expect(page.text).toContain('chip is-active" href="/reports/points?driver=5"');
+    expect(page.text).toContain('chip is-active" href="/reports/points?driver=5&amp;sort=date&amp;dir=desc"');
   });
 });
 
@@ -278,7 +307,7 @@ describe('AD-22: CSV download', () => {
   test('uses exactly the filters that are on screen', async () => {
     const agent = await login('sponsor1');
     const page = await agent.get('/reports/points?driver=5&from=2026-09-30&to=2026-10-03').expect(200);
-    expect(page.text).toContain('href="/reports/points.csv?driver=5&amp;from=2026-09-30&amp;to=2026-10-03"');
+    expect(page.text).toContain('href="/reports/points.csv?driver=5&amp;from=2026-09-30&amp;to=2026-10-03&amp;sort=date&amp;dir=desc"');
     const res = await agent.get('/reports/points.csv?driver=5&from=2026-09-30&to=2026-10-03').expect(200);
     expect(res.headers['content-disposition']).toContain('point-report-from-2026-09-30-to-2026-10-03.csv');
     const lines = res.text.replace(/^﻿/, '').trim().split('\r\n');
@@ -304,5 +333,166 @@ describe('AD-22: CSV download', () => {
     const agent = await login('sponsor1');
     const res = await agent.get('/reports/points.csv?from=2026-09-01&to=2026-09-15').expect(200);
     expect(res.text.replace(/^﻿/, '').trim().split('\r\n')).toHaveLength(1);
+  });
+});
+
+// A large fixture for paging: 45 changes for driver1 on distinct days.
+function withManyChanges(run) {
+  const saved = changes.splice(0, changes.length);
+  for (let i = 0; i < 45; i++) {
+    changes.push({ id: 100 + i, driverId: 1, sponsorId: 1, pointsChange: i % 4 === 0 ? -10 : 10 + i, reason: `Change ${i}`,
+      changedAt: new Date(Date.UTC(2026, 6, 1 + i, 12)), changedBy: 'sponsor1' });
+  }
+  return run().finally(() => { changes.splice(0, changes.length, ...saved); });
+}
+
+describe('AD-59: sorting', () => {
+  test('defaults to newest first and the date header shows it', async () => {
+    const agent = await login('sponsor1');
+    const page = await agent.get('/reports/points').expect(200);
+    expect(changeQuery()[0]).toContain('ORDER BY t.created_at DESC');
+    expect(page.text).toMatch(/aria-sort="descending"[^<]*<a class="sort-link is-active" href="[^"]*sort=date&amp;dir=asc"/);
+    expect(page.text).toContain('Sorted by</dt><dd>date, descending</dd>');
+  });
+
+  test('sorting by change ascending puts the biggest deduction first and keeps the filters', async () => {
+    const agent = await login('sponsor1');
+    const page = await agent.get('/reports/points?driver=1&sort=change&dir=asc').expect(200);
+    expect(changeQuery()[0]).toContain('ORDER BY t.points_change ASC');
+    expect(changeQuery()[1]).toEqual([1, 1]);
+    const firstRow = page.text.match(/<tbody>[\s\S]*?<\/tr>/)[0];
+    expect(firstRow).toContain('delta--neg">-40<');
+    // Clicking the active header flips it; other headers start ascending; all keep driver=1.
+    expect(page.text).toContain('href="/reports/points?driver=1&amp;sort=change&amp;dir=desc"');
+    expect(page.text).toContain('href="/reports/points?driver=1&amp;sort=reason&amp;dir=asc"');
+    expect(page.text).toContain('href="/reports/points?driver=1&amp;sort=date&amp;dir=desc"');
+    expect(page.text).toContain('Sorted by</dt><dd>point change, ascending</dd>');
+  });
+
+  test.each(['driver', 'sponsor', 'madeBy', 'reason'])('sorting by %s maps to an allowlisted column', async (key) => {
+    const agent = await login('admin1');
+    await agent.get(`/reports/points?sort=${key}&dir=desc`).expect(200);
+    const sql = changeQuery()[0];
+    expect(sql).toMatch(/ORDER BY (driverName|s\.name|b\.username|t\.reason) DESC/);
+    expect(sql).not.toContain(key === 'madeBy' ? 'madeBy' : 'never');
+  });
+
+  test('unknown sort keys and directions fall back to the default instead of reaching SQL', async () => {
+    const agent = await login('sponsor1');
+    await agent.get('/reports/points?sort=1;DROP%20TABLE&dir=sideways').expect(200);
+    expect(changeQuery()[0]).toContain('ORDER BY t.created_at DESC');
+    expect(changeQuery()[0]).not.toContain('DROP');
+  });
+
+  test('the CSV uses the on-screen sort', async () => {
+    const agent = await login('sponsor1');
+    const res = await agent.get('/reports/points.csv?sort=change&dir=asc').expect(200);
+    const lines = res.text.replace(/^\uFEFF/, '').trim().split('\r\n');
+    expect(lines[1]).toContain(',-40,');
+    expect(lines[4]).toContain(',100,');
+    expect(changeQuery()[0]).toContain('ORDER BY t.points_change ASC');
+  });
+});
+
+describe('AD-60: pagination', () => {
+  test('25 rows per page with a count, previous and next, and the filters kept', () => withManyChanges(async () => {
+    const agent = await login('sponsor1');
+    const first = await agent.get('/reports/points?driver=1&sort=date&dir=asc').expect(200);
+    expect(rowsOn(first)).toBe(25);
+    expect(first.text).toContain('Showing 1 to 25 of 45 point changes');
+    expect(first.text).toContain('Page 1 of 2');
+    expect(first.text).toContain('href="/reports/points?driver=1&amp;sort=date&amp;dir=asc&amp;page=2"');
+    expect(first.text).toContain('is-disabled" aria-disabled="true">&larr; Previous');
+    expect(first.text).toContain('Change 0</td>');
+    expect(changeQuery()[0]).toMatch(/LIMIT 25 OFFSET 0$/);
+
+    const second = await agent.get('/reports/points?driver=1&sort=date&dir=asc&page=2').expect(200);
+    expect(rowsOn(second)).toBe(20);
+    expect(second.text).toContain('Showing 26 to 45 of 45');
+    expect(second.text).toContain('Change 25</td>');
+    expect(second.text).toContain('href="/reports/points?driver=1&amp;sort=date&amp;dir=asc"');
+    expect(changeQuery()[0]).toMatch(/LIMIT 25 OFFSET 25$/);
+  }));
+
+  test('a page past the end clamps to the last page, and sort links reset to page 1', () => withManyChanges(async () => {
+    const agent = await login('sponsor1');
+    const page = await agent.get('/reports/points?page=99').expect(200);
+    expect(page.text).toContain('Page 2 of 2');
+    expect(page.text).toContain('href="/reports/points?sort=change&amp;dir=asc"');
+    expect(page.text).not.toContain('page=99');
+  }));
+
+  test('the CSV, the totals, and the chart cover every filtered row, not one page', () => withManyChanges(async () => {
+    const agent = await login('sponsor1');
+    const page = await agent.get('/reports/points?page=2').expect(200);
+    expect(page.text).toContain('Download CSV (all 45)');
+    expect(page.text).toContain('Results</dt><dd>45 changes</dd>');
+    expect((page.text.match(/<rect class="chart__bar/g) || []).length).toBe(45);
+    const res = await agent.get('/reports/points.csv').expect(200);
+    expect(res.text.replace(/^\uFEFF/, '').trim().split('\r\n')).toHaveLength(46);
+    expect(changeQuery()[0]).not.toContain('LIMIT');
+  }));
+
+  test('a single page shows no pager', async () => {
+    const agent = await login('sponsor1');
+    const page = await agent.get('/reports/points').expect(200);
+    expect(page.text).toContain('Showing 1 to 4 of 4 point changes');
+    expect(page.text).not.toContain('class="pager"');
+  });
+});
+
+describe('AD-23: chart', () => {
+  test('an inline SVG with one bar per day in the range, a running-total line, and a legend', async () => {
+    const agent = await login('sponsor1');
+    const page = await agent.get('/reports/points?from=2026-09-30&to=2026-10-04').expect(200);
+    expect(page.text).toContain('<svg class="chart__svg"');
+    // Three changes in five days: three bars (zero days draw nothing), one negative.
+    expect((page.text.match(/<rect class="chart__bar/g) || []).length).toBe(3);
+    expect((page.text.match(/chart__bar--neg/g) || []).length).toBe(1);
+    expect(page.text).toContain('<polyline class="chart__line"');
+    expect(page.text).toContain('Running total in range (ends at +50)');
+    expect(page.text).toContain('Net awarded per day');
+    expect(page.text).not.toContain('<script src="https://');
+  });
+
+  test('a long range groups by week', async () => {
+    const agent = await login('admin1');
+    const page = await agent.get('/reports/points?from=2026-01-01&to=2026-10-04').expect(200);
+    expect(page.text).toContain('Net awarded per week');
+    expect(page.text).toMatch(/week of 2026-\d\d-\d\d: net/);
+  });
+
+  test('no chart is drawn when there is nothing to plot', async () => {
+    const agent = await login('sponsor1');
+    const page = await agent.get('/reports/points?from=2026-09-01&to=2026-09-15').expect(200);
+    expect(page.text).not.toContain('<svg class="chart__svg"');
+    expect(page.text).toContain('No point activity from 2026-09-01 to 2026-09-15 for these filters.');
+  });
+});
+
+describe('AD-62 / AD-61: filter summary and loading indicator', () => {
+  test('the header names the sponsor, driver, dates, sort, and count in effect', async () => {
+    const agent = await login('admin1');
+    const page = await agent.get('/reports/points?sponsor=1&driver=5&from=2026-09-30&to=2026-10-03&sort=change&dir=desc').expect(200);
+    expect(page.text).toContain('Sponsor</dt><dd>Demo Sponsor</dd>');
+    expect(page.text).toContain('Driver</dt><dd>Dana Driver</dd>');
+    expect(page.text).toContain('Dates</dt><dd>2026-09-30 to 2026-10-03</dd>');
+    expect(page.text).toContain('Sorted by</dt><dd>point change, descending</dd>');
+    expect(page.text).toContain('Results</dt><dd>1 change</dd>');
+    const everything = await agent.get('/reports/points').expect(200);
+    expect(everything.text).toContain('Sponsor</dt><dd>All sponsors</dd>');
+    expect(everything.text).toContain('Driver</dt><dd>All drivers</dd>');
+    expect(everything.text).toContain('Dates</dt><dd>All time</dd>');
+  });
+
+  test('the page carries a hidden status line and the loading script, and links announce what they load', async () => {
+    const agent = await login('sponsor1');
+    const page = await agent.get('/reports/points').expect(200);
+    expect(page.text).toContain('id="report-status" role="status" aria-live="polite" hidden');
+    expect(page.text).toContain('<script src="/report.js" defer></script>');
+    expect(page.text).toContain('data-busy="Sorting…"');
+    expect(page.text).toContain('data-busy="Preparing the CSV download…" data-busy-reset="4000"');
+    expect(page.text).toContain('data-report-form');
+    await request(app).get('/report.js').expect(200).expect('Content-Type', /javascript/);
   });
 });

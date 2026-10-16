@@ -14,15 +14,17 @@ const users = [
   { id: 3, username: 'admin1', role: 'admin', status: 'active' },
   { id: 4, username: 'admin2', role: 'admin', status: 'active' },
   { id: 1, username: 'driver1', role: 'driver', status: 'active' },
-  { id: 2, username: 'sponsor1', role: 'sponsor', status: 'active' },
+  { id: 2, username: 'sponsor1', role: 'sponsor', status: 'active', sponsor_id: 1 },
   { id: 5, username: 'driver2', role: 'driver', status: 'disabled' },
   { id: 6, username: 'sponsor2', role: 'sponsor', status: 'revoked' },
 ];
 let passwordHash;
+let applicationQueries;
 
 beforeAll(async () => { passwordHash = await hashPassword(PASSWORD); });
 
 beforeEach(() => {
+  applicationQueries = [];
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     // Story 22214: every sign-in now checks the lockout first. No failures here.
@@ -36,7 +38,11 @@ beforeEach(() => {
     if (sql.includes('FROM users WHERE id')) return users.filter(u => u.id === params[0]).map(u => ({ ...u, name: null, email: null }));
     if (sql.includes('FROM users ORDER BY')) return users;
     if (sql.startsWith('SELECT s.id')) return [];
-    if (sql.includes('FROM sponsor_applications')) return [];
+    if (sql.includes('FROM sponsor_applications')) { applicationQueries.push(params); return []; }
+    // The point report, reachable while acting as a sponsor user.
+    if (sql.startsWith('SELECT ds.driver_id AS id')) return [];
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM point_transactions')) return [{ total: 0 }];
+    if (sql.startsWith('SELECT t.id') || sql.startsWith("SELECT DATE_FORMAT(t.created_at")) return [];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
@@ -134,5 +140,20 @@ describe('impersonation', () => {
     const { agent, token } = await adminWithToken();
     await agent.post('/admin/impersonate/999').type('form').send({ token }).expect(404);
     await agent.post('/admin/impersonate/abc').type('form').send({ token }).expect(400);
+  });
+});
+
+describe('AD-10: acting as a sponsor user', () => {
+  test('the sponsor homepage and reports work for the impersonated organization', async () => {
+    const { agent, token } = await adminWithToken();
+    await agent.post('/admin/impersonate/2').type('form').send({ token, from: 'manage-users' }).expect(303);
+    const home = await agent.get('/').expect(200);
+    expect(home.text).toContain('You are acting as <strong>sponsor1</strong> (sponsor)');
+    expect(home.text).toContain('Driver Applications');
+    // The applications query runs for sponsor1's organization, not for null.
+    expect(applicationQueries.pop()).toEqual([1]);
+    const report = await agent.get('/reports/points').expect(200);
+    expect(report.text).toContain('Driver Point Tracking');
+    expect(report.text).not.toContain('not linked to a sponsor organization');
   });
 });
