@@ -3,12 +3,20 @@
     <div class="page-header">
       <span class="eyebrow">Reports</span>
       <h1>Driver Point Tracking</h1>
-      <p class="lede">Every point award and deduction<%= scopeSponsor ? ` for ${scopeSponsor}` : ' across all sponsors' %>. Filter by driver or date, then download the same view as a CSV.</p>
+      <p class="lede">Every point award and deduction<%= scopeSponsor ? ` for ${scopeSponsor}` : ' across all sponsors' %>. Filter by driver or date, sort any column, then download the same filtered view as a CSV.</p>
+      <%# Story AD-62: what this report covers, in one line. %>
+      <dl class="report-summary" aria-label="Report covers">
+        <% summary.forEach(item => { %>
+          <div class="report-summary__item"><dt><%= item.label %></dt><dd><%= item.value %></dd></div>
+        <% }); %>
+      </dl>
     </div>
 
     <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
 
-    <form class="filters" method="GET" action="/reports/points">
+    <form class="filters" method="GET" action="/reports/points" data-report-form>
+      <input type="hidden" name="sort" value="<%= filters.sort %>">
+      <input type="hidden" name="dir" value="<%= filters.dir %>">
       <% if (isAdmin) { %>
         <div class="filters__field">
           <label for="sponsor">Sponsor</label>
@@ -39,14 +47,19 @@
       </div>
       <div class="filters__actions">
         <button type="submit">Apply</button>
-        <a class="button-link" href="/reports/points">Clear</a>
+        <a class="button-link" href="/reports/points" data-busy="Resetting the report…">Clear</a>
       </div>
     </form>
     <p class="quick-ranges">
       <span class="muted small">Quick ranges:</span>
       <% quickRanges.forEach(range => { %>
-        <a class="chip<%= range.active ? ' is-active' : '' %>" href="<%= range.href %>"<%- range.active ? ' aria-current="true"' : '' %>><%= range.label %></a>
+        <a class="chip<%= range.active ? ' is-active' : '' %>" href="<%= range.href %>"<%- range.active ? ' aria-current="true"' : '' %> data-busy="Generating report…"><%= range.label %></a>
       <% }); %>
+    </p>
+
+    <%# Story AD-61: shown by /report.js while the next page or the CSV is being produced. %>
+    <p class="report-status" id="report-status" role="status" aria-live="polite" hidden>
+      <span class="spinner" aria-hidden="true"></span> <span class="report-status__text">Generating report…</span>
     </p>
 
     <% if (totals.length) { %>
@@ -61,24 +74,57 @@
       </div>
     <% } %>
 
+    <% if (chart) { %>
+      <%# Story AD-23: net change per day (bars) and running total across the range (line), inline SVG. %>
+      <h2 class="section-title">Point activity<%= rangeLabel %></h2>
+      <figure class="chart">
+        <svg class="chart__svg" viewBox="0 0 <%= chart.W %> <%= chart.H %>" role="img" aria-labelledby="chart-title chart-desc" preserveAspectRatio="none">
+          <title id="chart-title">Point changes over time</title>
+          <desc id="chart-desc">Bars show the net points awarded or deducted per <%= chart.bucketDays === 1 ? 'day' : 'week' %> from <%= chart.start %> to <%= chart.end %>. The line shows the running total of those changes. Awarded <%= chart.totals.awarded %>, deducted <%= Math.abs(chart.totals.deducted) %>, net <%= chart.totals.net %>.</desc>
+          <% chart.ticks.forEach(tick => { %>
+            <line class="chart__grid" x1="<%= chart.L %>" x2="<%= chart.W - chart.R %>" y1="<%= tick.y %>" y2="<%= tick.y %>"/>
+            <text class="chart__tick" x="<%= chart.L - 6 %>" y="<%= tick.y %>" text-anchor="end" dominant-baseline="middle"><%= tick.label %></text>
+          <% }); %>
+          <line class="chart__zero" x1="<%= chart.L %>" x2="<%= chart.W - chart.R %>" y1="<%= chart.zeroY %>" y2="<%= chart.zeroY %>"/>
+          <% chart.bars.forEach(bar => { if (bar.h > 0) { %>
+            <rect class="chart__bar chart__bar--<%= bar.kind %>" x="<%= bar.x %>" y="<%= bar.y %>" width="<%= bar.w %>" height="<%= bar.h %>" rx="2"><title><%= bar.label %>: net <%= bar.net > 0 ? '+' : '' %><%= bar.net %> (awarded <%= bar.awarded %>, deducted <%= Math.abs(bar.deducted) %>)</title></rect>
+          <% } }); %>
+          <polyline class="chart__line" points="<%= chart.linePoints %>"/>
+          <% chart.xLabels.forEach(label => { %>
+            <text class="chart__tick" x="<%= label.x %>" y="<%= chart.H - 10 %>" text-anchor="middle"><%= label.label %></text>
+          <% }); %>
+        </svg>
+        <figcaption class="chart__legend">
+          <span><i class="swatch swatch--pos"></i> Net awarded per <%= chart.bucketDays === 1 ? 'day' : 'week' %></span>
+          <span><i class="swatch swatch--neg"></i> Net deducted</span>
+          <span><i class="swatch swatch--line"></i> Running total in range (ends at <%= chart.finalCumulative > 0 ? '+' : '' %><%= chart.finalCumulative.toLocaleString('en-US') %>)</span>
+        </figcaption>
+      </figure>
+    <% } %>
+
     <div class="report-bar">
-      <span class="muted small"><%= rows.length %> point change<%= rows.length === 1 ? '' : 's' %><%= rangeLabel %></span>
-      <a class="button-link button--small" href="<%= csvHref %>">Download CSV</a>
+      <span class="muted small">
+        <% if (total === 0) { %>0 point changes<%= rangeLabel %><% } else { %>Showing <%= pageStart %> to <%= pageEnd %> of <%= total.toLocaleString('en-US') %> point change<%= total === 1 ? '' : 's' %><%= rangeLabel %><% } %>
+      </span>
+      <a class="button-link button--small" href="<%= csvHref %>" data-busy="Preparing the CSV download…" data-busy-reset="4000">Download CSV (all <%= total.toLocaleString('en-US') %>)</a>
     </div>
 
     <% if (rows.length === 0) { %>
-      <p class="info" role="status">No point activity<%= rangeLabel %> for these filters. <a href="/reports/points">Clear the filters</a> to see everything.</p>
+      <%# Story AD-24: the report ran; there was simply nothing in this range. %>
+      <div class="info" role="status">
+        <p><strong>No point activity<%= rangeLabel %> for these filters.</strong></p>
+        <p>The report ran successfully and found no point changes matching <%= summary[0].value %>, <%= summary[1].value.toLowerCase() %>, <%= summary[2].value.toLowerCase() %>. Widen the date range or <a href="/reports/points">clear the filters</a> to see everything.</p>
+      </div>
     <% } else { %>
       <div class="table-wrap">
-        <table class="table">
+        <table class="table table--sortable">
           <thead>
             <tr>
-              <th scope="col">Date (UTC)</th>
-              <th scope="col">Driver</th>
-              <th scope="col">Change</th>
-              <th scope="col">Sponsor</th>
-              <th scope="col">Made by</th>
-              <th scope="col">Reason</th>
+              <% [['date', 'Date (UTC)'], ['driver', 'Driver'], ['change', 'Change'], ['sponsor', 'Sponsor'], ['madeBy', 'Made by'], ['reason', 'Reason']].forEach(([key, label]) => { const link = sortLinks[key]; %>
+                <th scope="col" <%- link.active ? `aria-sort="${link.dir === 'asc' ? 'ascending' : 'descending'}"` : '' %>>
+                  <a class="sort-link<%= link.active ? ' is-active' : '' %>" href="<%= link.href %>" data-busy="Sorting…"><%= label %><span class="sort-arrow" aria-hidden="true"><%= link.active ? (link.dir === 'asc' ? '▲' : '▼') : '↕' %></span></a>
+                </th>
+              <% }); %>
             </tr>
           </thead>
           <tbody>
@@ -95,6 +141,15 @@
           </tbody>
         </table>
       </div>
+      <% if (pageCount > 1) { %>
+        <%# Story AD-60 %>
+        <nav class="pager" aria-label="Report pages">
+          <% if (prevHref) { %><a class="button-link button--small" href="<%= prevHref %>" data-busy="Loading page <%= page - 1 %>…">&larr; Previous</a><% } else { %><span class="button-link button--small is-disabled" aria-disabled="true">&larr; Previous</span><% } %>
+          <span class="pager__status">Page <%= page %> of <%= pageCount %></span>
+          <% if (nextHref) { %><a class="button-link button--small" href="<%= nextHref %>" data-busy="Loading page <%= page + 1 %>…">Next &rarr;</a><% } else { %><span class="button-link button--small is-disabled" aria-disabled="true">Next &rarr;</span><% } %>
+        </nav>
+      <% } %>
     <% } %>
   </section>
+  <script src="/report.js" defer></script>
 <%- include('../partials/foot') %>

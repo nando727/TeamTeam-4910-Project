@@ -40,7 +40,7 @@ async function createUser({ name, email, username, password, role }) {
 
 async function findUserById(id) {
   const rows = await db.query(
-    'SELECT id, name, email, username, role, status FROM users WHERE id = ?',
+    'SELECT id, name, email, username, role, status, sponsor_id FROM users WHERE id = ?',
     [id]
   );
   return rows[0] || null;

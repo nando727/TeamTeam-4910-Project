@@ -15,7 +15,8 @@
     "db:setup": "node scripts/db-setup.js",
     "db:migrate": "node scripts/db-migrate.js",
     "db:seed": "node scripts/seed.js",
-    "db:seed:points": "node scripts/seed-points.js"
+    "db:seed:points": "node scripts/seed-points.js",
+    "db:seed:purchases": "node scripts/seed-purchases.js"
   },
   "repository": {
     "type": "git",

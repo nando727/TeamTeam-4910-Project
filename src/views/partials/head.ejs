@@ -11,8 +11,12 @@
     navItems.push({ href: '/', label: 'Home' });
     if (me.role === 'driver') navItems.push({ href: '/sponsors', label: 'Sponsors' });
     if (me.role === 'driver') navItems.push({ href: '/driver/programs', label: 'My points' });
-    if (me.role === 'sponsor' || me.role === 'admin') navItems.push({ href: '/reports/points', label: 'Reports' });
+    if (me.role === 'sponsor') navItems.push({ href: '/reports/points', label: 'Reports' });
     if (me.role === 'admin') {
+      navItems.push({ label: 'Reports', children: [
+        { href: '/reports/points', label: 'Driver point tracking' },
+        { href: '/reports/fees', label: 'Sponsor fees' },
+      ] });
       navItems.push({ label: 'Users', children: [
         { href: '/admin/create-user', label: 'Create user' },
         { href: '/admin/manage-users', label: 'Manage users' },
