@@ -220,6 +220,28 @@ Sample data: `npm run db:seed:purchases` adds purchases for the demo drivers
 under Demo Sponsor spread over the last three months. It skips a sponsor that
 already has purchases, so it is safe to rerun.
 
+## Sprint 5: driver point updates
+
+Apply `db/migrations/011_point_alerts.sql` to the application's database before
+using the new point controls (or use `npm run db:migrate` for all migrations).
+Deployment does not apply this migration automatically.
+
+Sponsors can open **Adjust points**, select one of their drivers, and enter a
+signed whole-number adjustment and reason. The history entry and current balance
+are saved in one transaction. Negative balances are allowed; no zero-floor rule
+has been specified. Existing balances and sample history are not reset.
+
+Additions and deductions also create an in-app alert showing the amount, sponsor,
+reason, date (UTC), and a link to that history entry. Drivers see it when opening
+or refreshing a page, until they dismiss it. Old sample history does not generate
+alerts, and there is no email or background polling.
+
+To check: note a driver's balance, add 25 points as their sponsor, then sign in
+as the driver and check the alert, history, and balance. Dismiss the alert and
+refresh to confirm it stays dismissed. Deduct 10 points as the sponsor and check
+that the driver's balance is now 15 above the starting balance, with a -10 history
+entry and a new points-deducted alert.
+
 ## Deployment (GitHub Actions to AWS Elastic Beanstalk)
 
 The app is hosted on AWS Elastic Beanstalk (application `gooddriver`,

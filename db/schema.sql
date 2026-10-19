@@ -100,6 +100,13 @@ CREATE TABLE IF NOT EXISTS point_transactions (
   FOREIGN KEY (changed_by_user_id) REFERENCES users(id)
 );
 
+-- Dismissible alerts for changes saved through the point adjustment form.
+CREATE TABLE IF NOT EXISTS point_alerts (
+  transaction_id INT PRIMARY KEY,
+  dismissed_at TIMESTAMP NULL DEFAULT NULL,
+  FOREIGN KEY (transaction_id) REFERENCES point_transactions(id) ON DELETE CASCADE
+);
+
 -- Driver purchases made with points (see migration 010). The admin fee report
 -- bills each sponsor 1% of its drivers' purchases per month, so the catalog and
 -- redemption flow must insert one row here per completed purchase.

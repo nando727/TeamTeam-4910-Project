@@ -12,6 +12,7 @@
     if (me.role === 'driver') navItems.push({ href: '/sponsors', label: 'Sponsors' });
     if (me.role === 'driver') navItems.push({ href: '/driver/programs', label: 'My points' });
     if (me.role === 'sponsor') navItems.push({ href: '/reports/points', label: 'Reports' });
+    if (me.role === 'sponsor') navItems.push({ href: '/points', label: 'Adjust points' });
     if (me.role === 'admin') {
       navItems.push({ label: 'Reports', children: [
         { href: '/reports/points', label: 'Driver point tracking' },
@@ -103,3 +104,7 @@
     </div>
   <% } %>
   <main id="main" class="page">
+    <% if (me && me.role === 'driver') { %>
+      <div id="point-alerts" aria-live="polite"></div>
+      <script src="/point-alerts.js" defer></script>
+    <% } %>
