@@ -16,6 +16,22 @@ function idleLimitMs() {
   return safe * 60 * 1000;
 }
 
+const DEFAULT_WARNING_MINUTES = 5;
+
+// How long before expiry the browser warns. Never longer than the idle window
+// itself, so a short demo window still shows a warning rather than none.
+function warningLeadMs() {
+  const minutes = Number.parseFloat(process.env.SESSION_WARNING_MINUTES);
+  const safe = Number.isFinite(minutes) && minutes > 0 ? minutes : DEFAULT_WARNING_MINUTES;
+  return Math.min(safe * 60 * 1000, Math.floor(idleLimitMs() / 2));
+}
+
+// Milliseconds left before this session goes stale, for the browser countdown.
+function remainingMs(req) {
+  const lastActivity = (req.session && req.session.lastActivity) || 0;
+  return Math.max(0, lastActivity + idleLimitMs() - Date.now());
+}
+
 function idleLimitLabel() {
   const minutes = idleLimitMs() / 60000;
   if (minutes >= 1) {
@@ -40,7 +56,10 @@ function sessionTimeout(req, res, next) {
   req.session.destroy((err) => {
     if (err) return next(err);
     res.clearCookie('connect.sid');
-    if (req.path.startsWith('/api')) {
+    // Requests the browser makes in the background (the API, and the
+    // keep-alive behind the expiry warning) need an answer they can read, not
+    // a redirect to a login page.
+    if (req.path.startsWith('/api') || req.path.startsWith('/session/')) {
       return res.status(401).json({
         success: false,
         error: 'Your session expired. Please log in again.',
@@ -50,4 +69,4 @@ function sessionTimeout(req, res, next) {
   });
 }
 
-module.exports = { sessionTimeout, idleLimitMs, idleLimitLabel };
+module.exports = { sessionTimeout, idleLimitMs, idleLimitLabel, warningLeadMs, remainingMs };

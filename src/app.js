@@ -3,7 +3,7 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const authRoutes = require('./auth/routes');
-const { sessionTimeout } = require('./auth/session-timeout');
+const { sessionTimeout, idleLimitMs, warningLeadMs, remainingMs } = require('./auth/session-timeout');
 const { rememberAndRedirect } = require('./auth/return-to');
 const { denyAccess } = require('./auth/deny');
 const apiRoutes = require('./routes/api');
@@ -57,6 +57,9 @@ app.use((req, res, next) => {
   //debug line to try and find log out bug
   console.log('sessionID:', req.sessionID, 'user:', req.session.user);
   res.locals.currentUser = req.session.user || null;
+  // Story AA-12: the browser needs these to warn before the session expires.
+  res.locals.sessionRemainingMs = req.session.user ? remainingMs(req) : 0;
+  res.locals.sessionWarningMs = warningLeadMs();
   res.locals.currentPath = req.path;
   // While an admin acts as another user, every page shows a banner with a stop button.
   res.locals.currentImpersonator = req.session.impersonator || null;
@@ -73,6 +76,15 @@ app.use(accountRoutes);
 app.use('/admin', adminRoutes);
 // Story 22255: claiming a new account. No login required; the link is the credential.
 app.use(setupRoutes);
+
+// Story AA-12: "Stay signed in" posts here. Reaching this point means the
+// session was still valid, and the timeout middleware has just refreshed it.
+app.post('/session/keep-alive', (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ error: 'Your session has already expired.' });
+  }
+  res.json({ remainingMs: idleLimitMs(), warningMs: warningLeadMs() });
+});
 
 function requireLogin(req, res, next) {
   // Story 22208: remember where they were headed before sending them to log in.
