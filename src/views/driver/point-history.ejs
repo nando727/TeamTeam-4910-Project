@@ -21,7 +21,7 @@
           </thead>
           <tbody>
             <% rows.forEach(row => { %>
-              <tr>
+              <tr id="change-<%= row.id %>">
                 <td class="nowrap"><%= formatStamp(row.changedAt) %></td>
                 <td><%= row.sponsorName %></td>
                 <td><span class="delta <%= row.pointsChange < 0 ? 'delta--neg' : 'delta--pos' %>"><%= row.pointsChange > 0 ? '+' : '' %><%= Number(row.pointsChange).toLocaleString('en-US') %></span></td>

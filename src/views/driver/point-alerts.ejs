@@ -1,0 +1,11 @@
+<% alerts.forEach(alert => { %>
+  <section class="<%= alert.points_change < 0 ? 'info' : 'success' %>">
+    <p><strong><%= alert.points_change < 0 ? 'Points deducted: ' : 'Points added: +' %><%= alert.points_change %></strong> from <%= alert.sponsor_name %></p>
+    <p><%= alert.reason %> — <%= new Date(alert.created_at).toISOString().slice(0, 19).replace('T', ' ') %> UTC</p>
+    <a href="/driver/points/history#change-<%= alert.id %>">View point history (change #<%= alert.id %>)</a>
+    <form method="POST" action="/points/alerts/<%= alert.id %>/dismiss">
+      <input type="hidden" name="token" value="<%= token %>">
+      <button type="submit" class="button--small">Dismiss</button>
+    </form>
+  </section>
+<% }); %>

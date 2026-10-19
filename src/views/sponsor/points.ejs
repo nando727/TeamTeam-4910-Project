@@ -1,0 +1,26 @@
+<%- include('../partials/head', { title: 'Adjust driver points' }) %>
+<section class="card card--form">
+  <h1>Adjust driver points</h1>
+  <% if (message) { %><p class="success" role="status"><%= message %></p><% } %>
+  <% if (!drivers.length) { %>
+    <p>No drivers belong to your organization yet.</p>
+  <% } else { %>
+    <p>Enter a positive number to add points or a negative number to deduct points.</p>
+    <form method="POST" action="/points">
+      <input type="hidden" name="token" value="<%= token %>">
+      <label for="driverId">Driver</label>
+      <select id="driverId" name="driverId" required>
+        <option value="">Select a driver</option>
+        <% drivers.forEach(driver => { %>
+          <option value="<%= driver.id %>"><%= driver.displayName %> (<%= driver.username %>) — <%= driver.balance %> points</option>
+        <% }); %>
+      </select>
+      <label for="amount">Point change</label>
+      <input id="amount" name="amount" type="number" step="1" min="-2147483647" max="2147483647" required>
+      <label for="reason">Reason</label>
+      <input id="reason" name="reason" maxlength="255" required>
+      <button type="submit">Save point adjustment</button>
+    </form>
+  <% } %>
+</section>
+<%- include('../partials/foot') %>

@@ -68,6 +68,7 @@ app.use(authRoutes);
 app.use(apiRoutes);
 app.use('/sponsors', sponsorRoutes);
 app.use('/driver', driverRoutes);
+app.use('/points', require('./points/routes'));
 app.use('/reports', reportRoutes);
 app.use(accountRoutes);
 app.use('/admin', adminRoutes);
