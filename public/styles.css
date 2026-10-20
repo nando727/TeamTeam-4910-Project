@@ -559,3 +559,28 @@ form > button { width: 100%; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+/* Session expiry warning (story AA-12). Hidden until the script shows it. */
+.session-warning {
+  position: fixed; right: 16px; bottom: 16px; z-index: 80;
+  display: none; width: min(360px, calc(100vw - 32px));
+  padding: 18px 20px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); border-left: 4px solid var(--blue);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.session-warning.is-visible { display: block; }
+.session-warning__title { margin: 0 0 6px; font-weight: 700; color: var(--navy); }
+.session-warning__body { margin: 0 0 14px; font-size: 0.95rem; }
+.session-warning__clock {
+  font-variant-numeric: tabular-nums; font-weight: 700; color: var(--blue);
+}
+.session-warning__actions { display: flex; gap: 10px; }
+.session-warning__actions > * { flex: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .session-warning.is-visible { animation: session-warning-in 0.18s ease-out; }
+  @keyframes session-warning-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+}
