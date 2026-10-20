@@ -33,6 +33,15 @@ Sessions expire after 30 minutes of inactivity (story 22204). Set
 `SESSION_IDLE_MINUTES` in `.env` to change it — a small value such as `0.25`
 makes the timeout easy to demonstrate.
 
+Five minutes before that, a warning appears with a countdown (story AA-12).
+**Stay signed in** posts to `/session/keep-alive`, which extends the session and
+restarts the clock; letting it reach zero lands on the login page with the usual
+explanation. Set `SESSION_WARNING_MINUTES` to change the lead time — it is
+capped at half the idle window, so `SESSION_IDLE_MINUTES=0.5` still warns.
+
+The browser only mirrors the server's clock: the timings come from the page, and
+with scripts disabled the session still expires exactly the same way.
+
 ## Account lockout (story 22214)
 
 Five failed sign-ins lock an account for 15 minutes. Only failures **since your
