@@ -113,8 +113,27 @@ async function updateUserContact(id, { name, email }) {
   return findUserById(id);
 }
 
+// Backlog AA-13: end every session for an account at once.
+//
+// Sessions are held in memory, so there is no list to delete. Each session
+// records when it was issued; stamping this column with the current time means
+// every session issued before now is refused on its next request, wherever it
+// is. Returns the timestamp that was set.
+async function revokeSessions(id) {
+  await db.query('UPDATE users SET sessions_valid_from = NOW() WHERE id = ?', [id]);
+  const rows = await db.query('SELECT sessions_valid_from FROM users WHERE id = ?', [id]);
+  return rows[0] ? rows[0].sessions_valid_from : null;
+}
+
+// The cutoff for an account, or null when nothing has been revoked.
+async function sessionsValidFrom(id) {
+  const rows = await db.query('SELECT sessions_valid_from FROM users WHERE id = ?', [id]);
+  return rows[0] ? rows[0].sessions_valid_from : null;
+}
+
 module.exports = {
   VALID_ROLES, USER_STATUSES, DuplicateError,
   createUser, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
   listUsers, updateUserStatus, countRecentFailedLogins,
+  revokeSessions, sessionsValidFrom,
 };

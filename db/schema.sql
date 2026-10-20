@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   role ENUM('driver', 'sponsor', 'admin') NOT NULL,
   status ENUM('active', 'disabled', 'revoked') NOT NULL DEFAULT 'active',
+  -- Sessions issued before this are refused; see migration 012.
+  sessions_valid_from DATETIME NULL,
   -- Sponsor-role users act for one organization (see migration 007).
   sponsor_id INT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
