@@ -18,5 +18,51 @@
   </table>
 
   <p><a href="/organization/edit">Edit organization info</a></p>
+
+  <h2 class="section-title">Organization Rules</h2>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Description</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rules.forEach(rule => { %>
+          <tr>
+            <td><%= rule.title %></td>
+            <td><%= rule.description %></td>
+            <td>
+              <form method="POST" action="/organization/rules/<%= rule.id %>/delete" class="inline-form">
+                <input type="hidden" name="token" value="<%= formToken %>">
+                <button type="submit">Remove</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+        <% if (rules.length === 0) { %>
+          <tr><td colspan="3">No rules yet.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+
+    <h3>Add a rule</h3>
+    <form method="POST" action="/organization/rules">
+      <input type="hidden" name="token" value="<%= formToken %>">
+    
+      <label for="title">Title</label>
+      <input type="text" id="title" name="title" maxlength="255" required>
+
+      <label for="pointValue">Point Value</label>
+      <input type="text" id="pointValue" name="pointValue" maxlength="255" required>
+    
+      <label for="description">Description</label>
+      <textarea id="description" name="description" maxlength="2000" required></textarea>
+    
+      <button type="submit">Add rule</button>
+  </form>
+
   <p><a href="/">&larr; Back to home</a></p>
 <%- include('../partials/foot') %>

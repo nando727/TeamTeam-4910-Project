@@ -122,3 +122,13 @@ CREATE TABLE IF NOT EXISTS purchases (
   FOREIGN KEY (driver_id) REFERENCES users(id),
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );
+
+CREATE TABLE IF NOT EXISTS rules (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sponsor_id INT NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description VARCHAR(2000) NOT NULL,
+  points INT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
+);
