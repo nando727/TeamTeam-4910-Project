@@ -4,6 +4,7 @@ const express = require('express');
 const session = require('express-session');
 const authRoutes = require('./auth/routes');
 const { sessionTimeout, idleLimitMs, warningLeadMs, remainingMs } = require('./auth/session-timeout');
+const { sessionRevocation } = require('./auth/session-revocation');
 const { rememberAndRedirect } = require('./auth/return-to');
 const { denyAccess } = require('./auth/deny');
 const apiRoutes = require('./routes/api');
@@ -51,6 +52,9 @@ app.use(
 
 // Story 22204: expire idle sessions before anything else reads req.session.user.
 app.use(sessionTimeout);
+
+// Backlog AA-13: and refuse sessions the account has signed out everywhere.
+app.use(sessionRevocation);
 
 // Template-only locals for the shared header and nav (partials/head.ejs).
 app.use((req, res, next) => {

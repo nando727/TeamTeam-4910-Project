@@ -59,6 +59,10 @@ beforeEach(() => {
       return { affectedRows: r ? 1 : 0 };
     }
     if (sql.startsWith('UPDATE users SET password_hash')) { passwordUpdates.push(params); return { affectedRows: 1 }; }
+    // Backlog AA-14: a password change signs the account out elsewhere.
+    if (sql.startsWith('UPDATE users SET sessions_valid_from')) return { affectedRows: 1 };
+    if (sql.startsWith('SELECT UNIX_TIMESTAMP(sessions_valid_from)')) return [{ cutoff_ms: Date.now() }];
+    if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });

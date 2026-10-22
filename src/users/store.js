@@ -113,8 +113,48 @@ async function updateUserContact(id, { name, email }) {
   return findUserById(id);
 }
 
+// Backlog AA-13: end every session for an account at once.
+//
+// Sessions are held in memory, so there is no list to delete. Each session
+// records when it was issued; stamping this column with the current time means
+// every session issued before now is refused on its next request, wherever it
+// is. Returns the timestamp that was set.
+// Returns the cutoff as epoch milliseconds, so a caller that wants to keep one
+// session alive can stamp it just after. UNIX_TIMESTAMP reads the column in the
+// database's own zone, the mirror of FROM_UNIXTIME below; a plain SELECT would
+// hand Node a Date reinterpreted in the machine's local zone.
+async function revokeSessions(id) {
+  // NOW(3): whole seconds are too coarse to order against a login in the
+  // same second. See migration 013.
+  await db.query('UPDATE users SET sessions_valid_from = NOW(3) WHERE id = ?', [id]);
+  const rows = await db.query(
+    'SELECT UNIX_TIMESTAMP(sessions_valid_from) * 1000 AS cutoff_ms FROM users WHERE id = ?',
+    [id]
+  );
+  return rows[0] ? Number(rows[0].cutoff_ms) : null;
+}
+
+// Was this account revoked after the given session was issued?
+//
+// MySQL does the comparison, deliberately. The column is a DATETIME written by
+// NOW(), so it carries the database's wall-clock time with no zone attached:
+// read into Node it becomes a Date in the machine's local zone, which on a UTC
+// database and an eastern laptop lands hours away and refuses every session.
+// Handing MySQL the epoch instead keeps both sides in the database's own zone.
+//
+// A session with no issue time predates this feature, and 0 maps to 1970, so
+// any cutoff is later and the session is refused.
+async function sessionsRevokedSince(id, issuedAtMs) {
+  const rows = await db.query(
+    'SELECT sessions_valid_from > FROM_UNIXTIME(? / 1000) AS revoked FROM users WHERE id = ?',
+    [issuedAtMs, id]
+  );
+  return Boolean(rows[0] && rows[0].revoked);
+}
+
 module.exports = {
   VALID_ROLES, USER_STATUSES, DuplicateError,
   createUser, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
   listUsers, updateUserStatus, countRecentFailedLogins,
+  revokeSessions, sessionsRevokedSince,
 };

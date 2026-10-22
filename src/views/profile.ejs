@@ -34,4 +34,20 @@
       </div>
     <% } %>
   </section>
+
+  <%# Backlog AA-13: end every session for this account, on every device. %>
+  <% if (!editing) { %>
+    <section class="card card--form">
+      <h2>Signed in somewhere else?</h2>
+      <p>Signing out of all sessions ends your session everywhere &mdash; other
+        browsers, other devices, and this one. Use it if you signed in on a
+        shared computer, or if you think someone else has access to your account.</p>
+      <form method="POST" action="/profile/sign-out-everywhere">
+        <input type="hidden" name="token" value="<%= token %>">
+        <div class="button-row" style="margin-top: 16px;">
+          <button type="submit" class="button--danger">Sign out of all sessions</button>
+        </div>
+      </form>
+    </section>
+  <% } %>
 <%- include('partials/foot') %>

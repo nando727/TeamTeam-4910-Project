@@ -18,6 +18,8 @@ beforeEach(() => {
   history = [];
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
+    // Backlog AA-13: every signed-in request checks the revocation cutoff.
+    if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];
     if (sql.includes('FROM users')) return [{ id: 1, username: params[0],
       role: ['sponsor', 'admin'].includes(params[0]) ? params[0] : 'driver', status: 'active',
       sponsor_id: 7, password_hash: hash }];
@@ -86,7 +88,13 @@ test('a failed membership insert rolls back the approval', async () => {
 test('sponsor approval route uses the organization from the login session', async () => {
   const agent = await login('sponsor');
   // Include a pending application so the homepage renders an approval form.
-  db.query.mockResolvedValueOnce([{ id: 5, full_name: 'Driver', contact_email: 'd@example.com', reason: 'Apply', status: 'pending' }]);
+  // Matched on the SQL rather than queued by position: the signed-in request
+  // also looks up the AA-13 revocation cutoff, and the order could change again.
+  const pending = [{ id: 5, full_name: 'Driver', contact_email: 'd@example.com', reason: 'Apply', status: 'pending' }];
+  const base = db.query.getMockImplementation();
+  db.query.mockImplementation(async (sql, params) => (
+    sql.startsWith('SELECT id, full_name, contact_email') ? pending : base(sql, params)
+  ));
   const home = await agent.get('/').expect(200);
   const token = home.text.match(/name="token" value="([^"]+)"/)[1];
   await agent.post('/applications/5/approve').type('form').send({ token, sponsorId: 99 }).expect(302);

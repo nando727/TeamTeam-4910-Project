@@ -22,6 +22,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
+    // Backlog AA-13: every signed-in request checks the revocation cutoff.
+    if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];
     // Story 22214: every sign-in now checks the lockout first. No failures here.
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
 

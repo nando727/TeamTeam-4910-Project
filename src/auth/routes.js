@@ -5,7 +5,7 @@ const { idleLimitLabel } = require('./session-timeout');
 const { takeReturnTo } = require('./return-to');
 const { requireFormToken } = require('./form-token');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./password-policy');
-const { updateUserPassword } = require('../users/store');
+const { updateUserPassword, revokeSessions } = require('../users/store');
 const { createResetToken, findValidReset, consumeReset, TOKEN_PATTERN, EXPIRY_MINUTES } = require('./password-reset');
 const { sendPasswordResetLink } = require('./mailer');
 const { checkLockout, lockoutMessage } = require('./lockout');
@@ -39,6 +39,8 @@ const SIGNED_OUT_REASONS = {
   revoked: 'Access for your account was revoked and you have been signed out. Contact an administrator.',
   missing: 'Your account no longer exists and you have been signed out.',
   role: 'Your account role changed and you have been signed out. Sign in again.',
+  // Backlog AA-13: this device was signed out from somewhere else.
+  everywhere: 'You were signed out of all sessions. Please log in again.',
 };
 
 router.get('/login', (req, res) => {
@@ -111,6 +113,9 @@ router.post('/login', async (req, res, next) => {
       if (err) return next(err);
       req.session.user = { id: user.id, username: user.username, role: user.role, sponsorId: user.sponsor_id };
       req.session.lastActivity = Date.now();
+      // Backlog AA-13: when this session began, so "sign out everywhere" can
+      // tell it from one issued before the account's cutoff.
+      req.session.issuedAt = Date.now();
       // Story 22208: back to the page they asked for, or their homepage.
       res.redirect(destination);
     });
@@ -171,6 +176,9 @@ router.post('/api/login', async (req, res, next) => {
       if (err) return next(err);
       req.session.user = { id: user.id, username: user.username, role: user.role, sponsorId: user.sponsor_id };
       req.session.lastActivity = Date.now();
+      // Backlog AA-13: when this session began, so "sign out everywhere" can
+      // tell it from one issued before the account's cutoff.
+      req.session.issuedAt = Date.now();
       res.json({ success: true, role: user.role });
     });
   } catch (err) {
@@ -276,6 +284,9 @@ router.post('/reset-password/:token', async (req, res, next) => {
     // Spend the token before writing, so a second submit with the same link fails.
     if (!(await consumeReset(reset.id))) return renderReset(req, res, null, { status: 404 });
     await updateUserPassword(reset.userId, newPassword);
+    // Backlog AA-14: whoever was signed in as this account is signed out.
+    // That is the point of resetting a password you think someone else knows.
+    await revokeSessions(reset.userId);
     console.log(`[password-reset] password reset completed for ${reset.username} (id ${reset.userId})`);
     res.redirect(303, '/login?reset=done');
   } catch (err) { next(err); }

@@ -2,7 +2,7 @@ const express = require('express');
 const { randomBytes } = require('crypto');
 const {
   VALID_ROLES, USER_STATUSES, DuplicateError, createUser, findUserById, listUsers, updateUserStatus,
-  updateUserPassword, countRecentFailedLogins,
+  updateUserPassword, countRecentFailedLogins, revokeSessions,
 } = require('../users/store');
 const { createSponsor, listSponsors } = require('../sponsors/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
@@ -321,7 +321,13 @@ router.post('/manage-users/:userId/password', async (req, res, next) => {
       return renderResetPassword(req, res, { from, failedLogins, error: problems.join(' '), status: 400 });
     }
     await updateUserPassword(user.id, newPassword);
-    flashAndRedirect(req, res, { kind: 'success', text: `Password for ${user.username} was reset.` }, STATUS_PAGES[from]);
+
+    // Backlog AA-14: the account being reset is signed out everywhere. An
+    // admin resetting their own password keeps the session they are using.
+    const cutoffMs = await revokeSessions(user.id);
+    if (req.session.user.id === user.id) req.session.issuedAt = cutoffMs + 1;
+
+    flashAndRedirect(req, res, { kind: 'success', text: `Password for ${user.username} was reset. Their other sessions were signed out.` }, STATUS_PAGES[from]);
   } catch (err) { next(err); }
 });
 
