@@ -22,6 +22,10 @@ beforeEach(() => {
       if (params[0] === 1) cutoff = new Date();
       return { affectedRows: params[0] === 1 ? 1 : 0 };
     }
+    if (sql.startsWith('SELECT UNIX_TIMESTAMP(sessions_valid_from)')) {
+      // How the real column is read back: epoch milliseconds, not a Date.
+      return cutoff ? [{ cutoff_ms: cutoff.getTime() }] : [{ cutoff_ms: null }];
+    }
     if (sql.startsWith('SELECT sessions_valid_from')) {
       const [issuedAtMs, id] = params;
       if (id !== 1) return [];
@@ -72,17 +76,29 @@ describe('after revoking', () => {
     const [, params] = db.query.mock.calls[0];
     expect(params).toEqual([1]);
   });
+
+  test('it reports the cutoff, so one session can be kept past it', async () => {
+    const cutoffMs = await revokeSessions(1);
+
+    expect(typeof cutoffMs).toBe('number');
+    expect(await sessionsRevokedSince(1, cutoffMs + 1)).toBe(false);
+    expect(await sessionsRevokedSince(1, cutoffMs - 1)).toBe(true);
+  });
 });
 
 describe('how the comparison is made', () => {
   test('the database stamps the cutoff, not the app', async () => {
     await revokeSessions(1);
-    expect(lastSql).toContain('NOW(3)');
+
+    const [writeSql] = db.query.mock.calls[0];
+    expect(writeSql).toContain('NOW(3)');
   });
 
   test('milliseconds are kept, since a revocation can share a second with a login', async () => {
     await revokeSessions(1);
-    expect(lastSql).not.toMatch(/NOW\(\)/);
+
+    const [writeSql] = db.query.mock.calls[0];
+    expect(writeSql).not.toMatch(/NOW\(\)/);
   });
 
   test('the two times are compared in SQL, never parsed into a JS Date', async () => {
@@ -91,6 +107,10 @@ describe('how the comparison is made', () => {
     // refuses every session. Letting MySQL compare keeps one zone.
     await sessionsRevokedSince(1, Date.now());
     expect(lastSql).toContain('FROM_UNIXTIME');
+
+    // The read-back is the mirror image, for the same reason.
+    await revokeSessions(1);
+    expect(lastSql).toContain('UNIX_TIMESTAMP');
   });
 
   test('an unknown account is not treated as revoked', async () => {

@@ -42,6 +42,58 @@ capped at half the idle window, so `SESSION_IDLE_MINUTES=0.5` still warns.
 The browser only mirrors the server's clock: the timings come from the page, and
 with scripts disabled the session still expires exactly the same way.
 
+## Signing out of all sessions (story AA-13)
+
+**Profile → Sign out of all sessions** ends the account's session on every
+browser and device, including the one that asked. Other devices land on the
+login page with an explanation the next time they ask for a page.
+
+Sessions are held in memory, so there is no list of them to delete — express's
+default store cannot be asked "which sessions belong to this user?". Instead
+each session records when it was issued, and the account carries a cutoff in
+`users.sessions_valid_from`. Signing out everywhere just stamps that column with
+the current time; `src/auth/session-revocation.js` then refuses any session
+issued before it. That reaches sessions this request never touches, on any
+server instance, and it outlives a restart because the cutoff is in the database.
+
+The cost is one indexed lookup per signed-in request. Signed-out requests, the
+login page included, do not query at all.
+
+Two details are easy to undo by accident, so they are worth knowing:
+
+- **The comparison belongs in SQL.** `sessions_valid_from` is a `DATETIME`,
+  which carries no timezone. Reading it into Node turns it into a `Date` in the
+  machine's local zone, so a UTC database and an eastern laptop disagree by four
+  hours and every session is refused forever. The query hands MySQL the session's
+  epoch instead (`sessions_valid_from > FROM_UNIXTIME(? / 1000)`) so both times
+  stay in one zone. `tests/revoke-sessions.test.js` guards this.
+- **Milliseconds matter.** Migration 013 widens the column to `DATETIME(3)`.
+  With whole seconds, a revocation in the same second as a login stored a cutoff
+  that compared as *earlier* than the session it was meant to end, and that
+  session survived.
+
+Run `npm run db:migrate` to apply migrations 012 and 013. There is no new
+setting in `.env`.
+
+### A new password signs the account out elsewhere (story AA-14)
+
+The same cutoff does the work. Changing or resetting a password revokes that
+account's sessions, so a password changed because someone else knows it
+actually locks them out:
+
+- **Profile → Change password** ends sessions on other devices and keeps the
+  one making the change, by stamping it just past the cutoff.
+- **A reset link** ends every session for the account. Nobody is signed in
+  while using the link, and whoever was is exactly who should be signed out.
+- **An admin resetting a password** ends that account's sessions. An admin
+  resetting their own keeps the session they are working in.
+
+A password that is rejected &mdash; the wrong current password, or one that
+fails the complexity rules &mdash; revokes nothing.
+
+Setting a first password from a setup link is deliberately left out: the
+account has no sessions yet, and that flow is covered by story 22255.
+
 ## Account lockout (story 22214)
 
 Five failed sign-ins lock an account for 15 minutes. Only failures **since your

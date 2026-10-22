@@ -127,8 +127,17 @@ router.post('/profile/password', requireLogin, requireFormToken, async (req, res
     }
 
     await updateUserPassword(account.id, newPassword);
+
+    // Backlog AA-14: a new password ends sessions elsewhere, so a password
+    // changed because someone else had access actually locks them out. The
+    // session doing the changing is stamped past the cutoff and stays.
+    const cutoffMs = await revokeSessions(account.id);
+    req.session.issuedAt = cutoffMs + 1;
+
     const profile = await findUserById(account.id);
-    renderProfile(req, res, profile, { success: 'Your password was changed.' });
+    renderProfile(req, res, profile, {
+      success: 'Your password was changed. Any other devices were signed out.',
+    });
   } catch (err) { next(err); }
 });
 

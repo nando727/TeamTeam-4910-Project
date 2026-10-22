@@ -18,11 +18,13 @@ const users = [
 ];
 let passwordHash;
 let passwordUpdates;
+let revocations;
 
 beforeAll(async () => { passwordHash = await hashPassword(PASSWORD); });
 
 beforeEach(() => {
   passwordUpdates = [];
+  revocations = [];
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     // Story 22214: every sign-in now checks the lockout first. No failures here.
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
@@ -39,6 +41,10 @@ beforeEach(() => {
     if (sql.includes('FROM users WHERE role = ? ORDER BY')) return users.filter(u => u.role === params[0]);
     if (sql.includes('FROM users ORDER BY')) return users;
     if (sql.startsWith('UPDATE users SET password_hash')) { passwordUpdates.push(params); return { affectedRows: 1 }; }
+    // Backlog AA-14: a password change signs the account out elsewhere.
+    if (sql.startsWith('UPDATE users SET sessions_valid_from')) { revocations.push(params[0]); return { affectedRows: 1 }; }
+    if (sql.startsWith('SELECT UNIX_TIMESTAMP(sessions_valid_from)')) return [{ cutoff_ms: Date.now() }];
+    if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
@@ -132,6 +138,37 @@ describe('admin password reset', () => {
       .send({ token, newPassword: 'NewPass1!', confirmPassword: 'NewPass1?' }).expect(400);
     expect(res.text).toContain('do not match');
     expect(passwordUpdates).toEqual([]);
+  });
+
+  // Backlog AA-14: the account whose password an admin resets is signed out.
+  test('the reset signs that account out of its own sessions', async () => {
+    const agent = await login('admin1');
+    const token = hiddenValue(await agent.get('/admin/manage-users/1/password?from=manage-users'), 'token');
+    await agent.post('/admin/manage-users/1/password').type('form')
+      .send({ token, from: 'manage-users', newPassword: 'FreshStart9#', confirmPassword: 'FreshStart9#' })
+      .expect(303);
+
+    expect(revocations).toEqual([1]);
+  });
+
+  test('the admin doing it stays signed in', async () => {
+    const agent = await login('admin1');
+    const token = hiddenValue(await agent.get('/admin/manage-users/1/password?from=manage-users'), 'token');
+    await agent.post('/admin/manage-users/1/password').type('form')
+      .send({ token, from: 'manage-users', newPassword: 'FreshStart9#', confirmPassword: 'FreshStart9#' })
+      .expect(303);
+
+    await agent.get('/admin/manage-users').expect(200);
+  });
+
+  test('a rejected password revokes nothing', async () => {
+    const agent = await login('admin1');
+    const token = hiddenValue(await agent.get('/admin/manage-users/1/password?from=manage-users'), 'token');
+    await agent.post('/admin/manage-users/1/password').type('form')
+      .send({ token, from: 'manage-users', newPassword: 'short', confirmPassword: 'short' })
+      .expect(400);
+
+    expect(revocations).toEqual([]);
   });
 
   test('a valid reset stores a bcrypt hash, returns to the origin page, and leaves the audit log alone', async () => {

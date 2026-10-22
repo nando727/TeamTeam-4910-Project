@@ -119,10 +119,19 @@ async function updateUserContact(id, { name, email }) {
 // records when it was issued; stamping this column with the current time means
 // every session issued before now is refused on its next request, wherever it
 // is. Returns the timestamp that was set.
+// Returns the cutoff as epoch milliseconds, so a caller that wants to keep one
+// session alive can stamp it just after. UNIX_TIMESTAMP reads the column in the
+// database's own zone, the mirror of FROM_UNIXTIME below; a plain SELECT would
+// hand Node a Date reinterpreted in the machine's local zone.
 async function revokeSessions(id) {
   // NOW(3): whole seconds are too coarse to order against a login in the
   // same second. See migration 013.
   await db.query('UPDATE users SET sessions_valid_from = NOW(3) WHERE id = ?', [id]);
+  const rows = await db.query(
+    'SELECT UNIX_TIMESTAMP(sessions_valid_from) * 1000 AS cutoff_ms FROM users WHERE id = ?',
+    [id]
+  );
+  return rows[0] ? Number(rows[0].cutoff_ms) : null;
 }
 
 // Was this account revoked after the given session was issued?

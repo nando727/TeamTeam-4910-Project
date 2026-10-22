@@ -5,7 +5,7 @@ const { idleLimitLabel } = require('./session-timeout');
 const { takeReturnTo } = require('./return-to');
 const { requireFormToken } = require('./form-token');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./password-policy');
-const { updateUserPassword } = require('../users/store');
+const { updateUserPassword, revokeSessions } = require('../users/store');
 const { createResetToken, findValidReset, consumeReset, TOKEN_PATTERN, EXPIRY_MINUTES } = require('./password-reset');
 const { sendPasswordResetLink } = require('./mailer');
 const { checkLockout, lockoutMessage } = require('./lockout');
@@ -284,6 +284,9 @@ router.post('/reset-password/:token', async (req, res, next) => {
     // Spend the token before writing, so a second submit with the same link fails.
     if (!(await consumeReset(reset.id))) return renderReset(req, res, null, { status: 404 });
     await updateUserPassword(reset.userId, newPassword);
+    // Backlog AA-14: whoever was signed in as this account is signed out.
+    // That is the point of resetting a password you think someone else knows.
+    await revokeSessions(reset.userId);
     console.log(`[password-reset] password reset completed for ${reset.username} (id ${reset.userId})`);
     res.redirect(303, '/login?reset=done');
   } catch (err) { next(err); }
