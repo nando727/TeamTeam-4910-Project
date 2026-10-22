@@ -14,7 +14,7 @@ const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
 const setupRoutes = require('./setup/routes');
 const { formToken, requireFormToken } = require('./auth/form-token');
-const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES} = require('./applications');
+const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES, escapeLike} = require('./applications');
 const db = require('./db');
 
 const { createUser, DuplicateError } = require('./users/store');
@@ -157,6 +157,29 @@ app.get('/organization', requireLogin, requireSponsor, async (req, res, next) =>
     const organization = rows[0];
     if (!organization) return res.status(404).send('Organization not found.');
     res.render('sponsor/organization', { organization });
+  } catch (err) { next(err); }
+});
+
+app.get('/drivers', requireLogin, requireSponsor, async (req, res, next) => {
+  const nameFilter = typeof req.query.name === 'string' ? req.query.name.trim().slice(0, 128) : '';
+
+  try {
+    const params = [req.session.user.sponsorId];
+    let where = ' AND sponsor_id = ?';
+    if (nameFilter) {
+      where += ' AND name LIKE ?';
+      params.push(`%${escapeLike(nameFilter)}%`);
+    }
+
+    const drivers = await db.query(
+      `SELECT name, username, email
+       FROM users
+       WHERE role = 'driver'${where}
+       ORDER BY name`,
+      params
+    );
+
+    res.render('sponsor/drivers', { drivers, nameFilter });
   } catch (err) { next(err); }
 });
 
