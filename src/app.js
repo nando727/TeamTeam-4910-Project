@@ -156,7 +156,13 @@ app.get('/organization', requireLogin, requireSponsor, async (req, res, next) =>
     );
     const organization = rows[0];
     if (!organization) return res.status(404).send('Organization not found.');
-    res.render('sponsor/organization', { organization });
+
+    const rules = await db.query(
+      'SELECT id, title, description FROM rules WHERE sponsor_id = ? ORDER BY id DESC',
+      [req.session.user.sponsorId]
+    );
+
+    res.render('sponsor/organization', { organization, rules, formToken: formToken(req) });
   } catch (err) { next(err); }
 });
 
@@ -188,6 +194,41 @@ function renderOrganizationEdit(req, res, organization, values, error = null, st
     organization, values, error, formToken: formToken(req),
   });
 }
+
+app.post('/organization/rules', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const title = (req.body.title || '').trim();
+  const description = (req.body.description || '').trim();
+  const pointValue = (req.body.pointValue || '').trim();
+
+  if (!title || title.length > 255) {
+    return res.status(400).send('Enter a title (up to 255 characters).');
+  }
+  if (!pointValue || pointValue.length > 255){
+    return res.status(400).send('Enter a valid point amount.');
+  }
+  if (!description || description.length > 2000) {
+    return res.status(400).send('Enter a description (up to 2000 characters).');
+  }
+
+  try {
+    await db.query(
+      'INSERT INTO rules (sponsor_id, title, points, description) VALUES (?, ?, ?, ?)',
+      [req.session.user.sponsorId, title, pointValue, description]
+    );
+    res.redirect('/organization');
+  } catch (err) { next(err); }
+});
+
+app.post('/organization/rules/:id/delete', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  try {
+    const result = await db.query(
+      'DELETE FROM rules WHERE id = ? AND sponsor_id = ?',
+      [req.params.id, req.session.user.sponsorId]
+    );
+    if (result.affectedRows === 0) return res.status(404).send('Rule not found.');
+    res.redirect('/organization');
+  } catch (err) { next(err); }
+});
 
 app.get('/organization/edit', requireLogin, requireSponsor, async (req, res, next) => {
   try {
