@@ -10,7 +10,7 @@
 //
 // Both timestamps come from MySQL, so they cannot disagree about the time.
 
-const { sessionsValidFrom } = require('../users/store');
+const { sessionsRevokedSince } = require('../users/store');
 
 function wantsJson(req) {
   return req.path.startsWith('/api') || req.path.startsWith('/session/');
@@ -22,14 +22,11 @@ async function check(req, res, next) {
   // While an admin is impersonating, the session is still the admin's: it is
   // their revocations that should end it, not the account they are acting as.
   const owner = req.session.impersonator || req.session.user;
-  const cutoff = await sessionsValidFrom(owner.id);
-  if (!cutoff) return next();
-
-  // No issue time means the session predates this feature, so a revocation
-  // must end it. MySQL DATETIME keeps whole seconds, so a session issued in
-  // the same second as the cutoff is refused rather than trusted.
-  const issuedAt = req.session.issuedAt || 0;
-  if (issuedAt > new Date(cutoff).getTime()) return next();
+  // The database compares the two times; see sessionsRevokedSince. MySQL
+  // DATETIME keeps whole seconds, so a session issued in the same second as
+  // the cutoff is refused rather than trusted.
+  const revoked = await sessionsRevokedSince(owner.id, req.session.issuedAt || 0);
+  if (!revoked) return next();
 
   req.session.destroy((err) => {
     if (err) return next(err);

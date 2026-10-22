@@ -28,7 +28,9 @@ beforeEach(() => {
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.startsWith('SELECT sessions_valid_from')) {
       cutoffReads += 1;
-      return [{ sessions_valid_from: cutoff }];
+      // MySQL answers the comparison; see sessionsRevokedSince.
+      const [issuedAtMs] = params;
+      return [{ revoked: cutoff && cutoff.getTime() > issuedAtMs ? 1 : 0 }];
     }
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     if (sql.startsWith('SELECT id, username, password_hash')) {
@@ -125,15 +127,17 @@ describe('after signing out of all sessions', () => {
   });
 });
 
-describe('sessions that predate the feature', () => {
-  test('one with no issue time is refused once a cutoff exists', async () => {
+describe('a cutoff later than the session', () => {
+  test('refuses it however far ahead the cutoff is', async () => {
     const agent = await signIn();
-    // An old session carries no issuedAt. Simulate by revoking far in the
-    // future: anything without a stamp must lose.
     cutoff = new Date(Date.now() + 60_000);
 
     await agent.get('/').expect(302);
   });
+
+  // A session created before this feature carries no issue time at all. That
+  // case is covered where the comparison happens, in tests/revoke-sessions:
+  // sessionsRevokedSince(id, 0) is true whenever a cutoff exists.
 });
 
 describe('background requests', () => {

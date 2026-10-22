@@ -19,7 +19,7 @@ beforeEach(() => {
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     // Backlog AA-13: every signed-in request checks the revocation cutoff.
-    if (sql.startsWith('SELECT sessions_valid_from')) return [{ sessions_valid_from: null }];
+    if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];
     if (sql.includes('FROM users')) return [{ id: 1, username: params[0],
       role: ['sponsor', 'admin'].includes(params[0]) ? params[0] : 'driver', status: 'active',
       sponsor_id: 7, password_hash: hash }];

@@ -2,6 +2,7 @@ const express = require('express');
 const { rememberAndRedirect } = require('../auth/return-to');
 const {
   DuplicateError, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
+  revokeSessions,
 } = require('../users/store');
 const { getAbout } = require('../about/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
@@ -128,6 +129,23 @@ router.post('/profile/password', requireLogin, requireFormToken, async (req, res
     await updateUserPassword(account.id, newPassword);
     const profile = await findUserById(account.id);
     renderProfile(req, res, profile, { success: 'Your password was changed.' });
+  } catch (err) { next(err); }
+});
+
+// Backlog AA-13: end every session for this account at once, including this
+// one. Stamping the account is all it takes: src/auth/session-revocation.js
+// refuses anything issued earlier, on whatever device or instance it reaches.
+// POST only, so a link or a prefetch cannot sign someone out.
+router.post('/profile/sign-out-everywhere', requireLogin, requireFormToken, async (req, res, next) => {
+  try {
+    await revokeSessions(req.session.user.id);
+    // This session was issued before the cutoff too, so it is already dead;
+    // destroying it here just saves the visitor a wasted request.
+    req.session.destroy((err) => {
+      if (err) return next(err);
+      res.clearCookie('connect.sid');
+      res.redirect('/login?reason=everywhere');
+    });
   } catch (err) { next(err); }
 });
 

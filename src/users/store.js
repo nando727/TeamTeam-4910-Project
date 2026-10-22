@@ -120,20 +120,32 @@ async function updateUserContact(id, { name, email }) {
 // every session issued before now is refused on its next request, wherever it
 // is. Returns the timestamp that was set.
 async function revokeSessions(id) {
-  await db.query('UPDATE users SET sessions_valid_from = NOW() WHERE id = ?', [id]);
-  const rows = await db.query('SELECT sessions_valid_from FROM users WHERE id = ?', [id]);
-  return rows[0] ? rows[0].sessions_valid_from : null;
+  // NOW(3): whole seconds are too coarse to order against a login in the
+  // same second. See migration 013.
+  await db.query('UPDATE users SET sessions_valid_from = NOW(3) WHERE id = ?', [id]);
 }
 
-// The cutoff for an account, or null when nothing has been revoked.
-async function sessionsValidFrom(id) {
-  const rows = await db.query('SELECT sessions_valid_from FROM users WHERE id = ?', [id]);
-  return rows[0] ? rows[0].sessions_valid_from : null;
+// Was this account revoked after the given session was issued?
+//
+// MySQL does the comparison, deliberately. The column is a DATETIME written by
+// NOW(), so it carries the database's wall-clock time with no zone attached:
+// read into Node it becomes a Date in the machine's local zone, which on a UTC
+// database and an eastern laptop lands hours away and refuses every session.
+// Handing MySQL the epoch instead keeps both sides in the database's own zone.
+//
+// A session with no issue time predates this feature, and 0 maps to 1970, so
+// any cutoff is later and the session is refused.
+async function sessionsRevokedSince(id, issuedAtMs) {
+  const rows = await db.query(
+    'SELECT sessions_valid_from > FROM_UNIXTIME(? / 1000) AS revoked FROM users WHERE id = ?',
+    [issuedAtMs, id]
+  );
+  return Boolean(rows[0] && rows[0].revoked);
 }
 
 module.exports = {
   VALID_ROLES, USER_STATUSES, DuplicateError,
   createUser, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
   listUsers, updateUserStatus, countRecentFailedLogins,
-  revokeSessions, sessionsValidFrom,
+  revokeSessions, sessionsRevokedSince,
 };
