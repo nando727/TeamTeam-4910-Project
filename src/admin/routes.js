@@ -340,11 +340,11 @@ router.post('/manage-users/:userId/password', async (req, res, next) => {
 // Story 22255 follow-up: a setup link expires after SETUP_LINK_HOURS, so an
 // admin can issue a replacement. Only for accounts that have never completed
 // setup; an account with a password of its own gets a reset instead.
-router.post('/manage-users/:userId/setup-link', requireFormToken, async (req, res, next) => {
+router.post('/manage-users/:userId/setup-link', async (req, res, next) => {
   try {
-    const userId = Number.parseInt(req.params.userId, 10);
-    const user = Number.isInteger(userId) ? await findUserById(userId) : null;
-    if (!user) return res.status(404).send('That user could not be found.');
+    // router.param above has already validated the id and loaded the account,
+    // and the router requires a form token on every POST.
+    const user = req.targetUser;
 
     // Re-checked here rather than trusting the button that was rendered.
     const awaiting = await userIdsAwaitingSetup();
