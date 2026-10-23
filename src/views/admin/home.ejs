@@ -8,7 +8,7 @@
   </section>
 
   <h2 class="section-title">Users</h2>
-  <div class="actions actions--3">
+  <div class="actions actions--2">
     <a class="action" href="/admin/create-user">
       <span class="action__icon"><%- include('../partials/icon', { name: 'user-plus' }) %></span>
       <span class="action__title">Create a user</span>
@@ -23,6 +23,11 @@
       <span class="action__icon"><%- include('../partials/icon', { name: 'shield' }) %></span>
       <span class="action__title">Admin accounts</span>
       <span class="action__text">See every admin and enable or disable their access.</span>
+    </a>
+    <a class="action" href="/admin/bulk-upload">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'upload' }) %></span>
+      <span class="action__title">Bulk upload</span>
+      <span class="action__text">Load organizations, sponsor users, and drivers from a pipe-delimited file.</span>
     </a>
   </div>
 

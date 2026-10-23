@@ -1,0 +1,10 @@
+O|Coastal Carriers
+S|Coastal Carriers|Casey|Coastal|casey@coastal-carriers.example
+D|Coastal Carriers|Pat|Driver|pat.driver@example.com
+D|Coastal Carriers|Robin|Rider|robin.rider@example.com|150|Welcome bonus
+D|Coastal Carriers|Sam|Swift|sam.swift@example.com|75
+D|No Such Org|Lee|Lost|lee.lost@example.com
+A|Coastal Carriers|Max|Mallory|max@coastal-carriers.example
+S|Coastal Carriers|Casey|Coastal|casey@coastal-carriers.example
+D|Coastal Carriers|Jordan|Journey|not-an-email
+D|Coastal Carriers|Alex|Able|alex.able@example.com|-20|Late paperwork
