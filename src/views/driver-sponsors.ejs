@@ -1,0 +1,83 @@
+<%- include('partials/head', { title: 'Driver sponsors' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Sponsors for <%= user.name || user.username %></h1>
+      <p class="lede">Every sponsor this driver belongs to, with the point balance held at each. Add a sponsorship, or remove one and leave the others in place.</p>
+    </div>
+    <% if (notice) { %>
+      <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %></p>
+    <% } %>
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+    <% if (draft) { %>
+      <div class="confirm-box" role="alertdialog" aria-labelledby="confirm-title">
+        <h2 id="confirm-title">Remove <%= user.username %> from <%= draft.sponsorName %>?</h2>
+        <p>The driver's balance of <strong><%= draft.balance.toLocaleString('en-US') %> points</strong> with this sponsor is removed with the sponsorship. Point history stays on record. Other sponsorships are not affected.</p>
+        <div class="button-row">
+          <form method="POST" action="/admin/manage-users/<%= user.id %>/sponsors/<%= draft.sponsorId %>/remove/confirm">
+            <input type="hidden" name="token" value="<%= token %>">
+            <input type="hidden" name="confirmId" value="<%= draft.confirmId %>">
+            <button type="submit" class="button--danger">Yes, remove this sponsorship</button>
+          </form>
+          <form method="POST" action="/admin/manage-users/<%= user.id %>/sponsors/cancel">
+            <input type="hidden" name="token" value="<%= token %>">
+            <button type="submit" class="button-link">Cancel</button>
+          </form>
+        </div>
+      </div>
+    <% } %>
+
+    <dl class="details">
+      <dt>Username</dt><dd><%= user.username %></dd>
+      <dt>Status</dt><dd><span class="status-badge status-<%= user.status %>"><%= user.status %></span></dd>
+      <dt>Sponsorships</dt><dd><%= memberships.length %></dd>
+    </dl>
+
+    <% if (memberships.length === 0) { %>
+      <p class="info" role="status">This driver does not belong to any sponsor yet.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th scope="col">Sponsor</th><th scope="col">Sponsor status</th><th scope="col" class="num">Point balance</th><th scope="col">Member since</th><th scope="col">Remove</th></tr>
+          </thead>
+          <tbody>
+            <% memberships.forEach(m => { %>
+              <tr>
+                <td class="cell-strong"><%= m.name %></td>
+                <td><span class="status-badge status-<%= m.status %>"><%= m.status %></span></td>
+                <td class="num"><%= Number(m.balance).toLocaleString('en-US') %></td>
+                <td class="nowrap"><%= m.joinedAt instanceof Date ? m.joinedAt.toISOString().slice(0, 10) : m.joinedAt %></td>
+                <td>
+                  <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/sponsors/<%= m.id %>/remove">
+                    <input type="hidden" name="token" value="<%= token %>">
+                    <button type="submit" class="button--small button--danger">Remove</button>
+                  </form>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+
+    <h2 class="section-title">Add a sponsorship</h2>
+    <% if (available.length === 0) { %>
+      <p class="muted small">This driver already belongs to every sponsor.</p>
+    <% } else { %>
+      <form class="filters" method="POST" action="/admin/manage-users/<%= user.id %>/sponsors">
+        <input type="hidden" name="token" value="<%= token %>">
+        <div class="filters__field">
+          <label for="sponsor">Sponsor</label>
+          <select id="sponsor" name="sponsor" required>
+            <option value="">Choose a sponsor</option>
+            <% available.forEach(s => { %><option value="<%= s.id %>"><%= s.name %><%= s.status !== 'active' ? ` (${s.status})` : '' %></option><% }); %>
+          </select>
+        </div>
+        <div class="filters__actions"><button type="submit">Add sponsorship</button></div>
+      </form>
+    <% } %>
+    <p style="margin-top: 20px;"><a class="button-link" href="/admin/manage-users">Back to Manage users</a></p>
+  </section>
+<%- include('partials/foot') %>

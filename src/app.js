@@ -13,6 +13,7 @@ const driverRoutes = require('./driver/routes');
 const reportRoutes = require('./reports/routes');
 const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
+const bulkUploadRoutes = require('./bulk/admin-routes');
 const setupRoutes = require('./setup/routes');
 const { formToken, requireFormToken } = require('./auth/form-token');
 const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES, escapeLike} = require('./applications');
@@ -78,6 +79,8 @@ app.use('/driver', driverRoutes);
 app.use('/points', require('./points/routes'));
 app.use('/reports', reportRoutes);
 app.use(accountRoutes);
+// Mounted before the admin router: the upload is multipart and streamed.
+app.use('/admin/bulk-upload', bulkUploadRoutes);
 app.use('/admin', adminRoutes);
 // Story 22255: claiming a new account. No login required; the link is the credential.
 app.use(setupRoutes);

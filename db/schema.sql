@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS driver_sponsors (
   sponsor_id INT NOT NULL,
   point_balance INT NOT NULL DEFAULT 0,
   joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (driver_id),
+  PRIMARY KEY (driver_id, sponsor_id),
   FOREIGN KEY (driver_id) REFERENCES users(id),
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );

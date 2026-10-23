@@ -20,6 +20,7 @@
               <th scope="col">Status</th>
               <th scope="col">Change status</th>
               <th scope="col">Password</th>
+              <th scope="col">Sponsors</th>
               <th scope="col">Impersonate</th>
             </tr>
           </thead>
@@ -47,6 +48,13 @@
                     <a class="button-link button--small" href="/profile/password">Change</a>
                   <% } else { %>
                     <a class="button-link button--small" href="/admin/manage-users/<%= user.id %>/password?from=manage-users">Reset</a>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (user.role === 'driver') { %>
+                    <a class="button-link button--small" href="/admin/manage-users/<%= user.id %>/sponsors">Sponsors</a>
+                  <% } else { %>
+                    <span class="muted small">—</span>
                   <% } %>
                 </td>
                 <td>

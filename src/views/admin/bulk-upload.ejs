@@ -1,0 +1,79 @@
+<%- include('../partials/head', { title: 'Bulk upload' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Bulk upload</h1>
+      <p class="lede">Load organizations, sponsor users, and driver users from one pipe-delimited text file. Every row is checked on its own: a bad row is reported and skipped, and the rest of the file still loads. New users receive a setup link to choose their own password.</p>
+    </div>
+
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+    <% if (result) { %>
+      <h2 class="section-title">Results for <%= result.filename %></h2>
+      <div class="totals">
+        <div class="total"><span class="total__label">Rows read</span><span class="total__value"><%= result.summary.lines %></span></div>
+        <div class="total"><span class="total__label">Organizations created</span><span class="total__value"><%= result.summary.organizations %></span></div>
+        <div class="total"><span class="total__label">Sponsor users created</span><span class="total__value"><%= result.summary.sponsorUsers %></span></div>
+        <div class="total"><span class="total__label">Driver users created</span><span class="total__value"><%= result.summary.driverUsers %></span></div>
+        <div class="total"><span class="total__label">Point changes</span><span class="total__value"><%= result.summary.pointChanges %></span></div>
+        <div class="total"><span class="total__label">Rows with errors</span><span class="total__value <%= result.summary.errors ? 'delta--neg' : '' %>"><%= result.summary.errors %></span></div>
+      </div>
+      <% if (result.summary.lines === 0) { %>
+        <p class="info" role="status" style="margin-top: 16px;">The file had no rows.</p>
+      <% } else { %>
+        <% if (result.summary.errors) { %>
+          <p class="error" role="alert" style="margin-top: 16px;"><%= result.summary.errors %> row<%= result.summary.errors === 1 ? ' was' : 's were' %> skipped. Fix the lines listed below and upload just those rows again.</p>
+        <% } else { %>
+          <p class="success" role="status" style="margin-top: 16px;">Every row loaded.</p>
+        <% } %>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th scope="col">Line</th><th scope="col">Type</th><th scope="col">Outcome</th><th scope="col">Details</th><th scope="col">Setup link</th></tr>
+            </thead>
+            <tbody>
+              <% result.rows.forEach(row => { %>
+                <tr class="<%= row.status === 'error' ? 'row-error' : row.status === 'skipped' ? 'is-muted' : '' %>">
+                  <td class="num"><%= row.line %></td>
+                  <td><span class="role-chip"><%= row.type %></span></td>
+                  <td><span class="status-badge status-<%= row.status === 'created' ? 'active' : row.status === 'skipped' ? 'inactive' : 'revoked' %>"><%= row.status %></span></td>
+                  <td><%= row.message %><% if (row.status === 'error') { %><br><code class="small muted"><%= row.raw %></code><% } %></td>
+                  <td><% if (row.setupLink) { %><input class="setup-link" type="text" readonly value="<%= row.setupLink %>" aria-label="Setup link for <%= row.username %>" onfocus="this.select()"><% } %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+        <p class="hint">Setup links are also written to the server log as emails. They work once and expire after the usual setup period.</p>
+      <% } %>
+      <h2 class="section-title">Upload another file</h2>
+    <% } %>
+
+    <div class="format-box">
+      <h2>File format</h2>
+      <p>One record per line, fields separated by <code>|</code>, no header line. Fields in brackets are optional.</p>
+      <pre class="format"><% format.forEach(line => { %><%= line %>
+<% }); %></pre>
+      <ul class="small">
+        <li>An <strong>O</strong> row creates the organization so rows below it can add users to it. An existing organization can be used without an O row.</li>
+        <li>A row naming an organization that does not exist, and was not created earlier in the file, is skipped.</li>
+        <li>Points without a reason, or a reason without points, is an error. Negative points deduct.</li>
+        <li>There is no row type for admin users.</li>
+        <li><a href="/admin/bulk-upload/sample.txt">Download a sample file</a> that exercises every rule.</li>
+      </ul>
+    </div>
+
+    <form method="POST" action="/admin/bulk-upload" enctype="multipart/form-data" data-report-form>
+      <%# The token must come before the file so it is checked before any row is processed. %>
+      <input type="hidden" name="token" value="<%= token %>">
+      <label for="file">Upload file</label>
+      <input id="file" name="file" type="file" accept=".txt,text/plain" required>
+      <p class="hint">Any size. Large files are processed as they arrive.</p>
+      <button type="submit">Upload and process</button>
+    </form>
+    <p class="report-status" id="report-status" role="status" aria-live="polite" hidden>
+      <span class="spinner" aria-hidden="true"></span> <span class="report-status__text">Uploading and processing…</span>
+    </p>
+  </section>
+  <script src="/report.js" defer></script>
+<%- include('../partials/foot') %>
