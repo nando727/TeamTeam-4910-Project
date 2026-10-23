@@ -7,6 +7,12 @@
     </div>
     <% if (notice) { %>
       <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %></p>
+      <% if (notice.link) { %>
+        <p>Copy this link and send it to them. A copy is written to the server log;
+           it is not emailed until mail delivery is configured.</p>
+        <p><input class="setup-link" type="text" readonly value="<%= notice.link %>"
+                  aria-label="Setup link" onfocus="this.select()"></p>
+      <% } %>
     <% } %>
     <% if (users.length === 0) { %>
       <p class="info" role="status">No users have been created yet. <a href="/admin/create-user">Create a user</a>.</p>
@@ -20,6 +26,7 @@
               <th scope="col">Status</th>
               <th scope="col">Change status</th>
               <th scope="col">Password</th>
+              <th scope="col">Setup link</th>
               <th scope="col">Impersonate</th>
             </tr>
           </thead>
@@ -47,6 +54,17 @@
                     <a class="button-link button--small" href="/profile/password">Change</a>
                   <% } else { %>
                     <a class="button-link button--small" href="/admin/manage-users/<%= user.id %>/password?from=manage-users">Reset</a>
+                  <% } %>
+                </td>
+                <td>
+                  <%# Only for accounts that were sent a link and never used one. %>
+                  <% if (user.awaitingSetup) { %>
+                    <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/setup-link">
+                      <input type="hidden" name="token" value="<%= token %>">
+                      <button type="submit" class="button--small">Send new link</button>
+                    </form>
+                  <% } else { %>
+                    <span class="muted small">Password set</span>
                   <% } %>
                 </td>
                 <td>

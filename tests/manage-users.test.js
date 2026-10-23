@@ -40,6 +40,8 @@ beforeEach(() => {
       statusUpdates.push(params);
       return { affectedRows: 1 };
     }
+    // Story 22255 follow-up: the list asks who still owes us a password.
+    if (sql.startsWith('SELECT user_id FROM setup_tokens')) return [];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
