@@ -303,6 +303,23 @@ refresh to confirm it stays dismissed. Deduct 10 points as the sponsor and check
 that the driver's balance is now 15 above the starting balance, with a -10 history
 entry and a new points-deducted alert.
 
+## Sales by Sponsor report (stories AD-25 to AD-29)
+
+Admins open **Reports -> Sales by sponsor** (`/reports/sales`) to review driver
+purchases from the `purchases` table. Choose **Summary** for one row per sponsor
+(number of sales, total dollars, points spent, with a grand total row) or
+**Detailed** for one row per purchase (date, sponsor, driver, item, amount,
+points spent). Filter by all sponsors or one, and by a date range with quick
+ranges; the header strip states the filters, version, and sort in effect.
+Columns sort by clicking their headers, results page at 25 rows, and the CSV
+exports every filtered row for the chosen version in the on-screen sort,
+ending with the grand total row. Sponsors and drivers get the denied-access page.
+
+Sample data: `npm run db:seed:sales` adds a second sponsor (Northstar Freight,
+sponsor user `sponsor2` / `SponsorPass2!`, driver `driver3` / `DriverPass3!`)
+and more purchases for both sponsors. Run it after the points and purchases
+seeds. It skips anything that already exists.
+
 ## Deployment (GitHub Actions to AWS Elastic Beanstalk)
 
 The app is hosted on AWS Elastic Beanstalk (application `gooddriver`,
