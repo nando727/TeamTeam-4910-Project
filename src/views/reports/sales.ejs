@@ -1,0 +1,137 @@
+<%- include('../partials/head', { title: 'Sales by sponsor' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Reports</span>
+      <h1>Sales by Sponsor</h1>
+      <p class="lede">Driver purchases made with points, <%= isSummary ? 'totalled per sponsor organization' : 'one line per purchase' %>. Filter by sponsor or date, switch between the summary and detailed versions, then download the same view as a CSV.</p>
+      <dl class="report-summary" aria-label="Report covers">
+        <% summary.forEach(item => { %>
+          <div class="report-summary__item"><dt><%= item.label %></dt><dd><%= item.value %></dd></div>
+        <% }); %>
+      </dl>
+    </div>
+
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+    <form class="filters" method="GET" action="/reports/sales" data-report-form>
+      <input type="hidden" name="sort" value="<%= filters.sort %>">
+      <input type="hidden" name="dir" value="<%= filters.dir %>">
+      <div class="filters__field">
+        <label for="sponsor">Sponsor</label>
+        <select id="sponsor" name="sponsor">
+          <option value="all">All sponsors</option>
+          <% sponsors.forEach(sponsor => { %>
+            <option value="<%= sponsor.id %>" <%= filters.sponsorId === sponsor.id ? 'selected' : '' %>><%= sponsor.name %></option>
+          <% }); %>
+        </select>
+      </div>
+      <div class="filters__field">
+        <label for="from">From</label>
+        <input id="from" name="from" type="date" value="<%= filters.from || '' %>" max="<%= today %>">
+      </div>
+      <div class="filters__field">
+        <label for="to">To</label>
+        <input id="to" name="to" type="date" value="<%= filters.to || '' %>" max="<%= today %>">
+      </div>
+      <div class="filters__field">
+        <label for="version">Version</label>
+        <select id="version" name="version">
+          <option value="summary" <%= isSummary ? 'selected' : '' %>>Summary: totals per sponsor</option>
+          <option value="detailed" <%= !isSummary ? 'selected' : '' %>>Detailed: every purchase</option>
+        </select>
+      </div>
+      <div class="filters__actions">
+        <button type="submit">Apply</button>
+        <a class="button-link" href="/reports/sales" data-busy="Resetting the report…">Clear</a>
+      </div>
+    </form>
+    <p class="quick-ranges">
+      <span class="muted small">Quick ranges:</span>
+      <% quickRanges.forEach(range => { %>
+        <a class="chip<%= range.active ? ' is-active' : '' %>" href="<%= range.href %>"<%- range.active ? ' aria-current="true"' : '' %> data-busy="Generating report…"><%= range.label %></a>
+      <% }); %>
+      <span class="muted small" style="margin-left: auto;">Version:</span>
+      <span class="segmented" role="group" aria-label="Report version">
+        <% if (isSummary) { %><span class="is-active" aria-current="true">Summary</span><% } else { %><a href="<%= versionHref('summary') %>" data-busy="Switching to the summary version…">Summary</a><% } %>
+        <% if (!isSummary) { %><span class="is-active" aria-current="true">Detailed</span><% } else { %><a href="<%= versionHref('detailed') %>" data-busy="Switching to the detailed version…">Detailed</a><% } %>
+      </span>
+    </p>
+
+    <p class="report-status" id="report-status" role="status" aria-live="polite" hidden>
+      <span class="spinner" aria-hidden="true"></span> <span class="report-status__text">Generating report…</span>
+    </p>
+
+    <div class="report-bar">
+      <span class="muted small">
+        <% if (total === 0) { %>0 <%= isSummary ? 'sponsors' : 'sales' %><%= rangeLabel %><% } else { %>Showing <%= pageStart %> to <%= pageEnd %> of <%= total.toLocaleString('en-US') %> <%= isSummary ? 'sponsor' : 'sale' %><%= total === 1 ? '' : 's' %><%= rangeLabel %><% } %>
+      </span>
+      <a class="button-link button--small" href="<%= csvHref %>" data-busy="Preparing the CSV download…" data-busy-reset="4000">Download CSV (<%= isSummary ? 'summary' : `all ${grand.sales.toLocaleString('en-US')} sales` %>)</a>
+    </div>
+
+    <% if (grand.sales === 0 && !error) { %>
+      <div class="info" role="status">
+        <p><strong>No sales<%= rangeLabel %> for these filters.</strong></p>
+        <p>The report ran successfully and found no purchases matching <%= summary[0].value %>, <%= summary[1].value.toLowerCase() %>. Widen the date range or <a href="/reports/sales">clear the filters</a> to see everything.</p>
+      </div>
+    <% } %>
+
+    <% if (rows.length > 0 && grand.sales > 0) { %>
+      <div class="table-wrap">
+        <table class="table table--sortable">
+          <% const headers = isSummary
+               ? [['sponsor', 'Sponsor', ''], ['status', 'Status', ''], ['sales', 'Sales', 'num'], ['dollars', 'Total', 'num'], ['points', 'Points spent', 'num']]
+               : [['date', 'Date (UTC)', ''], ['sponsor', 'Sponsor', ''], ['driver', 'Driver', ''], ['item', 'Item', ''], ['amount', 'Amount', 'num'], ['points', 'Points spent', 'num']]; %>
+          <thead>
+            <tr>
+              <% headers.forEach(([key, label, cls]) => { const link = sortLinks[key]; %>
+                <th scope="col" class="<%= cls %>" <%- link.active ? `aria-sort="${link.dir === 'asc' ? 'ascending' : 'descending'}"` : '' %>>
+                  <a class="sort-link<%= link.active ? ' is-active' : '' %>" href="<%= link.href %>" data-busy="Sorting…"><%= label %><span class="sort-arrow" aria-hidden="true"><%= link.active ? (link.dir === 'asc' ? '▲' : '▼') : '↕' %></span></a>
+                </th>
+              <% }); %>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (isSummary) { rows.forEach(row => { %>
+              <tr<%- Number(row.sales) === 0 ? ' class="is-muted"' : '' %>>
+                <td class="cell-strong"><%= row.name %></td>
+                <td><span class="status-badge status-<%= row.status %>"><%= row.status %></span></td>
+                <td class="num"><%= Number(row.sales).toLocaleString('en-US') %></td>
+                <td class="num"><%= dollars(row.totalCents) %></td>
+                <td class="num"><%= Number(row.points).toLocaleString('en-US') %></td>
+              </tr>
+            <% }); } else { rows.forEach(row => { %>
+              <tr>
+                <td class="nowrap"><%= formatStamp(row.purchasedAt) %></td>
+                <td><%= row.sponsorName %></td>
+                <td class="cell-strong"><%= row.driverName %></td>
+                <td><%= row.item %></td>
+                <td class="num"><%= dollars(row.amountCents) %></td>
+                <td class="num"><%= Number(row.points).toLocaleString('en-US') %></td>
+              </tr>
+            <% }); } %>
+          </tbody>
+          <tfoot>
+            <tr>
+              <% if (isSummary) { %>
+                <th scope="row" colspan="2">Grand total<%= chosenSponsor ? '' : ', all sponsors' %></th>
+                <td class="num"><%= grand.sales.toLocaleString('en-US') %></td>
+              <% } else { %>
+                <th scope="row" colspan="4">Total for these filters, <%= grand.sales.toLocaleString('en-US') %> sale<%= grand.sales === 1 ? '' : 's' %></th>
+              <% } %>
+              <td class="num cell-strong"><%= dollars(grand.totalCents) %></td>
+              <td class="num"><%= grand.points.toLocaleString('en-US') %></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <% if (pageCount > 1) { %>
+        <nav class="pager" aria-label="Report pages">
+          <% if (prevHref) { %><a class="button-link button--small" href="<%= prevHref %>" data-busy="Loading page <%= page - 1 %>…">&larr; Previous</a><% } else { %><span class="button-link button--small is-disabled" aria-disabled="true">&larr; Previous</span><% } %>
+          <span class="pager__status">Page <%= page %> of <%= pageCount %></span>
+          <% if (nextHref) { %><a class="button-link button--small" href="<%= nextHref %>" data-busy="Loading page <%= page + 1 %>…">Next &rarr;</a><% } else { %><span class="button-link button--small is-disabled" aria-disabled="true">Next &rarr;</span><% } %>
+        </nav>
+      <% } %>
+    <% } %>
+  </section>
+  <script src="/report.js" defer></script>
+<%- include('../partials/foot') %>
