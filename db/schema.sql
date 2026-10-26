@@ -33,7 +33,11 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   id INT AUTO_INCREMENT PRIMARY KEY,
   attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   username VARCHAR(64) NOT NULL,
-  success BOOLEAN NOT NULL
+  success BOOLEAN NOT NULL,
+  -- Where the attempt came from, so a lockout can count per origin as well as
+  -- per username (migration 015). NULL when it could not be determined.
+  source_ip VARCHAR(45) NULL,
+  INDEX idx_login_attempts_username_source (username, source_ip, attempted_at)
 );
 
 CREATE TABLE IF NOT EXISTS sponsor_applications (

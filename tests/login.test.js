@@ -72,7 +72,7 @@ describe('POST /login', () => {
     expect(home.text).toContain('driver1');
 
     const [, params] = loginAttemptCalls()[0];
-    expect(params).toEqual(['driver1', true]);
+    expect(params).toEqual(['driver1', true, '127.0.0.1']);
   });
 
   test('wrong password shows an error and logs a failed attempt', async () => {
@@ -85,7 +85,7 @@ describe('POST /login', () => {
     expect(res.text).toContain('Incorrect username or password.');
 
     const [, params] = loginAttemptCalls()[0];
-    expect(params).toEqual(['driver1', false]);
+    expect(params).toEqual(['driver1', false, '127.0.0.1']);
   });
 
   test('unknown username gets the same generic error', async () => {
@@ -98,7 +98,7 @@ describe('POST /login', () => {
     expect(res.text).toContain('Incorrect username or password.');
 
     const [, params] = loginAttemptCalls()[0];
-    expect(params).toEqual(['nobody', false]);
+    expect(params).toEqual(['nobody', false, '127.0.0.1']);
   });
 
   test('missing fields are rejected without a database lookup', async () => {
@@ -164,7 +164,7 @@ describe('blocked accounts', () => {
       .send({ username: 'disabled1', password: 'DriverPass1!' });
 
     const [, params] = loginAttemptCalls()[0];
-    expect(params).toEqual(['disabled1', false]);
+    expect(params).toEqual(['disabled1', false, '127.0.0.1']);
   });
 
   test('a wrong password on a disabled account still gets the generic error', async () => {

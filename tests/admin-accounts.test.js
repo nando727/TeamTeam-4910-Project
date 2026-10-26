@@ -148,7 +148,7 @@ describe('login blocks accounts that are not active', () => {
     const res = await request(app).post('/login').type('form')
       .send({ username: 'admin3', password: PASSWORD }).expect(403);
     expect(res.text).toContain('This account is disabled.');
-    expect(attempts).toEqual([['admin3', false]]);
+    expect(attempts).toEqual([['admin3', false, '127.0.0.1']]);
     expect(res.headers['set-cookie']).toBeUndefined();
   });
 
@@ -156,7 +156,7 @@ describe('login blocks accounts that are not active', () => {
     const res = await request(app).post('/login').type('form')
       .send({ username: 'admin4', password: PASSWORD }).expect(403);
     expect(res.text).toContain('has been revoked');
-    expect(attempts).toEqual([['admin4', false]]);
+    expect(attempts).toEqual([['admin4', false, '127.0.0.1']]);
   });
 
   test('a wrong password on a disabled account still gets the generic message', async () => {
@@ -169,12 +169,12 @@ describe('login blocks accounts that are not active', () => {
   test('the JSON login applies the same rule', async () => {
     const res = await request(app).post('/api/login').send({ username: 'sponsor1', password: PASSWORD }).expect(403);
     expect(res.body).toEqual({ success: false, error: 'This account is disabled. Contact your sponsor or an administrator to restore access.' });
-    expect(attempts).toEqual([['sponsor1', false]]);
+    expect(attempts).toEqual([['sponsor1', false, '127.0.0.1']]);
   });
 
   test('an active account still logs in and is recorded as a success', async () => {
     await login('admin1');
-    expect(attempts).toEqual([['admin1', true]]);
+    expect(attempts).toEqual([['admin1', true, '127.0.0.1']]);
   });
 });
 
