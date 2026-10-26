@@ -6,9 +6,9 @@ const {
 } = require('../users/store');
 const { createSponsor, listSponsors } = require('../sponsors/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
+const { requireActiveAdmin } = require('./guard');
+const { listDriverSponsors, addDriverSponsor, removeDriverSponsor, MembershipError } = require('../memberships/store');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
-const { rememberAndRedirect } = require('../auth/return-to');
-const { denyAccess } = require('../auth/deny');
 const {
   issueSetupToken, setupLinkFor, linkLifetimeHours, invalidateSetupTokens, userIdsAwaitingSetup,
 } = require('../auth/setup-tokens');
@@ -18,25 +18,9 @@ const router = express.Router();
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Admin-only pages: creating users and sponsor organizations, managing user
-// status, viewing sponsor status.
-router.use(async (req, res, next) => {
-  if (!req.session.user) return rememberAndRedirect(req, res);
-  if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
-  try {
-    // The session only says who signed in. Re-read the account so an admin who
-    // was disabled, revoked, demoted, or deleted since then is cut off on their
-    // next admin request, not just at their next login.
-    const account = await findUserById(req.session.user.id);
-    const reason = !account ? 'missing' : account.status !== 'active' ? account.status : account.role !== 'admin' ? 'role' : null;
-    if (reason) {
-      return req.session.destroy(() => {
-        res.clearCookie('connect.sid');
-        res.redirect(`/login?reason=${encodeURIComponent(reason)}`);
-      });
-    }
-    next();
-  } catch (err) { next(err); }
-});
+// status, viewing sponsor status. The guard lives in ./guard so the bulk
+// upload router (mounted separately because it streams multipart) shares it.
+router.use(requireActiveAdmin);
 router.use(requireFormToken);
 
 const read = (req, key) => (typeof req.body[key] === 'string' ? req.body[key].trim() : '');
@@ -262,6 +246,82 @@ router.post('/manage-users/:userId/confirm', async (req, res, next) => {
     await updateUserStatus(user.id, draft.status);
     flashAndRedirect(req, res, { kind: 'success', text: `Status for ${user.username} changed to ${draft.status}.` }, draft.returnTo);
   } catch (err) { next(err); }
+});
+
+// ---- Driver sponsorships (RC#2) --------------------------------------------
+
+// Every sponsor a driver belongs to, with the balance for each; add one or
+// remove one and leave the rest in place. Removal is confirmed first.
+
+async function renderDriverSponsors(req, res, { error = null, status = 200 } = {}) {
+  const user = req.targetUser;
+  const [memberships, sponsors] = await Promise.all([listDriverSponsors(user.id), listSponsors()]);
+  const memberIds = new Set(memberships.map(m => m.id));
+  res.status(status).render('driver-sponsors', {
+    user, memberships, notice: takeNotice(req), error, token: formToken(req),
+    available: sponsors.filter(s => !memberIds.has(s.id)),
+    draft: req.session.sponsorRemoval && req.session.sponsorRemoval.userId === user.id ? req.session.sponsorRemoval : null,
+  });
+}
+
+function requireDriver(req, res, next) {
+  if (req.targetUser.role !== 'driver') return res.status(400).send('Only driver accounts have sponsors.');
+  next();
+}
+
+router.get('/manage-users/:userId/sponsors', requireDriver, async (req, res, next) => {
+  try { await renderDriverSponsors(req, res); } catch (err) { next(err); }
+});
+
+router.post('/manage-users/:userId/sponsors', requireDriver, async (req, res, next) => {
+  const user = req.targetUser;
+  const sponsorId = /^[1-9]\d*$/.test(read(req, 'sponsor')) ? Number(read(req, 'sponsor')) : null;
+  const back = `/admin/manage-users/${user.id}/sponsors`;
+  if (!sponsorId) return flashAndRedirect(req, res, { kind: 'error', text: 'Choose a sponsor from the list.' }, back);
+  try {
+    const sponsor = (await listSponsors()).find(s => s.id === sponsorId);
+    if (!sponsor) return flashAndRedirect(req, res, { kind: 'error', text: 'Choose a sponsor from the list.' }, back);
+    await addDriverSponsor(user.id, sponsorId);
+    flashAndRedirect(req, res, { kind: 'success', text: `${user.username} now belongs to ${sponsor.name}.` }, back);
+  } catch (err) {
+    if (err instanceof MembershipError) return flashAndRedirect(req, res, { kind: 'error', text: err.message }, back);
+    next(err);
+  }
+});
+
+// Step 1: ask. The pending removal is held in the session with a one-time id.
+router.post('/manage-users/:userId/sponsors/:sponsorId/remove', requireDriver, async (req, res, next) => {
+  const user = req.targetUser;
+  const back = `/admin/manage-users/${user.id}/sponsors`;
+  try {
+    const membership = (await listDriverSponsors(user.id)).find(m => String(m.id) === req.params.sponsorId);
+    delete req.session.sponsorRemoval;
+    if (!membership) return flashAndRedirect(req, res, { kind: 'info', text: 'That sponsorship is no longer on this driver.' }, back);
+    req.session.sponsorRemoval = { userId: user.id, sponsorId: membership.id, sponsorName: membership.name, balance: Number(membership.balance), confirmId: randomBytes(32).toString('hex') };
+    res.redirect(303, back);
+  } catch (err) { next(err); }
+});
+
+// Step 2: confirmed removal, echoing the one-time id.
+router.post('/manage-users/:userId/sponsors/:sponsorId/remove/confirm', requireDriver, async (req, res, next) => {
+  const user = req.targetUser;
+  const back = `/admin/manage-users/${user.id}/sponsors`;
+  const draft = req.session.sponsorRemoval;
+  if (!draft || draft.userId !== user.id || String(draft.sponsorId) !== req.params.sponsorId || req.body.confirmId !== draft.confirmId) {
+    return res.status(400).send('Confirm the removal before saving it.');
+  }
+  try {
+    delete req.session.sponsorRemoval;
+    const removed = await removeDriverSponsor(user.id, draft.sponsorId);
+    flashAndRedirect(req, res, removed
+      ? { kind: 'success', text: `Removed ${user.username} from ${draft.sponsorName}. Other sponsorships were left in place.` }
+      : { kind: 'info', text: 'That sponsorship was already gone.' }, back);
+  } catch (err) { next(err); }
+});
+
+router.post('/manage-users/:userId/sponsors/cancel', requireDriver, (req, res) => {
+  delete req.session.sponsorRemoval;
+  res.redirect(303, `/admin/manage-users/${req.targetUser.id}/sponsors`);
 });
 
 // ---- Impersonation (drivers and sponsors only) -----------------------------

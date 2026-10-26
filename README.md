@@ -332,6 +332,66 @@ refresh to confirm it stays dismissed. Deduct 10 points as the sponsor and check
 that the driver's balance is now 15 above the starting balance, with a -10 history
 entry and a new points-deducted alert.
 
+## Sales by Sponsor report (stories AD-25 to AD-29)
+
+Admins open **Reports -> Sales by sponsor** (`/reports/sales`) to review driver
+purchases from the `purchases` table. Choose **Summary** for one row per sponsor
+(number of sales, total dollars, points spent, with a grand total row) or
+**Detailed** for one row per purchase (date, sponsor, driver, item, amount,
+points spent). Filter by all sponsors or one, and by a date range with quick
+ranges; the header strip states the filters, version, and sort in effect.
+Columns sort by clicking their headers, results page at 25 rows, and the CSV
+exports every filtered row for the chosen version in the on-screen sort,
+ending with the grand total row. Sponsors and drivers get the denied-access page.
+
+Sample data: `npm run db:seed:sales` adds a second sponsor (Northstar Freight,
+sponsor user `sponsor2` / `SponsorPass2!`, driver `driver3` / `DriverPass3!`)
+and more purchases for both sponsors. Run it after the points and purchases
+seeds. It skips anything that already exists.
+
+## Bulk upload (requirement change RC#1)
+
+Admins open **Users -> Bulk upload** (`/admin/bulk-upload`) and upload a
+pipe-delimited text file. The format lives in ONE place, the `FORMAT` object at
+the top of `src/bulk/parser.js`; the upload page, the sample file, and the
+tests follow it. Current layout, no header line, bracketed fields optional:
+
+```
+O|organization name
+S|organization name|first name|last name|email
+D|organization name|first name|last name|email|[points]|[reason]
+```
+
+Rules: an `O` row creates the organization so later rows can use it; a row
+naming an organization that does not exist and was not created earlier in the
+file is skipped; points without a reason (or a reason without points) is an
+error; there is no row type for admin users. Every bad row is reported with its
+line number and skipped, and processing continues. New users get an
+unguessable password plus the existing setup link, shown on the results page
+and written to the mail log. Points on a `D` row go through the shared point
+adjustment, so the `point_transactions` row, the balance, and the driver alert
+are written together.
+
+The file is streamed and processed line by line (`busboy`), so there is no size
+limit in the app, and `.platform/nginx/conf.d/upload-size.conf` lifts the
+Elastic Beanstalk proxy's 1 MB default. Organizations created from an `O` row
+get placeholder contact details until a sponsor edits them. The sponsor-side
+upload (Ford and Fernando) reuses `src/bulk/parser.js` and `src/bulk/loader.js`
+with a sponsor-scoped actor, which refuses `O` rows and other organizations.
+
+Sample file: `docs/bulk-upload-sample.txt` (also downloadable from the page).
+
+## Multiple sponsors per driver (requirement change RC#2)
+
+Migration 014 changes the `driver_sponsors` key to `(driver_id, sponsor_id)`,
+so a driver can belong to several sponsors, each with its own point balance.
+Admins open **Manage users -> Sponsors** on a driver row to see every
+sponsorship, add one, or remove one (confirmed first) while leaving the rest in
+place. Removing a sponsorship deletes that balance; the point history stays in
+`point_transactions`. The sponsor approval flow still creates a membership on
+approval; its "one sponsor at a time" message now only applies to the same
+sponsor twice.
+
 ## Deployment (GitHub Actions to AWS Elastic Beanstalk)
 
 The app is hosted on AWS Elastic Beanstalk (application `gooddriver`,

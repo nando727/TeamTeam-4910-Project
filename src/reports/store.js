@@ -101,8 +101,100 @@ async function listPurchaseMonths() {
   return rows.map(row => row.month);
 }
 
+// ---- Sales by Sponsor (stories AD-25 to AD-29) ---------------------------------
+
+const SALES_VERSIONS = ['summary', 'detailed'];
+// Sortable columns per version; only these reach ORDER BY.
+const SALES_SORT_COLUMNS = {
+  summary: { sponsor: 's.name', status: 's.status', sales: 'sales', dollars: 'totalCents', points: 'points' },
+  detailed: { date: 'p.purchased_at', sponsor: 's.name', driver: 'driverName', item: 'p.description', amount: 'p.amount_cents', points: 'p.points_spent' },
+};
+
+function orderClause(version, sort, dir, tieBreak) {
+  const columns = SALES_SORT_COLUMNS[version];
+  const column = columns[sort] || Object.values(columns)[0];
+  const direction = SORT_DIRECTIONS.includes(dir) ? dir.toUpperCase() : 'ASC';
+  return `ORDER BY ${column} ${direction}, ${tieBreak}`;
+}
+function pagingClause(limit, offset) {
+  return Number.isInteger(limit) && limit > 0
+    ? ` LIMIT ${limit} OFFSET ${Number.isInteger(offset) && offset > 0 ? offset : 0}`
+    : '';
+}
+// Date conditions on purchases, inclusive of both days.
+function purchaseDateFilter({ from = null, to = null } = {}) {
+  const conditions = [];
+  const params = [];
+  if (from) { conditions.push('p.purchased_at >= ?'); params.push(from); }
+  if (to) { conditions.push('p.purchased_at < DATE_ADD(?, INTERVAL 1 DAY)'); params.push(to); }
+  return { conditions, params };
+}
+
+// Summary: one row per sponsor in scope. The date filter sits in the JOIN so a
+// sponsor with no sales in the range still appears with zeros.
+async function salesSummary({ sponsorId = null, from = null, to = null } = {}, { sort = 'sponsor', dir = 'asc', limit = null, offset = 0 } = {}) {
+  const dates = purchaseDateFilter({ from, to });
+  const params = [...dates.params];
+  let where = '';
+  if (sponsorId) { where = 'WHERE s.id = ? '; params.push(sponsorId); }
+  return db.query(
+    'SELECT s.id, s.name, s.status, COUNT(p.id) AS sales, COALESCE(SUM(p.amount_cents), 0) AS totalCents, ' +
+      'COALESCE(SUM(p.points_spent), 0) AS points ' +
+      'FROM sponsors s LEFT JOIN purchases p ON p.sponsor_id = s.id' +
+      (dates.conditions.length ? ' AND ' + dates.conditions.join(' AND ') : '') + ' ' +
+      where + 'GROUP BY s.id, s.name, s.status ' +
+      orderClause('summary', sort, dir, 's.name ASC, s.id ASC') + pagingClause(limit, offset),
+    params
+  );
+}
+
+async function countSponsorsInScope({ sponsorId = null } = {}) {
+  const rows = sponsorId
+    ? await db.query('SELECT COUNT(*) AS total FROM sponsors WHERE id = ?', [sponsorId])
+    : await db.query('SELECT COUNT(*) AS total FROM sponsors');
+  return Number((rows[0] && rows[0].total) || 0);
+}
+
+function salesFilter({ sponsorId = null, from = null, to = null } = {}) {
+  const { conditions, params } = purchaseDateFilter({ from, to });
+  if (sponsorId) { conditions.unshift('p.sponsor_id = ?'); params.unshift(sponsorId); }
+  return { where: conditions.length ? 'WHERE ' + conditions.join(' AND ') + ' ' : '', params };
+}
+
+// Detailed: one row per purchase.
+async function salesDetail(filters = {}, { sort = 'date', dir = 'desc', limit = null, offset = 0 } = {}) {
+  const { where, params } = salesFilter(filters);
+  return db.query(
+    'SELECT p.id, p.purchased_at AS purchasedAt, s.name AS sponsorName, ' +
+      'COALESCE(NULLIF(u.name, \'\'), u.username) AS driverName, u.username AS driverUsername, ' +
+      'p.description AS item, p.amount_cents AS amountCents, p.points_spent AS points ' +
+      'FROM purchases p JOIN sponsors s ON s.id = p.sponsor_id JOIN users u ON u.id = p.driver_id ' +
+      where + orderClause('detailed', sort, dir, 'p.id DESC') + pagingClause(limit, offset),
+    params
+  );
+}
+
+async function countSales(filters = {}) {
+  const { where, params } = salesFilter(filters);
+  const rows = await db.query('SELECT COUNT(*) AS total FROM purchases p ' + where, params);
+  return Number((rows[0] && rows[0].total) || 0);
+}
+
+// Grand totals for the whole filtered set (both versions, every page).
+async function salesTotals(filters = {}) {
+  const { where, params } = salesFilter(filters);
+  const rows = await db.query(
+    'SELECT COUNT(*) AS sales, COALESCE(SUM(p.amount_cents), 0) AS totalCents, COALESCE(SUM(p.points_spent), 0) AS points ' +
+      'FROM purchases p ' + where,
+    params
+  );
+  const row = rows[0] || {};
+  return { sales: Number(row.sales || 0), totalCents: Number(row.totalCents || 0), points: Number(row.points || 0) };
+}
+
 module.exports = {
-  SORT_COLUMNS, SORT_DIRECTIONS,
+  SORT_COLUMNS, SORT_DIRECTIONS, SALES_SORT_COLUMNS, SALES_VERSIONS,
   listDriversInScope, listPointChanges, countPointChanges, dailyPointTotals,
   monthlySponsorPurchases, listPurchaseMonths,
+  salesSummary, countSponsorsInScope, salesDetail, countSales, salesTotals,
 };

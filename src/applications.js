@@ -55,7 +55,7 @@ async function setApplicationStatus(applicationId, status, sponsorId, rejectionR
     );
     if (status === 'approved') {
       await conn.execute(
-        'INSERT INTO driver_sponsors (driver_id, sponsor_id) VALUES (?, ?)',
+        'INSERT INTO users (id, sponsor_id) VALUES (?, ?)',
         [applications[0].driver_id, sponsorId]
       );
     }
@@ -75,4 +75,4 @@ async function setApplicationStatus(applicationId, status, sponsorId, rejectionR
   }
 }
 
-module.exports = { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES};
+module.exports = { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES, escapeLike};

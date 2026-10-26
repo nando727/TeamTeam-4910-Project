@@ -590,3 +590,26 @@ form > button { width: 100%; }
 .recovery li + li { margin-top: 6px; }
 .recovery a { font-weight: 600; }
 .recovery__aside { display: block; opacity: 0.85; font-size: 0.9em; }
+
+/* ---- Reports: version switch (summary / detailed) --------------------------- */
+
+.segmented { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 999px; overflow: hidden; background: var(--surface); }
+.segmented a, .segmented span { padding: 7px 16px; font-size: 0.9rem; font-weight: 600; color: var(--navy); }
+.segmented a:hover { background: var(--blue-soft); text-decoration: none; }
+.segmented .is-active { background: var(--blue); color: #fff; }
+.quick-ranges .segmented { margin-left: 4px; }
+
+/* ---- Bulk upload + driver sponsors ------------------------------------------ */
+
+.format-box { margin: 0 0 20px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-muted); }
+.format-box h2 { margin-top: 0; }
+.format { margin: 8px 0 12px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--navy-deep); color: #dbe7f7; font-size: 0.9rem; overflow-x: auto; }
+.format-box ul { margin: 0; padding-left: 20px; color: var(--muted); }
+.format-box li { margin: 4px 0; }
+input[type="file"] { padding: 9px 12px; background: var(--surface-muted); }
+.table tr.row-error td { background: var(--red-bg); }
+.table .setup-link { width: 100%; min-width: 220px; margin: 0; padding: 6px 8px; }
+.confirm-box { margin: 0 0 20px; padding: 18px 20px; border: 1px solid var(--red-border); border-left: 5px solid var(--red); border-radius: var(--radius-sm); background: var(--red-bg); }
+.confirm-box h2 { margin-top: 0; color: var(--red); }
+.confirm-box .button-row form { margin: 0; }
+.confirm-box .button-row button { width: 100%; margin-top: 0; }

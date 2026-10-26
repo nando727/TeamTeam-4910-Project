@@ -27,6 +27,7 @@
               <th scope="col">Change status</th>
               <th scope="col">Password</th>
               <th scope="col">Setup link</th>
+              <th scope="col">Sponsors</th>
               <th scope="col">Impersonate</th>
             </tr>
           </thead>
@@ -65,6 +66,13 @@
                     </form>
                   <% } else { %>
                     <span class="muted small">Password set</span>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (user.role === 'driver') { %>
+                    <a class="button-link button--small" href="/admin/manage-users/<%= user.id %>/sponsors">Sponsors</a>
+                  <% } else { %>
+                    <span class="muted small">—</span>
                   <% } %>
                 </td>
                 <td>

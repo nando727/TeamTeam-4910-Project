@@ -1,0 +1,41 @@
+<%- include('../partials/head', { title: 'Your Drivers' }) %>
+  <section class="hero">
+    <%- include('../partials/shield') %>
+    <div>
+      <h1>Your Drivers</h1>
+      <p>Drivers currently associated with your organization.</p>
+    </div>
+  </section>
+
+  <form method="GET" action="/drivers" class="filter-form">
+    <label for="name">Filter by name:</label>
+    <input type="text" id="name" name="name" value="<%= nameFilter %>" maxlength="128" placeholder="Driver name...">
+    <button type="submit">Filter</button>
+  </form>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Username</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% drivers.forEach(driver => { %>
+        <tr>
+          <td><%= driver.name %></td>
+          <td><%= driver.email %></td>
+          <td><%= driver.username %></td>
+          <td><%= driver.status %></td>
+        </tr>
+      <% }) %>
+      <% if (drivers.length === 0) { %>
+        <tr><td colspan="4">No drivers found.</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+
+  <p><a href="/">&larr; Back to home</a></p>
+<%- include('../partials/foot') %>

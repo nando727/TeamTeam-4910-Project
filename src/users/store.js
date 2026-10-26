@@ -1,5 +1,5 @@
 const db = require('../db');
-const { hashPassword } = require('../auth/password');
+const { hashPassword, NO_PASSWORD } = require('../auth/password');
 
 const VALID_ROLES = ['driver', 'sponsor', 'admin'];
 const USER_STATUSES = ['active', 'disabled', 'revoked'];
@@ -16,20 +16,22 @@ class DuplicateError extends Error {
 
 // Shared by POST /api/users and the admin "Create user" page. Hashes through
 // the single shared helper and enforces unique email + username.
-async function createUser({ name, email, username, password, role }) {
+async function createUser({ name, email, username, password, role, sponsorId = null }) {
   const existing = await db.query('SELECT id FROM users WHERE email = ?', [email]);
   if (existing.length > 0) {
     throw new DuplicateError('A user with that email already exists.');
   }
 
-  const passwordHash = await hashPassword(password);
+  // password null: the account can only be claimed through a setup link.
+  const passwordHash = password === null ? NO_PASSWORD : await hashPassword(password);
 
   try {
+    // sponsor_id links a sponsor-role login to its organization; null otherwise.
     const result = await db.query(
-      'INSERT INTO users (name, email, username, password_hash, role) VALUES (?, ?, ?, ?, ?)',
-      [name, email, username, passwordHash, role]
+      'INSERT INTO users (name, email, username, password_hash, role, sponsor_id) VALUES (?, ?, ?, ?, ?, ?)',
+      [name, email, username, passwordHash, role, sponsorId || null]
     );
-    return { id: result.insertId, name, email, username, role };
+    return { id: result.insertId, name, email, username, role, sponsorId: sponsorId || null };
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
       throw new DuplicateError('A user with that username already exists.');

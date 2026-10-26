@@ -12,12 +12,17 @@
     <a class="action" href="/organization">
       <span class="action__icon"><%- include('../partials/icon', { name: 'building' }) %></span>
       <span class="action__title">Your organization</span>
-      <span class="action__text">View your sponsor organization's details.</span>
+      <span class="action__text">View your sponsor organization's details or modify rules.</span>
     </a>
     <a class="action" href="/reports/points">
       <span class="action__icon"><%- include('../partials/icon', { name: 'chart' }) %></span>
       <span class="action__title">Driver point report</span>
       <span class="action__text">Review your drivers' point changes by driver and date, or download a CSV.</span>
+    </a>
+    <a class="action" href="/drivers">
+      <span class="action__icon" aria-hidden="true">D</span>
+      <span class="action__title">Your drivers</span>
+      <span class="action__text">View and filter drivers associated with your organization.</span>
     </a>
     <a class="action" href="/sponsor-users/create">
       <span class="action__icon" aria-hidden="true">+</span>
