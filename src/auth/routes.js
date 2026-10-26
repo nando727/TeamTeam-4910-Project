@@ -8,7 +8,7 @@ const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./passw
 const { updateUserPassword, revokeSessions } = require('../users/store');
 const { createResetToken, findValidReset, consumeReset, TOKEN_PATTERN, EXPIRY_MINUTES } = require('./password-reset');
 const { sendPasswordResetLink } = require('./mailer');
-const { checkLockout, lockoutMessage } = require('./lockout');
+const { checkLockout, lockoutMessage, lockoutGuidance } = require('./lockout');
 
 const router = express.Router();
 
@@ -77,7 +77,9 @@ router.post('/login', async (req, res, next) => {
     const lockout = await checkLockout(username);
     if (lockout.locked) {
       await recordLoginAttempt(username, false);
-      return res.status(429).render('login', { error: lockoutMessage(lockout) });
+      // Story 22215: the page shows the ways back in, with the reset as a link
+      // rather than as prose. The JSON route below still gets one sentence.
+      return res.status(429).render('login', { error: null, lockout: lockoutGuidance(lockout) });
     }
 
     // Role comes from the database — the form never asks for a user type.

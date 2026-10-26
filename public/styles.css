@@ -584,3 +584,9 @@ form > button { width: 100%; }
     to { opacity: 1; transform: none; }
   }
 }
+
+/* Ways back in after a lockout (story 22215), shown inside an .error block. */
+.recovery { margin: 10px 0 0; padding-left: 20px; }
+.recovery li + li { margin-top: 6px; }
+.recovery a { font-weight: 600; }
+.recovery__aside { display: block; opacity: 0.85; font-size: 0.9em; }
