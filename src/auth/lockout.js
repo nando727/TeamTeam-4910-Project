@@ -62,11 +62,42 @@ async function checkLockout(username) {
   };
 }
 
-// Deliberately vague about whether the account exists: the same message is
-// shown for a locked real account and a locked non-existent username.
-function lockoutMessage({ minutesRemaining }) {
+// Story 22215: being told the sign-in is blocked is only half of it. These
+// also say how to get back in, because a lock that explains nothing just looks
+// like a broken password.
+//
+// Both stay deliberately vague about whether the account exists: the same
+// wording is used for a locked real account and a locked username that was
+// never real, so neither can be told apart by trying.
+
+const RESET_PATH = '/forgot-password';
+
+function minutesLabel(minutesRemaining) {
   const unit = minutesRemaining === 1 ? 'minute' : 'minutes';
-  return `Too many failed sign-in attempts. Try again in ${minutesRemaining} ${unit}, or reset your password.`;
+  return `${minutesRemaining} ${unit}`;
 }
 
-module.exports = { checkLockout, lockoutPolicy, lockoutMessage };
+// One sentence, for callers that can only show text: the JSON sign-in route,
+// and anything that logs the refusal.
+function lockoutMessage({ minutesRemaining }) {
+  return `Too many failed sign-in attempts. Try again in ${minutesLabel(minutesRemaining)}, `
+    + 'or reset your password. Trying again before then restarts the wait.';
+}
+
+// The same advice in pieces, so a page can offer the reset as a link instead
+// of as prose. Rendered by src/views/login.ejs.
+function lockoutGuidance({ minutesRemaining }) {
+  return {
+    summary: 'Too many failed sign-in attempts, so sign-in is blocked for now.',
+    minutesRemaining,
+    waitText: `Wait ${minutesLabel(minutesRemaining)} and try again.`,
+    // The lock runs from the most recent failure (see checkLockout), so each
+    // attempt during it pushes the wait back. Nobody guesses that by itself.
+    retryWarning: 'Trying again before then restarts the wait.',
+    resetPath: RESET_PATH,
+    resetText: 'Reset your password to sign in right away.',
+    adminText: 'If you cannot use a reset link, ask an administrator to help you back in.',
+  };
+}
+
+module.exports = { checkLockout, lockoutPolicy, lockoutMessage, lockoutGuidance, RESET_PATH };
