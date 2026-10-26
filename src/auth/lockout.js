@@ -24,9 +24,15 @@ function lockoutPolicy() {
 
 // Failures since the last success, within the lockout window. MySQL's clock is
 // used for both, so the app's clock can't drift away from the stored rows.
+//
+// The newest failure comes back as epoch milliseconds rather than a DATETIME:
+// read as a datetime it arrives with no zone attached, and Node rebuilds it in
+// the machine's local zone. Against a UTC database that put every failure
+// hours into the future, so a fifteen-minute lock lasted four hours and the
+// visitor was told to wait 255 minutes.
 async function recentFailureCount(username, lockoutMinutes) {
   const rows = await db.query(
-    'SELECT COUNT(*) AS failures, MAX(attempted_at) AS latest_failure ' +
+    'SELECT COUNT(*) AS failures, UNIX_TIMESTAMP(MAX(attempted_at)) * 1000 AS latest_failure ' +
       'FROM login_attempts ' +
       'WHERE username = ? AND success = 0 ' +
       '  AND attempted_at > NOW() - INTERVAL ? MINUTE ' +
@@ -38,7 +44,8 @@ async function recentFailureCount(username, lockoutMinutes) {
   const row = rows[0] || {};
   return {
     failures: Number(row.failures || 0),
-    latestFailure: row.latest_failure ? new Date(row.latest_failure) : null,
+    // Number() covers both what MySQL sends (a decimal string) and a Date.
+    latestFailure: row.latest_failure == null ? null : new Date(Number(row.latest_failure)),
   };
 }
 
