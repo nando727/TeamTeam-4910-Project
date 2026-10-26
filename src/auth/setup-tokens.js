@@ -63,7 +63,28 @@ async function consumeToken(tokenId) {
   return result.affectedRows > 0;
 }
 
+// Spends every unused link for an account. Issuing a replacement calls this
+// first, so a resent link is the only one that works and an old link in an
+// inbox cannot be used later.
+async function invalidateSetupTokens(userId) {
+  const result = await db.query(
+    'UPDATE setup_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL',
+    [userId]
+  );
+  return result.affectedRows || 0;
+}
+
+// Accounts that were sent a setup link and have never completed one, so an
+// admin can send a replacement. A user whose account was created with a
+// password of the admin's choosing has no rows here and needs a reset instead.
+async function userIdsAwaitingSetup() {
+  const rows = await db.query(
+    'SELECT user_id FROM setup_tokens GROUP BY user_id HAVING SUM(used_at IS NOT NULL) = 0'
+  );
+  return rows.map(row => row.user_id);
+}
+
 module.exports = {
   issueSetupToken, setupLinkFor, findValidToken, consumeToken,
-  hashToken, linkLifetimeHours,
+  hashToken, linkLifetimeHours, invalidateSetupTokens, userIdsAwaitingSetup,
 };

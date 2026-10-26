@@ -50,6 +50,8 @@ beforeEach(() => {
       memberships = memberships.filter(m => !(m.driverId === params[0] && m.sponsorId === params[1]));
       return { affectedRows: before - memberships.length };
     }
+    // Story 22255 follow-up: the list asks who still owes us a password.
+    if (sql.startsWith('SELECT user_id FROM setup_tokens')) return [];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });

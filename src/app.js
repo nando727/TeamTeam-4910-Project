@@ -59,8 +59,6 @@ app.use(sessionRevocation);
 
 // Template-only locals for the shared header and nav (partials/head.ejs).
 app.use((req, res, next) => {
-  //debug line to try and find log out bug
-  console.log('sessionID:', req.sessionID, 'user:', req.session.user);
   res.locals.currentUser = req.session.user || null;
   // Story AA-12: the browser needs these to warn before the session expires.
   res.locals.sessionRemainingMs = req.session.user ? remainingMs(req) : 0;

@@ -107,6 +107,35 @@ hand and it expires on its own. Set `LOGIN_MAX_FAILURES` and
 `LOGIN_LOCKOUT_MINUTES` in `.env` to change the policy; `LOGIN_LOCKOUT_MINUTES=1`
 makes it easy to demonstrate.
 
+### Getting back in (story 22215)
+
+Being refused is only half of it, so the sign-in page lists the three ways back
+in rather than just the minutes: wait out the remaining time, reset the password
+(offered as a link to `/forgot-password`, not as prose), or ask an
+administrator. It also says the thing nobody would guess: **another attempt
+before the wait is over restarts it**, because the lock runs from the most
+recent failure. Someone retrying every minute never gets in and would otherwise
+never learn why.
+
+The wording lives in `lockoutMessage` and `lockoutGuidance`
+(`src/auth/lockout.js`). The JSON sign-in route gets the one-line version, since
+a client cannot follow a link. Both stay vague about whether the account exists:
+the lock is checked before any password is, and `login_attempts` records
+usernames that were never real, so a locked reply reads identically either way.
+`tests/lockout-message.test.js` and `tests/lockout-login.test.js` hold that
+property in place — a locked response for an invented username is compared
+character for character against one for a real account.
+
+**The newest failure is read as epoch milliseconds, deliberately**
+(`UNIX_TIMESTAMP(MAX(attempted_at)) * 1000`). A `DATETIME` comes back from MySQL
+with no timezone attached and Node rebuilds it in the machine's local zone: with
+a UTC database and an eastern laptop, every failure looked four hours in the
+future, so a fifteen-minute lock lasted four hours and the page told people to
+wait 255 minutes. The mocked tests could not see it, because a mock hands back a
+`Date`, which is already unambiguous. The same trap caught `sessions_valid_from`
+earlier; if you touch a timestamp that crosses between MySQL and Node, compare
+it in SQL or carry it as an epoch.
+
 ## Role permissions (stories 22251, 22252, 22253)
 
 Every route group guards itself in two steps: no session sends the visitor to

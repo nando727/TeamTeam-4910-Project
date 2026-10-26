@@ -45,6 +45,8 @@ beforeEach(() => {
     if (sql.startsWith('UPDATE users SET sessions_valid_from')) { revocations.push(params[0]); return { affectedRows: 1 }; }
     if (sql.startsWith('SELECT UNIX_TIMESTAMP(sessions_valid_from)')) return [{ cutoff_ms: Date.now() }];
     if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];
+    // Story 22255 follow-up: the list asks who still owes us a password.
+    if (sql.startsWith('SELECT user_id FROM setup_tokens')) return [];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });

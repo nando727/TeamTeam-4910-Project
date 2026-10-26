@@ -9,7 +9,9 @@ const { formToken, requireFormToken } = require('../auth/form-token');
 const { requireActiveAdmin } = require('./guard');
 const { listDriverSponsors, addDriverSponsor, removeDriverSponsor, MembershipError } = require('../memberships/store');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
-const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('../auth/setup-tokens');
+const {
+  issueSetupToken, setupLinkFor, linkLifetimeHours, invalidateSetupTokens, userIdsAwaitingSetup,
+} = require('../auth/setup-tokens');
 const { sendMail } = require('../mail/mailer');
 const router = express.Router();
 
@@ -178,8 +180,12 @@ function takeNotice(req) {
 router.get('/manage-users', async (req, res, next) => {
   try {
     const users = await listUsers();
+    // Story 22255 follow-up: who still owes us a password, so the list can
+    // offer them a fresh setup link.
+    const awaitingSetup = new Set(await userIdsAwaitingSetup());
     res.render('manage-users', {
-      users, statuses: USER_STATUSES, notice: takeNotice(req), currentUserId: req.session.user.id, token: formToken(req),
+      users: users.map(user => ({ ...user, awaitingSetup: awaitingSetup.has(user.id) })),
+      statuses: USER_STATUSES, notice: takeNotice(req), currentUserId: req.session.user.id, token: formToken(req),
     });
   } catch (err) { next(err); }
 });
@@ -388,6 +394,46 @@ router.post('/manage-users/:userId/password', async (req, res, next) => {
     if (req.session.user.id === user.id) req.session.issuedAt = cutoffMs + 1;
 
     flashAndRedirect(req, res, { kind: 'success', text: `Password for ${user.username} was reset. Their other sessions were signed out.` }, STATUS_PAGES[from]);
+  } catch (err) { next(err); }
+});
+
+// Story 22255 follow-up: a setup link expires after SETUP_LINK_HOURS, so an
+// admin can issue a replacement. Only for accounts that have never completed
+// setup; an account with a password of its own gets a reset instead.
+router.post('/manage-users/:userId/setup-link', async (req, res, next) => {
+  try {
+    // router.param above has already validated the id and loaded the account,
+    // and the router requires a form token on every POST.
+    const user = req.targetUser;
+
+    // Re-checked here rather than trusting the button that was rendered.
+    const awaiting = await userIdsAwaitingSetup();
+    if (!awaiting.includes(user.id)) {
+      return flashAndRedirect(req, res, {
+        kind: 'error',
+        text: `${user.username} has already set a password. Use Reset instead.`,
+      });
+    }
+
+    // The replacement is the only link that works from now on.
+    await invalidateSetupTokens(user.id);
+    const rawToken = await issueSetupToken(user.id);
+    const setupLink = setupLinkFor(req, rawToken);
+    await sendMail({
+      to: user.email || '(no email on file)',
+      subject: 'Set up your Good Driver Incentive Program account',
+      text:
+        `Hi ${user.name || user.username},\n\n` +
+        `Here is a new link to choose your password. It works once, and expires in ${linkLifetimeHours()} hours:\n\n` +
+        `  ${setupLink}\n\n` +
+        'Any earlier link for your account has stopped working.',
+    });
+
+    flashAndRedirect(req, res, {
+      kind: 'success',
+      text: `New setup link for ${user.username}. Any earlier link has stopped working.`,
+      link: setupLink,
+    });
   } catch (err) { next(err); }
 });
 

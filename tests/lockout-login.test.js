@@ -141,3 +141,61 @@ describe('an account that is not locked', () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 });
+
+// Story 22215: the refusal also has to say how to get back in.
+describe('what a locked-out visitor is shown', () => {
+  beforeEach(() => {
+    failureState = { failures: 5, latest_failure: minutesAgo(1) };
+  });
+
+  test('the reset is a link they can follow, not just words', async () => {
+    const res = await logIn({ username: 'driver1', password: 'DriverPass1!' });
+
+    expect(res.status).toBe(429);
+    expect(res.text).toMatch(/<a[^>]+href="\/forgot-password"[^>]*>[^<]*reset your password/i);
+  });
+
+  test('the three ways back in are all there', async () => {
+    const res = await logIn({ username: 'driver1', password: 'DriverPass1!' });
+
+    expect(res.text).toMatch(/wait \d+ minutes?/i);
+    expect(res.text).toMatch(/reset your password/i);
+    expect(res.text).toMatch(/administrator/i);
+  });
+
+  test('it warns that trying again restarts the wait', async () => {
+    const res = await logIn({ username: 'driver1', password: 'DriverPass1!' });
+
+    expect(res.text).toMatch(/restarts the wait/i);
+  });
+
+  test('it is announced to a screen reader', async () => {
+    const res = await logIn({ username: 'driver1', password: 'DriverPass1!' });
+
+    expect(res.text).toMatch(/role="alert"/);
+  });
+
+  test('the ordinary error block is not shown as well', async () => {
+    const res = await logIn({ username: 'driver1', password: 'DriverPass1!' });
+
+    // One alert, not a lockout block plus an empty error paragraph.
+    expect(res.text.match(/role="alert"/g)).toHaveLength(1);
+  });
+
+  test('a username that was never real is told exactly the same thing', async () => {
+    const real = await logIn({ username: 'driver1', password: 'DriverPass1!' });
+    const invented = await logIn({ username: 'nobody-here', password: 'DriverPass1!' });
+
+    expect(invented.status).toBe(429);
+    const strip = text => text.replace(/\s+/g, ' ').match(/<div class="error"[\s\S]*?<\/div>/)[0];
+    expect(strip(invented.text)).toBe(strip(real.text));
+  });
+
+  test('the JSON route still answers with one sentence, not markup', async () => {
+    const res = await request(app).post('/api/login').send({ username: 'driver1', password: 'DriverPass1!' });
+
+    expect(res.status).toBe(429);
+    expect(res.body.error).toMatch(/^Too many failed sign-in attempts\./);
+    expect(res.body.error).not.toMatch(/[<>]/);
+  });
+});

@@ -7,7 +7,18 @@
       <% if (locals.notice) { %>
         <p class="success" role="status"><%= locals.notice %></p>
       <% } %>
-      <% if (error) { %>
+      <%# Story 22215: a locked sign-in explains the ways back in, so the
+          reset can be a link the visitor can actually follow. %>
+      <% if (locals.lockout) { %>
+        <div class="error" role="alert">
+          <p><%= lockout.summary %></p>
+          <ul class="recovery">
+            <li><%= lockout.waitText %> <span class="recovery__aside"><%= lockout.retryWarning %></span></li>
+            <li><a href="<%= lockout.resetPath %>"><%= lockout.resetText %></a></li>
+            <li><%= lockout.adminText %></li>
+          </ul>
+        </div>
+      <% } else if (error) { %>
         <p class="error" role="alert"><%= error %></p>
       <% } %>
       <form method="POST" action="/login">

@@ -14,6 +14,7 @@ const originalMinutes = process.env.LOGIN_LOCKOUT_MINUTES;
 // sets here.
 let queryResult;
 let lastParams;
+let lastSql;
 
 function minutesAgo(minutes) {
   return new Date(Date.now() - minutes * 60 * 1000);
@@ -22,10 +23,12 @@ function minutesAgo(minutes) {
 beforeEach(() => {
   queryResult = { failures: 0, latest_failure: null };
   lastParams = null;
+  lastSql = null;
 
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.includes('FROM login_attempts')) {
       lastParams = params;
+      lastSql = sql;
       return [queryResult];
     }
     throw new Error(`Unexpected query in test: ${sql}`);
@@ -126,5 +129,46 @@ describe('the message shown to a locked-out visitor', () => {
 
   test('uses the singular for one minute', () => {
     expect(lockoutMessage({ minutesRemaining: 1 })).toContain('1 minute,');
+  });
+});
+
+// The lock's length is measured against the database's clock, not the app's.
+describe('how the newest failure is read', () => {
+  test('asked for as epoch milliseconds, never as a datetime', async () => {
+    queryResult = { failures: 5, latest_failure: minutesAgo(1) };
+    await checkLockout('driver1');
+
+    // A DATETIME read into Node is rebuilt in the machine's local zone, which
+    // against a UTC database put every failure hours into the future and made
+    // a 15 minute lock last more than four hours.
+    expect(lastSql).toContain('UNIX_TIMESTAMP(MAX(attempted_at)) * 1000');
+    expect(lastSql).not.toMatch(/MAX\(attempted_at\) AS latest_failure/);
+  });
+
+  test('a value in the shape MySQL actually sends is understood', async () => {
+    // mysql2 returns the product of UNIX_TIMESTAMP as a decimal string.
+    const oneMinuteAgo = Date.now() - 60 * 1000;
+    queryResult = { failures: 5, latest_failure: `${oneMinuteAgo}.000` };
+
+    const result = await checkLockout('driver1');
+
+    expect(result.locked).toBe(true);
+    expect(result.minutesRemaining).toBe(14);
+  });
+
+  test('a lock runs for the configured window, not hours longer', async () => {
+    process.env.LOGIN_LOCKOUT_MINUTES = '15';
+    queryResult = { failures: 5, latest_failure: Date.now() - 60 * 1000 };
+
+    const result = await checkLockout('driver1');
+
+    expect(result.minutesRemaining).toBeLessThanOrEqual(15);
+    expect(result.minutesRemaining).toBeGreaterThan(13);
+  });
+
+  test('no failures at all still means no lock', async () => {
+    queryResult = { failures: 0, latest_failure: null };
+
+    expect((await checkLockout('driver1')).locked).toBe(false);
   });
 });

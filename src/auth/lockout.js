@@ -24,9 +24,15 @@ function lockoutPolicy() {
 
 // Failures since the last success, within the lockout window. MySQL's clock is
 // used for both, so the app's clock can't drift away from the stored rows.
+//
+// The newest failure comes back as epoch milliseconds rather than a DATETIME:
+// read as a datetime it arrives with no zone attached, and Node rebuilds it in
+// the machine's local zone. Against a UTC database that put every failure
+// hours into the future, so a fifteen-minute lock lasted four hours and the
+// visitor was told to wait 255 minutes.
 async function recentFailureCount(username, lockoutMinutes) {
   const rows = await db.query(
-    'SELECT COUNT(*) AS failures, MAX(attempted_at) AS latest_failure ' +
+    'SELECT COUNT(*) AS failures, UNIX_TIMESTAMP(MAX(attempted_at)) * 1000 AS latest_failure ' +
       'FROM login_attempts ' +
       'WHERE username = ? AND success = 0 ' +
       '  AND attempted_at > NOW() - INTERVAL ? MINUTE ' +
@@ -38,7 +44,8 @@ async function recentFailureCount(username, lockoutMinutes) {
   const row = rows[0] || {};
   return {
     failures: Number(row.failures || 0),
-    latestFailure: row.latest_failure ? new Date(row.latest_failure) : null,
+    // Number() covers both what MySQL sends (a decimal string) and a Date.
+    latestFailure: row.latest_failure == null ? null : new Date(Number(row.latest_failure)),
   };
 }
 
@@ -62,11 +69,42 @@ async function checkLockout(username) {
   };
 }
 
-// Deliberately vague about whether the account exists: the same message is
-// shown for a locked real account and a locked non-existent username.
-function lockoutMessage({ minutesRemaining }) {
+// Story 22215: being told the sign-in is blocked is only half of it. These
+// also say how to get back in, because a lock that explains nothing just looks
+// like a broken password.
+//
+// Both stay deliberately vague about whether the account exists: the same
+// wording is used for a locked real account and a locked username that was
+// never real, so neither can be told apart by trying.
+
+const RESET_PATH = '/forgot-password';
+
+function minutesLabel(minutesRemaining) {
   const unit = minutesRemaining === 1 ? 'minute' : 'minutes';
-  return `Too many failed sign-in attempts. Try again in ${minutesRemaining} ${unit}, or reset your password.`;
+  return `${minutesRemaining} ${unit}`;
 }
 
-module.exports = { checkLockout, lockoutPolicy, lockoutMessage };
+// One sentence, for callers that can only show text: the JSON sign-in route,
+// and anything that logs the refusal.
+function lockoutMessage({ minutesRemaining }) {
+  return `Too many failed sign-in attempts. Try again in ${minutesLabel(minutesRemaining)}, `
+    + 'or reset your password. Trying again before then restarts the wait.';
+}
+
+// The same advice in pieces, so a page can offer the reset as a link instead
+// of as prose. Rendered by src/views/login.ejs.
+function lockoutGuidance({ minutesRemaining }) {
+  return {
+    summary: 'Too many failed sign-in attempts, so sign-in is blocked for now.',
+    minutesRemaining,
+    waitText: `Wait ${minutesLabel(minutesRemaining)} and try again.`,
+    // The lock runs from the most recent failure (see checkLockout), so each
+    // attempt during it pushes the wait back. Nobody guesses that by itself.
+    retryWarning: 'Trying again before then restarts the wait.',
+    resetPath: RESET_PATH,
+    resetText: 'Reset your password to sign in right away.',
+    adminText: 'If you cannot use a reset link, ask an administrator to help you back in.',
+  };
+}
+
+module.exports = { checkLockout, lockoutPolicy, lockoutMessage, lockoutGuidance, RESET_PATH };

@@ -43,6 +43,8 @@ beforeEach(() => {
     if (sql.startsWith('SELECT ds.driver_id AS id')) return [];
     if (sql.startsWith('SELECT COUNT(*) AS total FROM point_transactions')) return [{ total: 0 }];
     if (sql.startsWith('SELECT t.id') || sql.startsWith("SELECT DATE_FORMAT(t.created_at")) return [];
+    // Story 22255 follow-up: the list asks who still owes us a password.
+    if (sql.startsWith('SELECT user_id FROM setup_tokens')) return [];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
