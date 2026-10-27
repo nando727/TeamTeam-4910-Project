@@ -101,19 +101,26 @@ describe('deciding whether an account is locked', () => {
   });
 
   test('the count only covers failures since the last success', async () => {
-    await checkLockout('driver1');
+    await checkLockout('driver1', '203.0.113.7');
 
-    const [, , usernameForSuccessLookup] = lastParams;
+    // Story AA-70: [username, source, minutes, username, source] — the success
+    // that clears the tally is looked up for the same pair, so one person's
+    // sign-in cannot wipe another's failures.
+    const [, , , usernameForSuccessLookup, sourceForSuccessLookup] = lastParams;
     const sql = db.query.mock.calls[0][0];
     expect(sql).toContain('success = 1');
     expect(usernameForSuccessLookup).toBe('driver1');
+    expect(sourceForSuccessLookup).toBe('203.0.113.7');
   });
 
   test('the window and username are passed as query parameters, not built into the SQL', async () => {
     process.env.LOGIN_LOCKOUT_MINUTES = '30';
-    await checkLockout("someone' OR '1'='1");
+    await checkLockout("someone' OR '1'='1", "203.0.113.7' OR '1'='1");
 
-    expect(lastParams).toEqual(["someone' OR '1'='1", 30, "someone' OR '1'='1"]);
+    expect(lastParams).toEqual([
+      "someone' OR '1'='1", "203.0.113.7' OR '1'='1", 30,
+      "someone' OR '1'='1", "203.0.113.7' OR '1'='1",
+    ]);
     expect(db.query.mock.calls[0][0]).toContain('INTERVAL ? MINUTE');
   });
 });

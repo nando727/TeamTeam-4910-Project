@@ -30,16 +30,29 @@ function lockoutPolicy() {
 // the machine's local zone. Against a UTC database that put every failure
 // hours into the future, so a fifteen-minute lock lasted four hours and the
 // visitor was told to wait 255 minutes.
-async function recentFailureCount(username, lockoutMinutes) {
+// Story AA-70: counted per username AND source, not per username alone.
+// Keying on the username by itself meant anyone who knew a username could keep
+// that account locked for as long as they cared to: the account was punished
+// for what someone else did. Keying on the pair puts the failures on whoever
+// produced them, so the real user still signs in from their own machine.
+//
+// <=> is NULL-safe equality, so attempts whose source could not be determined
+// are counted against each other rather than matching nothing.
+//
+// The success that clears the tally is scoped to the same pair as well. A
+// global one would let the victim's own successful sign-in wipe an attacker's
+// count every time they logged in.
+async function recentFailureCount(username, source, lockoutMinutes) {
   const rows = await db.query(
     'SELECT COUNT(*) AS failures, UNIX_TIMESTAMP(MAX(attempted_at)) * 1000 AS latest_failure ' +
       'FROM login_attempts ' +
-      'WHERE username = ? AND success = 0 ' +
+      'WHERE username = ? AND source_ip <=> ? AND success = 0 ' +
       '  AND attempted_at > NOW() - INTERVAL ? MINUTE ' +
       '  AND attempted_at > COALESCE((' +
-      '    SELECT MAX(attempted_at) FROM login_attempts s WHERE s.username = ? AND s.success = 1' +
+      '    SELECT MAX(attempted_at) FROM login_attempts s ' +
+      '     WHERE s.username = ? AND s.source_ip <=> ? AND s.success = 1' +
       "  ), '1970-01-01 00:00:00')",
-    [username, lockoutMinutes, username]
+    [username, source, lockoutMinutes, username, source]
   );
   const row = rows[0] || {};
   return {
@@ -51,9 +64,9 @@ async function recentFailureCount(username, lockoutMinutes) {
 
 // Whether this username may attempt a sign-in right now. The lock runs from the
 // most recent failure, so guessing again during a lock extends it.
-async function checkLockout(username) {
+async function checkLockout(username, source = null) {
   const { maxFailures, lockoutMinutes } = lockoutPolicy();
-  const { failures, latestFailure } = await recentFailureCount(username, lockoutMinutes);
+  const { failures, latestFailure } = await recentFailureCount(username, source ?? null, lockoutMinutes);
 
   if (failures < maxFailures || !latestFailure) {
     return { locked: false, failures, maxFailures, minutesRemaining: 0 };

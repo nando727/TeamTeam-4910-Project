@@ -27,10 +27,10 @@ function requestSource(req) {
 // Audit requirement: every login attempt is recorded (date, username, success).
 // A source that cannot be determined is stored as NULL rather than dropping
 // the record: an unattributable attempt still has to be audited.
-async function recordLoginAttempt(req, username, success) {
+async function recordLoginAttempt(source, username, success) {
   await db.query(
     'INSERT INTO login_attempts (username, success, source_ip) VALUES (?, ?, ?)',
-    [username, success, requestSource(req)]
+    [username, success, source]
   );
 }
 
@@ -86,11 +86,15 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
+    // Story AA-70: the lock and the audit record use the same origin, worked
+    // out once so they can never disagree about where the request came from.
+    const source = requestSource(req);
+
     // Story 22214: refuse before checking the password, so a locked account
     // can't be tested against. The attempt is still audited below.
-    const lockout = await checkLockout(username);
+    const lockout = await checkLockout(username, source);
     if (lockout.locked) {
-      await recordLoginAttempt(req, username, false);
+      await recordLoginAttempt(source, username, false);
       // Story 22215: the page shows the ways back in, with the reset as a link
       // rather than as prose. The JSON route below still gets one sentence.
       return res.status(429).render('login', { error: null, lockout: lockoutGuidance(lockout) });
@@ -107,7 +111,7 @@ router.post('/login', async (req, res, next) => {
 
     // A blocked account is an unsuccessful login, so the audit log records it
     // as a failure even though the password was correct.
-    await recordLoginAttempt(req, username, Boolean(valid) && !denied);
+    await recordLoginAttempt(source, username, Boolean(valid) && !denied);
 
     if (!valid) {
       // Same message for unknown user and wrong password, so the form
@@ -154,10 +158,12 @@ router.post('/api/login', async (req, res, next) => {
       });
     }
 
+    const source = requestSource(req);
+
     // Story 22214: same lockout rule on the JSON route.
-    const lockout = await checkLockout(username);
+    const lockout = await checkLockout(username, source);
     if (lockout.locked) {
-      await recordLoginAttempt(req, username, false);
+      await recordLoginAttempt(source, username, false);
       return res.status(429).json({ success: false, error: lockoutMessage(lockout) });
     }
 
@@ -172,7 +178,7 @@ router.post('/api/login', async (req, res, next) => {
 
     // A blocked account is an unsuccessful login, so the audit log records it
     // as a failure even though the password was correct.
-    await recordLoginAttempt(req, username, Boolean(valid) && !denied);
+    await recordLoginAttempt(source, username, Boolean(valid) && !denied);
 
     if (!valid) {
       // Same message for unknown user and wrong password, so the response
