@@ -16,6 +16,7 @@ let failureState;
 let recordedAttempts;
 
 const minutesAgo = (m) => new Date(Date.now() - m * 60 * 1000);
+const secondsAgo = (s) => new Date(Date.now() - s * 1000);
 
 beforeAll(async () => {
   passwordHash = await hashPassword('DriverPass1!');
@@ -52,7 +53,9 @@ function logIn(body) {
 
 describe('a locked account', () => {
   beforeEach(() => {
-    failureState = { failures: 5, latest_failure: minutesAgo(1) };
+    // Just failed for the fifth time. Story AA-70 made the first wait a short
+    // one, so the lock has to be read right after the failure that caused it.
+    failureState = { failures: 5, latest_failure: secondsAgo(2) };
   });
 
   test('is refused even with the correct password', async () => {
@@ -145,7 +148,7 @@ describe('an account that is not locked', () => {
 // Story 22215: the refusal also has to say how to get back in.
 describe('what a locked-out visitor is shown', () => {
   beforeEach(() => {
-    failureState = { failures: 5, latest_failure: minutesAgo(1) };
+    failureState = { failures: 5, latest_failure: secondsAgo(2) };
   });
 
   test('the reset is a link they can follow, not just words', async () => {

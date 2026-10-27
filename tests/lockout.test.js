@@ -9,6 +9,7 @@ const { checkLockout, lockoutPolicy, lockoutMessage } = require('../src/auth/loc
 
 const originalMax = process.env.LOGIN_MAX_FAILURES;
 const originalMinutes = process.env.LOGIN_LOCKOUT_MINUTES;
+const originalFirstWait = process.env.LOGIN_FIRST_WAIT_MINUTES;
 
 // Stands in for the login_attempts table: the query returns whatever the test
 // sets here.
@@ -18,6 +19,10 @@ let lastSql;
 
 function minutesAgo(minutes) {
   return new Date(Date.now() - minutes * 60 * 1000);
+}
+
+function secondsAgo(seconds) {
+  return new Date(Date.now() - seconds * 1000);
 }
 
 beforeEach(() => {
@@ -41,25 +46,33 @@ afterEach(() => {
   else process.env.LOGIN_MAX_FAILURES = originalMax;
   if (originalMinutes === undefined) delete process.env.LOGIN_LOCKOUT_MINUTES;
   else process.env.LOGIN_LOCKOUT_MINUTES = originalMinutes;
+  if (originalFirstWait === undefined) delete process.env.LOGIN_FIRST_WAIT_MINUTES;
+  else process.env.LOGIN_FIRST_WAIT_MINUTES = originalFirstWait;
 });
 
 describe('the policy', () => {
-  test('defaults to 5 failures and 15 minutes', () => {
+  // Story AA-70: lockoutMinutes is the longest a wait can get; the first wait
+  // is short and doubles from there. tests/lockout-backoff.test.js covers the
+  // lengths themselves.
+  test('defaults to 5 failures, a 1 minute first wait and a 15 minute maximum', () => {
     delete process.env.LOGIN_MAX_FAILURES;
     delete process.env.LOGIN_LOCKOUT_MINUTES;
-    expect(lockoutPolicy()).toEqual({ maxFailures: 5, lockoutMinutes: 15 });
+    delete process.env.LOGIN_FIRST_WAIT_MINUTES;
+    expect(lockoutPolicy()).toEqual({ maxFailures: 5, lockoutMinutes: 15, firstWaitMinutes: 1 });
   });
 
   test('can be tuned for a demo or a test', () => {
     process.env.LOGIN_MAX_FAILURES = '3';
     process.env.LOGIN_LOCKOUT_MINUTES = '0.5';
-    expect(lockoutPolicy()).toEqual({ maxFailures: 3, lockoutMinutes: 0.5 });
+    // A half-minute maximum holds the first wait down with it.
+    expect(lockoutPolicy()).toEqual({ maxFailures: 3, lockoutMinutes: 0.5, firstWaitMinutes: 0.5 });
   });
 
   test('nonsense settings fall back to the defaults', () => {
     process.env.LOGIN_MAX_FAILURES = 'lots';
     process.env.LOGIN_LOCKOUT_MINUTES = '-5';
-    expect(lockoutPolicy()).toEqual({ maxFailures: 5, lockoutMinutes: 15 });
+    process.env.LOGIN_FIRST_WAIT_MINUTES = 'a while';
+    expect(lockoutPolicy()).toEqual({ maxFailures: 5, lockoutMinutes: 15, firstWaitMinutes: 1 });
   });
 });
 
@@ -76,7 +89,7 @@ describe('deciding whether an account is locked', () => {
   });
 
   test('reaching the limit locks the account', async () => {
-    queryResult = { failures: 5, latest_failure: minutesAgo(1) };
+    queryResult = { failures: 5, latest_failure: secondsAgo(2) };
     const result = await checkLockout('driver1');
 
     expect(result.locked).toBe(true);
@@ -91,12 +104,15 @@ describe('deciding whether an account is locked', () => {
   });
 
   test('guessing again during a lock extends it', async () => {
-    queryResult = { failures: 6, latest_failure: minutesAgo(14) };
+    // Both of these are at the longest wait already, so only the time of the
+    // newest failure differs: the wait is measured from it, not from the first.
+    queryResult = { failures: 9, latest_failure: minutesAgo(14) };
     const soon = await checkLockout('driver1');
 
-    queryResult = { failures: 7, latest_failure: minutesAgo(0) };
+    queryResult = { failures: 10, latest_failure: minutesAgo(0) };
     const afterAnotherTry = await checkLockout('driver1');
 
+    expect(soon.waitMinutes).toBe(afterAnotherTry.waitMinutes);
     expect(afterAnotherTry.minutesRemaining).toBeGreaterThan(soon.minutesRemaining);
   });
 
@@ -155,7 +171,9 @@ describe('how the newest failure is read', () => {
   test('a value in the shape MySQL actually sends is understood', async () => {
     // mysql2 returns the product of UNIX_TIMESTAMP as a decimal string.
     const oneMinuteAgo = Date.now() - 60 * 1000;
-    queryResult = { failures: 5, latest_failure: `${oneMinuteAgo}.000` };
+    // Enough failures to be at the 15 minute maximum, so a misread timestamp
+    // shows up as a wrong number of minutes rather than as no lock at all.
+    queryResult = { failures: 9, latest_failure: `${oneMinuteAgo}.000` };
 
     const result = await checkLockout('driver1');
 
@@ -163,9 +181,9 @@ describe('how the newest failure is read', () => {
     expect(result.minutesRemaining).toBe(14);
   });
 
-  test('a lock runs for the configured window, not hours longer', async () => {
+  test('a lock runs for the configured maximum, not hours longer', async () => {
     process.env.LOGIN_LOCKOUT_MINUTES = '15';
-    queryResult = { failures: 5, latest_failure: Date.now() - 60 * 1000 };
+    queryResult = { failures: 9, latest_failure: Date.now() - 60 * 1000 };
 
     const result = await checkLockout('driver1');
 

@@ -96,16 +96,67 @@ account has no sessions yet, and that flow is covered by story 22255.
 
 ## Account lockout (story 22214)
 
-Five failed sign-ins lock an account for 15 minutes. Only failures **since your
-last successful sign-in** count, so signing in successfully clears the tally.
-While locked, the correct password is refused too — that is the point — and the
-message says how many minutes remain. Every blocked attempt is still recorded in
-`login_attempts`.
+Five failed sign-ins block further attempts for a while. Only failures **since
+the last successful sign-in** count, so signing in successfully clears the
+tally. While locked, the correct password is refused too — that is the point —
+and the message says how many minutes remain. Every blocked attempt is still
+recorded in `login_attempts`.
 
 The lock is worked out from that audit table, so there is nothing to reset by
-hand and it expires on its own. Set `LOGIN_MAX_FAILURES` and
-`LOGIN_LOCKOUT_MINUTES` in `.env` to change the policy; `LOGIN_LOCKOUT_MINUTES=1`
-makes it easy to demonstrate.
+hand and it expires on its own. Set `LOGIN_MAX_FAILURES`,
+`LOGIN_FIRST_WAIT_MINUTES` and `LOGIN_LOCKOUT_MINUTES` in `.env` to change the
+policy; `LOGIN_LOCKOUT_MINUTES=1` makes it easy to demonstrate.
+
+### Counted per origin, not per account (story AA-70)
+
+Counting failures by username alone meant anyone who knew a username could keep
+that account locked for as long as they cared to — the account was punished for
+what somebody else did, and a password nobody can use is as good as no account.
+Failures are now counted per `(username, source_ip)` pair, so a lock lands on
+whoever caused it and the real user still signs in from their own machine.
+
+Two details are easy to undo by accident:
+
+- `source_ip <=> ?` is **NULL-safe** equality. Attempts whose origin could not
+  be worked out are counted against each other; with plain `=` they would match
+  nothing and never lock at all.
+- The success that clears the tally is looked up **for the same pair**. A global
+  one would hand an attacker a fresh five guesses every time the real user
+  signed in. `tests/lockout-per-source.test.js` names that case.
+
+The origin comes from `req.ip` (`requestSource` in `src/auth/routes.js`), which
+needs `app.set('trust proxy', 1)` to be the visitor's address rather than the
+load balancer's behind Elastic Beanstalk. An IPv4 address arriving in IPv6 form
+is trimmed back to `203.0.113.7` so the same visitor is one bucket, not two.
+
+A shared office or campus NAT does put colleagues in one bucket, which is the
+known trade-off: being slowed down alongside your neighbours is recoverable,
+being locked out by a stranger is not.
+
+Checked against the live RDS database with `LOGIN_MAX_FAILURES=3`, because
+mocked tests cannot see a timestamp crossing between MySQL and Node (the note
+at the end of this section): guessing from one address answered `429` while the
+real user signed in from another with `302`.
+
+### The wait grows instead of being one fixed block (story AA-70)
+
+The lock at the limit is **1 minute**, and each further failure doubles it — 1,
+2, 4, 8, then 15 — up to `LOGIN_LOCKOUT_MINUTES`. One flat block treated two
+unlike visitors the same: fifteen minutes is a long time to lose over a typo,
+while someone working through a password list is barely inconvenienced by it and
+simply comes back for five more guesses. A doubling wait is cheap for the typo
+and expensive for the list.
+
+Failures are only counted for `LOGIN_LOCKOUT_MINUTES`, which is also the longest
+wait, so sitting out the longest wait empties the tally: **nobody can be locked
+out permanently**, however high the count went. `waitMinutes` relies on
+`2 ** n` being `Infinity` rather than an error, which `Math.min` turns back into
+the cap — there is no special case for an absurd failure count, and
+`tests/lockout-backoff.test.js` pins that down.
+
+The lengths themselves are plain arithmetic on a failure count, so the mocked
+tests do cover them; the one value that crosses between MySQL and Node here is
+the newest failure's timestamp, which this change did not touch.
 
 ### Getting back in (story 22215)
 
