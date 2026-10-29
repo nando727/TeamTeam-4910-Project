@@ -250,6 +250,54 @@ usernames that were never real, so a locked reply reads identically either way.
 property in place — a locked response for an invented username is compared
 character for character against one for a real account.
 
+### An administrator can unlock an account (story AA-72)
+
+**Manage users** marks any account that cannot sign in right now with a red
+`locked` badge and an **Unlock** button, behind the same form token as every
+other action on that page. Unlocking says so, and a request to unlock an
+account that is not locked changes nothing and says that instead.
+
+Clearing the lock needed a decision, because the lock is not stored anywhere:
+it is counted from `login_attempts`. There is no flag to switch off, and the
+two obvious ways are both wrong:
+
+- **deleting the failed attempts** destroys the audit log the course spec
+  requires, along with the evidence of whatever the admin was reacting to;
+- **inserting a successful attempt** puts a lie in that same log.
+
+So an unlock is its own row in `login_unlocks` (migration 017), and the count
+starts after the latest one: nothing is rewritten, and the unlock is itself
+auditable &mdash; which administrator, and when. `tests/lockout-unlock.test.js`
+asserts that no `DELETE` or `UPDATE` ever touches `login_attempts`.
+
+Two consequences worth keeping:
+
+- **It cannot be used to switch the lockout off.** Only failures after the
+  unlock count towards a new lock, so the next run of failures locks the
+  account again.
+- **An unlock covers every origin for that username.** The lock is keyed on
+  `(username, source_ip)` since story AA-70, but an administrator acts on an
+  account and must never be asked to type an address.
+
+The list asks one grouped question for the whole page rather than running a
+lockout check per row, and both that query and the sign-in check hand their
+result to the same `lockFrom()` &mdash; so the badge on the page and the refusal
+at the sign-in form cannot drift apart.
+
+**Checked against the live RDS database**, because mocked tests match on the
+SQL string and never parse it &mdash; a bad correlated subquery would pass every
+one of them and fail on the deployed site. Five failures planted for a username
+nobody owns locked it, the grouped lookup listed it, the unlock cleared it, and
+the row recorded the right administrator. The synthetic rows were deleted
+afterwards; nothing else in `login_attempts` was touched.
+
+`unlocked_at` and `attempted_at` are both `TIMESTAMP`, which MySQL keeps to
+whole seconds, so a failed attempt in the same second as an unlock is not
+counted. That is deliberate: the cost is a guess or two inside one second, on
+an account an administrator has just decided to let back in, and the
+alternative is widening the audit table's own column for nothing else's
+benefit.
+
 **The newest failure is read as epoch milliseconds, deliberately**
 (`UNIX_TIMESTAMP(MAX(attempted_at)) * 1000`). A `DATETIME` comes back from MySQL
 with no timezone attached and Node rebuilds it in the machine's local zone: with

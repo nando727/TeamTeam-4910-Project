@@ -13,6 +13,7 @@ const {
   issueSetupToken, setupLinkFor, linkLifetimeHours, invalidateSetupTokens, userIdsAwaitingSetup,
 } = require('../auth/setup-tokens');
 const { sendMail } = require('../mail/mailer');
+const { lockedUsernames, clearLockout } = require('../auth/lockout');
 const router = express.Router();
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -183,8 +184,13 @@ router.get('/manage-users', async (req, res, next) => {
     // Story 22255 follow-up: who still owes us a password, so the list can
     // offer them a fresh setup link.
     const awaitingSetup = new Set(await userIdsAwaitingSetup());
+    // Story AA-72: who cannot sign in right now, so the list can let them
+    // back in. One query for the page, not one per account.
+    const locked = await lockedUsernames();
     res.render('manage-users', {
-      users: users.map(user => ({ ...user, awaitingSetup: awaitingSetup.has(user.id) })),
+      users: users.map(user => ({
+        ...user, awaitingSetup: awaitingSetup.has(user.id), locked: locked.has(user.username),
+      })),
       statuses: USER_STATUSES, notice: takeNotice(req), currentUserId: req.session.user.id, token: formToken(req),
     });
   } catch (err) { next(err); }
@@ -222,6 +228,26 @@ router.post('/manage-users/:userId/status', async (req, res, next) => {
     }
     req.session.statusChange = { userId: user.id, status, returnTo, confirmId: randomBytes(32).toString('hex') };
     res.redirect(303, `/admin/manage-users/${user.id}/confirm`);
+  } catch (err) { next(err); }
+});
+
+// Story AA-72: let a locked-out user sign in again without waiting out the
+// clock. The form token is required by the router-wide guard above, like every
+// other action on this page.
+router.post('/manage-users/:userId/unlock', async (req, res, next) => {
+  const user = req.targetUser;
+  try {
+    // Checked first so the notice tells the truth, the same way a status
+    // change that changes nothing says so.
+    const locked = await lockedUsernames();
+    if (!locked.has(user.username)) {
+      return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, ${user.username} is not locked out.` });
+    }
+
+    // Recorded against the administrator who did it; the failed attempts stay
+    // in the audit log exactly as they were.
+    await clearLockout(user.username, req.session.user.id);
+    flashAndRedirect(req, res, { kind: 'success', text: `${user.username} can sign in again.` });
   } catch (err) { next(err); }
 });
 

@@ -25,6 +25,7 @@
               <th scope="col">Role</th>
               <th scope="col">Status</th>
               <th scope="col">Change status</th>
+              <th scope="col">Sign-in</th>
               <th scope="col">Password</th>
               <th scope="col">Setup link</th>
               <th scope="col">Sponsors</th>
@@ -49,6 +50,18 @@
                     </select>
                     <button type="submit">Update</button>
                   </form>
+                </td>
+                <td>
+                  <%# Story AA-72: too many failed sign-ins blocks an account for a while. %>
+                  <% if (user.locked) { %>
+                    <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/unlock">
+                      <input type="hidden" name="token" value="<%= token %>">
+                      <span class="status-badge status-locked">locked</span>
+                      <button type="submit" class="button--small">Unlock</button>
+                    </form>
+                  <% } else { %>
+                    <span class="muted small">Not locked</span>
+                  <% } %>
                 </td>
                 <td>
                   <% if (user.id === currentUserId) { %>

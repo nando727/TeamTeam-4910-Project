@@ -109,11 +109,10 @@ async function recentFailureCount(username, source, lockoutMinutes) {
 // Failures are only counted for lockoutMinutes, which is also the longest wait,
 // so sitting out the longest wait empties the tally: nobody can end up locked
 // out for good.
-async function checkLockout(username, source = null) {
-  const policy = lockoutPolicy();
-  const { maxFailures, lockoutMinutes } = policy;
-  const { failures, latestFailure } = await recentFailureCount(username, source ?? null, lockoutMinutes);
-
+// The one place that turns a count of failures into a lock, so the sign-in
+// check and the administrator's list can never disagree about who is locked.
+function lockFrom(failures, latestFailure, policy) {
+  const { maxFailures } = policy;
   if (failures < maxFailures || !latestFailure) {
     return { locked: false, failures, maxFailures, waitMinutes: 0, minutesRemaining: 0 };
   }
@@ -128,6 +127,48 @@ async function checkLockout(username, source = null) {
     waitMinutes: wait,
     minutesRemaining: Math.max(1, Math.ceil(msRemaining / 60000)),
   };
+}
+
+async function checkLockout(username, source = null) {
+  const policy = lockoutPolicy();
+  const { failures, latestFailure } = await recentFailureCount(username, source ?? null, policy.lockoutMinutes);
+  return lockFrom(failures, latestFailure, policy);
+}
+
+// Story AA-72: which accounts are locked out right now, for the admin user
+// list. One grouped query for the whole page rather than a lockout check per
+// row, which on a long list would be a query per account.
+//
+// The lock is per (username, origin), so a username is reported as locked when
+// any one origin is: that is what the administrator is being asked about, and
+// what the Unlock button clears.
+async function lockedUsernames() {
+  const policy = lockoutPolicy();
+  const rows = await db.query(
+    'SELECT username, COUNT(*) AS failures, UNIX_TIMESTAMP(MAX(attempted_at)) * 1000 AS latest_failure ' +
+      'FROM login_attempts a ' +
+      'WHERE success = 0 ' +
+      '  AND attempted_at > NOW() - INTERVAL ? MINUTE ' +
+      '  AND attempted_at > COALESCE((' +
+      '    SELECT MAX(attempted_at) FROM login_attempts s ' +
+      '     WHERE s.username = a.username AND s.source_ip <=> a.source_ip AND s.success = 1' +
+      "  ), '1970-01-01 00:00:00') " +
+      '  AND attempted_at > COALESCE((' +
+      '    SELECT MAX(unlocked_at) FROM login_unlocks u WHERE u.username = a.username' +
+      "  ), '1970-01-01 00:00:00') " +
+      'GROUP BY username, source_ip ' +
+      'HAVING failures >= ?',
+    [policy.lockoutMinutes, policy.maxFailures]
+  );
+
+  const locked = new Set();
+  for (const row of rows) {
+    // Same epoch-milliseconds handling as recentFailureCount, for the same
+    // reason: a DATETIME read into Node is rebuilt in the machine's zone.
+    const latestFailure = row.latest_failure == null ? null : new Date(Number(row.latest_failure));
+    if (lockFrom(Number(row.failures || 0), latestFailure, policy).locked) locked.add(row.username);
+  }
+  return locked;
 }
 
 // Story 22215: being told the sign-in is blocked is only half of it. These
@@ -187,6 +228,6 @@ async function clearLockout(username, adminId = null) {
 }
 
 module.exports = {
-  checkLockout, clearLockout, lockoutPolicy, waitMinutes,
+  checkLockout, clearLockout, lockedUsernames, lockoutPolicy, waitMinutes,
   lockoutMessage, lockoutGuidance, RESET_PATH,
 };
