@@ -19,8 +19,9 @@ const { formToken, requireFormToken } = require('./auth/form-token');
 const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES, escapeLike} = require('./applications');
 const db = require('./db');
 
-const { createUser, DuplicateError } = require('./users/store');
+const { createUser,updateUserContact, updateUserStatus, DuplicateError } = require('./users/store');
 const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('./auth/setup-tokens');
+const { listDriversForSponsor, listSponsorAccounts, findOrgMember, deleteOrgMember } = require('./sponsors/accounts');
 const { sendMail } = require('./mail/mailer');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./auth/password-policy');
 const { randomBytes } = require('crypto');
@@ -171,34 +172,115 @@ app.get('/organization', requireLogin, requireSponsor, async (req, res, next) =>
   } catch (err) { next(err); }
 });
 
+
+const parseBalance = (value) => {
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+function flash(req, kind, text) {
+  req.session.accountNotice = { kind, text };
+}
+
+async function loadOrgMember(req, res, next) {
+  try {
+    const id = req.params.userId;
+    if (!/^[1-9]\d*$/.test(id) || Number(id) > 2147483647) return res.status(400).send('Please select a valid account.');
+    const member = await findOrgMember(req.session.user.sponsorId, Number(id));
+    if (!member) return res.status(404).send('Account not found in your organization.');
+    req.member = member;
+    next();
+  } catch (err) { next(err); }
+}
+
+function requireDriverMember(req, res, next) {
+  if (req.member.role !== 'driver') return res.status(404).send('Driver not found in your organization.');
+  next();
+}
+
 app.get('/drivers', requireLogin, requireSponsor, async (req, res, next) => {
   const nameFilter = typeof req.query.name === 'string' ? req.query.name.trim().slice(0, 128) : '';
-
+  const minBalance = parseBalance(req.query.minBalance);
+  const maxBalance = parseBalance(req.query.maxBalance);
   try {
-    const params = [req.session.user.sponsorId];
-    let where = ' AND sponsor_id = ?';
-    if (nameFilter) {
-      where += ' AND name LIKE ?';
-      params.push(`%${escapeLike(nameFilter)}%`);
-    }
-
-    const drivers = await db.query(
-      `SELECT name, username, email
-       FROM users
-       WHERE role = 'driver'${where}
-       ORDER BY name`,
-      params
-    );
-
-    res.render('sponsor/drivers', { drivers, nameFilter });
+    const sponsorId = req.session.user.sponsorId;
+    const [drivers, sponsorAccounts] = await Promise.all([
+      listDriversForSponsor(sponsorId, { name: nameFilter || null, minBalance, maxBalance }),
+      listSponsorAccounts(sponsorId),
+    ]);
+    const notice = req.session.accountNotice || null;
+    delete req.session.accountNotice;
+    res.render('sponsor/drivers', {
+      drivers, sponsorAccounts, nameFilter,
+      minBalance: minBalance ?? '', maxBalance: maxBalance ?? '',
+      notice, formToken: formToken(req), currentUserId: req.session.user.id,
+    });
   } catch (err) { next(err); }
 });
 
-function renderOrganizationEdit(req, res, organization, values, error = null, status = 200) {
-  return res.status(status).render('sponsor/organization-edit', {
-    organization, values, error, formToken: formToken(req),
+
+function renderDriverEdit(req, res, values, error = null, status = 200) {
+  return res.status(status).render('sponsor/driver-edit', {
+    driver: req.member, values, error, formToken: formToken(req),
   });
 }
+
+app.get('/drivers/:userId/edit', requireLogin, requireSponsor, loadOrgMember, requireDriverMember, (req, res) => {
+  renderDriverEdit(req, res, { name: req.member.name || '', email: req.member.email || '' });
+});
+
+app.post('/drivers/:userId/edit', requireLogin, requireSponsor, requireFormToken, loadOrgMember, requireDriverMember, async (req, res, next) => {
+  const read = (key) => (typeof req.body[key] === 'string' ? req.body[key].trim() : '');
+  const values = { name: read('name'), email: read('email') };
+  if (!values.name || values.name.length > 255 ||
+      !values.email || values.email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
+    return renderDriverEdit(req, res, values, 'Enter a name and a valid email address.', 400);
+  }
+  try {
+    await updateUserContact(req.member.id, values);
+    flash(req, 'success', `Updated ${req.member.username}.`);
+    res.redirect(303, '/drivers');
+  } catch (err) {
+    if (err instanceof DuplicateError) return renderDriverEdit(req, res, values, err.message, 409);
+    next(err);
+  }
+});
+
+
+app.post('/drivers/:userId/status', requireLogin, requireSponsor, requireFormToken, loadOrgMember, requireDriverMember, async (req, res, next) => {
+  const status = req.body.status;
+  if (!['active', 'disabled'].includes(status)) return res.status(400).send('Choose active or disabled.');
+  if (req.member.status === 'revoked') {
+    flash(req, 'error', 'That account was revoked by an administrator and cannot be changed here.');
+    return res.redirect(303, '/drivers');
+  }
+  try {
+    if (status !== req.member.status) await updateUserStatus(req.member.id, status);
+    flash(req, 'success', `${req.member.username} is now ${status}.`);
+    res.redirect(303, '/drivers');
+  } catch (err) { next(err); }
+});
+
+
+app.post('/accounts/:userId/delete', requireLogin, requireSponsor, requireFormToken, loadOrgMember, async (req, res, next) => {
+  if (req.member.id === req.session.user.id) {
+    flash(req, 'error', 'You cannot delete your own account.');
+    return res.redirect(303, '/drivers');
+  }
+  try {
+    const ok = await deleteOrgMember(req.session.user.sponsorId, req.member.id);
+    if (!ok) return res.status(404).send('Account not found in your organization.');
+    flash(req, 'success', `Deleted ${req.member.username}.`);
+    res.redirect(303, '/drivers');
+  } catch (err) {
+    if (err.code === 'ER_ROW_IS_REFERENCED_2') {
+      flash(req, 'error', 'This account still has linked records and could not be deleted. Deactivate it instead.');
+      return res.redirect(303, '/drivers');
+    }
+    next(err);
+  }
+});
 
 app.post('/organization/rules', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
   const title = (req.body.title || '').trim();
@@ -329,7 +411,7 @@ app.post('/sponsor-users/create', requireLogin, requireSponsor, requireFormToken
     const created = await createUser({
       ...values,
       role: 'sponsor',
-      sponsorId: req.session.user.sponsorId, // ⚠️ depends on createUser's actual signature — see users/store.js
+      sponsorId: req.session.user.sponsorId, 
       password: usesSetupLink ? randomBytes(32).toString('hex') : password,
     });
 
