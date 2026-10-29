@@ -1,0 +1,26 @@
+<%- include('../partials/head', { title: 'Edit Driver' }) %>
+  <section class="hero">
+    <%- include('../partials/shield') %>
+    <div>
+      <h1>Edit <%= driver.username %></h1>
+      <p>Update this driver's name and email.</p>
+    </div>
+  </section>
+
+  <% if (error) { %>
+    <p class="error" role="alert"><%= error %></p>
+  <% } %>
+
+  <form method="POST" action="/drivers/<%= driver.id %>/edit">
+    <input type="hidden" name="token" value="<%= formToken %>">
+
+    <label for="name">Full name</label>
+    <input type="text" id="name" name="name" value="<%= values.name %>" maxlength="255" required>
+
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" value="<%= values.email %>" maxlength="255" required>
+
+    <button type="submit">Save</button>
+    <a href="/drivers">Cancel</a>
+  </form>
+<%- include('../partials/foot') %>
