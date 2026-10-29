@@ -139,3 +139,12 @@ CREATE TABLE IF NOT EXISTS rules (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );
+-- Signed-in sessions (see migration 016). Kept in the database rather than in
+-- the Node process so a deployment does not sign everyone out.
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id VARCHAR(128) NOT NULL PRIMARY KEY,
+  data TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_sessions_expires_at (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
