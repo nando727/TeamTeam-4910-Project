@@ -148,3 +148,15 @@ CREATE TABLE IF NOT EXISTS sessions (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_sessions_expires_at (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Administrator unlocks (see migration 017). The lockout counts failures since
+-- the last success or unlock, whichever is later, so clearing a lock adds a
+-- record instead of deleting attempts from the audit log.
+CREATE TABLE IF NOT EXISTS login_unlocks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(64) NOT NULL,
+  unlocked_by INT NULL,
+  unlocked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_login_unlocks_username (username, unlocked_at),
+  FOREIGN KEY (unlocked_by) REFERENCES users(id)
+);

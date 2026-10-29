@@ -122,11 +122,14 @@ describe('deciding whether an account is locked', () => {
     // Story AA-70: [username, source, minutes, username, source] — the success
     // that clears the tally is looked up for the same pair, so one person's
     // sign-in cannot wipe another's failures.
-    const [, , , usernameForSuccessLookup, sourceForSuccessLookup] = lastParams;
+    const [, , , usernameForSuccessLookup, sourceForSuccessLookup, usernameForUnlockLookup] = lastParams;
     const sql = db.query.mock.calls[0][0];
     expect(sql).toContain('success = 1');
     expect(usernameForSuccessLookup).toBe('driver1');
     expect(sourceForSuccessLookup).toBe('203.0.113.7');
+    // Story AA-72: and an administrator's unlock starts the tally over too.
+    expect(sql).toContain('FROM login_unlocks');
+    expect(usernameForUnlockLookup).toBe('driver1');
   });
 
   test('the window and username are passed as query parameters, not built into the SQL', async () => {
@@ -136,6 +139,7 @@ describe('deciding whether an account is locked', () => {
     expect(lastParams).toEqual([
       "someone' OR '1'='1", "203.0.113.7' OR '1'='1", 30,
       "someone' OR '1'='1", "203.0.113.7' OR '1'='1",
+      "someone' OR '1'='1",
     ]);
     expect(db.query.mock.calls[0][0]).toContain('INTERVAL ? MINUTE');
   });

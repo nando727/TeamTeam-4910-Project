@@ -73,6 +73,12 @@ function waitMinutes(failures, { maxFailures, lockoutMinutes, firstWaitMinutes }
 // The success that clears the tally is scoped to the same pair as well. A
 // global one would let the victim's own successful sign-in wipe an attacker's
 // count every time they logged in.
+//
+// Story AA-72: an administrator's unlock is the other way the tally starts
+// over. It is a record in login_unlocks rather than a change to the attempts,
+// so the audit log still holds every attempt that really happened — see
+// clearLockout below. An unlock covers every origin for the username, because
+// the admin acts on an account and cannot be asked which address to clear.
 async function recentFailureCount(username, source, lockoutMinutes) {
   const rows = await db.query(
     'SELECT COUNT(*) AS failures, UNIX_TIMESTAMP(MAX(attempted_at)) * 1000 AS latest_failure ' +
@@ -82,8 +88,11 @@ async function recentFailureCount(username, source, lockoutMinutes) {
       '  AND attempted_at > COALESCE((' +
       '    SELECT MAX(attempted_at) FROM login_attempts s ' +
       '     WHERE s.username = ? AND s.source_ip <=> ? AND s.success = 1' +
+      "  ), '1970-01-01 00:00:00') " +
+      '  AND attempted_at > COALESCE((' +
+      '    SELECT MAX(unlocked_at) FROM login_unlocks u WHERE u.username = ?' +
       "  ), '1970-01-01 00:00:00')",
-    [username, source, lockoutMinutes, username, source]
+    [username, source, lockoutMinutes, username, source, username]
   );
   const row = rows[0] || {};
   return {
@@ -159,4 +168,25 @@ function lockoutGuidance({ minutesRemaining }) {
   };
 }
 
-module.exports = { checkLockout, lockoutPolicy, waitMinutes, lockoutMessage, lockoutGuidance, RESET_PATH };
+// Story AA-72: let a locked-out user back in now, without waiting out the
+// clock and without touching what the audit log says happened.
+//
+// Only failures after the unlock count towards a new lock, so this is not a way
+// to switch the lockout off: the next run of failures locks the account again.
+//
+// unlocked_at and attempted_at are both TIMESTAMP, which MySQL keeps to whole
+// seconds, so a failed attempt in the same second as the unlock is not counted.
+// That is deliberate: the cost is a guess or two inside one second, against an
+// account an administrator has just decided to let back in, and the alternative
+// is widening the audit table's own column for nothing else's benefit.
+async function clearLockout(username, adminId = null) {
+  await db.query(
+    'INSERT INTO login_unlocks (username, unlocked_by) VALUES (?, ?)',
+    [username, adminId]
+  );
+}
+
+module.exports = {
+  checkLockout, clearLockout, lockoutPolicy, waitMinutes,
+  lockoutMessage, lockoutGuidance, RESET_PATH,
+};
