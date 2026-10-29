@@ -2,11 +2,18 @@
 // revocation cutoff, so "sign out everywhere" reaches sessions this request
 // knows nothing about.
 //
-// Sessions live in memory, so they cannot be listed or deleted by user. Each
-// one records when it was issued (req.session.issuedAt, set at login); an
-// account carries a cutoff (users.sessions_valid_from). A session outlives the
-// cutoff only if it was issued strictly after it. That makes the check work
-// across devices and across server instances without finding those sessions.
+// Each session records when it was issued (req.session.issuedAt, set at
+// login); an account carries a cutoff (users.sessions_valid_from). A session
+// outlives the cutoff only if it was issued strictly after it. That makes the
+// check work across devices and across server instances without having to find
+// those sessions.
+//
+// This was originally the only option, because sessions lived in the web
+// server's memory and could not be listed or deleted by user. Story AA-71 moved
+// them into a sessions table, so deleting a user's rows is now possible too —
+// the cutoff is kept anyway: it is one check that also covers a session saved
+// between the delete and the reply, and a signed-out session is refused even if
+// its row is somehow still there.
 //
 // Both timestamps come from MySQL, so they cannot disagree about the time.
 

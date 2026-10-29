@@ -19,6 +19,7 @@ const db = require('../db');
 const { idleLimitMs } = require('./session-timeout');
 
 const DEFAULT_ROW_HOURS = 24;
+const DEFAULT_PRUNE_MINUTES = 60;
 
 // How long a session row is kept. This is NOT the session's own lifetime:
 // sessionTimeout (src/auth/session-timeout.js) decides that from lastActivity,
@@ -99,4 +100,43 @@ class MysqlSessionStore extends Store {
   }
 }
 
-module.exports = { MysqlSessionStore, rowLifetimeMs };
+// Expired rows are never read again — get() filters them out in SQL — but
+// nothing deletes them either, and every sign-in writes one. Left alone the
+// table would only ever grow.
+async function pruneExpiredSessions() {
+  const result = await db.query('DELETE FROM sessions WHERE expires_at <= NOW()');
+  return (result && result.affectedRows) || 0;
+}
+
+function pruneIntervalMs() {
+  const minutes = Number.parseFloat(process.env.SESSION_PRUNE_MINUTES);
+  const safe = Number.isFinite(minutes) && minutes > 0 ? minutes : DEFAULT_PRUNE_MINUTES;
+  return safe * 60 * 1000;
+}
+
+// Started by src/server.js rather than by the app itself, so importing the app
+// in a test never leaves a timer running.
+//
+// A failed sweep is logged and nothing more: expired rows are already ignored,
+// so not clearing them is untidy rather than harmful, and it must never be a
+// reason for the site to stop serving requests.
+function startPruning(log = console) {
+  const sweep = () => pruneExpiredSessions().catch(err => {
+    log.error('Could not clear expired sessions:', err.message);
+  });
+
+  const timer = setInterval(sweep, pruneIntervalMs());
+  // Nothing should stay alive just to wait for the next sweep.
+  if (timer.unref) timer.unref();
+  // One sweep now, so a deployment tidies up without waiting an hour.
+  sweep();
+  return timer;
+}
+
+module.exports = {
+  MysqlSessionStore,
+  rowLifetimeMs,
+  pruneExpiredSessions,
+  pruneIntervalMs,
+  startPruning,
+};

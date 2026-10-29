@@ -42,22 +42,95 @@ capped at half the idle window, so `SESSION_IDLE_MINUTES=0.5` still warns.
 The browser only mirrors the server's clock: the timings come from the page, and
 with scripts disabled the session still expires exactly the same way.
 
+## Where sessions are kept (story AA-71)
+
+Signed-in sessions are rows in the `sessions` table (migration 016), read and
+written by `src/auth/session-store.js`.
+
+They used to live in express-session's default store, which is a JavaScript
+object inside the running Node process. That is fine on a laptop and wrong
+everywhere else:
+
+- **every deployment signed everyone out.** Shipping a change restarts the
+  process, and the object goes with it. Anyone using the site was dropped on
+  the login page mid-task, for no reason they could see.
+- **a second instance would have been worse.** Two instances behind one load
+  balancer would each recognise only the sessions they created, so a visitor
+  would appear randomly signed out depending on which one answered.
+
+The store is about eighty lines over the existing `src/db.js`, rather than a
+new dependency: express-session's store interface is four methods, and this way
+the table lives in our own migration and the session id stays a query
+parameter like everything else.
+
+**The row lifetime is not the session lifetime.** The obvious version of this
+expires the row at the idle limit, and it is a bug: a visitor returning to an
+expired session would arrive with no session at all, which the site cannot tell
+apart from someone who was never signed in &mdash; so they would be dropped on
+the login page with no explanation, losing the "your session expired" message
+that story 22208 exists to provide. Rows are kept for `SESSION_ROW_HOURS`
+(default 24), never less than two idle windows, and `sessionTimeout` stays the
+only thing that decides when a session is over.
+
+Expiries are written with `FROM_UNIXTIME(? / 1000)` and compared against
+`NOW()`, so no timestamp is ever rebuilt in Node's local zone. That is the trap
+this project has already hit twice (see the lockout notes above), and a session
+store is exactly where it would have hit a third time.
+
+Expired rows are cleared out hourly (`SESSION_PRUNE_MINUTES`) by
+`startPruning()`, which `src/server.js` starts after the server is listening:
+the app itself never starts a timer, so importing it in a test leaves nothing
+running. A failed sweep is logged and ignored &mdash; expired rows are already
+refused, so not clearing them is untidy rather than harmful.
+
+`SESSION_STORE=memory` asks for the old in-process store. `tests/setup.js` sets
+it, because the suite mocks the database query by query and would otherwise
+need all 46 files to answer session reads. The default is the database, so the
+deployed app cannot quietly end up with the memory store.
+
+One cost worth knowing: the idle window slides forward on every request, which
+changes the session, which means a row write on nearly every request. The
+alternative is not sliding it, which would log people out while they were
+working.
+
+`tests/session-rows.test.js` runs the real app against a fake sessions table.
+The test that matters is **a session row this process never wrote is honoured**,
+because that is a deployment in miniature, and it fails if the store is not
+wired in.
+
+**Checked against the live RDS database**, because mocks hand back `Date`
+objects and so cannot see a timestamp crossing between MySQL and Node:
+
+- a session written through the store and read back came out intact, and MySQL
+  put its expiry 1440 minutes out &mdash; exactly 24 hours, so there is no zone
+  skew hiding in `FROM_UNIXTIME`;
+- pruning deleted an hour-old row and left a live one alone;
+- with a session row planted as an earlier process would have left it, a
+  freshly started server answered the keep-alive `200`, was stopped the way a
+  deployment stops it, and the next server answered `200` again. The same
+  request against `SESSION_STORE=memory` answered `401`, which is what every
+  deployment used to do to everyone signed in.
+
 ## Signing out of all sessions (story AA-13)
 
 **Profile → Sign out of all sessions** ends the account's session on every
 browser and device, including the one that asked. Other devices land on the
 login page with an explanation the next time they ask for a page.
 
-Sessions are held in memory, so there is no list of them to delete — express's
-default store cannot be asked "which sessions belong to this user?". Instead
-each session records when it was issued, and the account carries a cutoff in
-`users.sessions_valid_from`. Signing out everywhere just stamps that column with
+Rather than deleting the account's sessions, each session records when it was
+issued and the account carries a cutoff in `users.sessions_valid_from`. Signing out everywhere just stamps that column with
 the current time; `src/auth/session-revocation.js` then refuses any session
 issued before it. That reaches sessions this request never touches, on any
 server instance, and it outlives a restart because the cutoff is in the database.
 
 The cost is one indexed lookup per signed-in request. Signed-out requests, the
 login page included, do not query at all.
+
+This was the only option when sessions lived in memory and could not be listed
+by user. Story AA-71 moved them into a table, so deleting a user's rows is now
+possible &mdash; the cutoff is kept anyway, because it is one check that also
+covers a session saved between the delete and the reply, and it refuses a
+signed-out session even if its row somehow survives.
 
 Two details are easy to undo by accident, so they are worth knowing:
 
