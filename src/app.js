@@ -5,6 +5,7 @@ const session = require('express-session');
 const authRoutes = require('./auth/routes');
 const { sessionTimeout, idleLimitMs, warningLeadMs, remainingMs } = require('./auth/session-timeout');
 const { sessionRevocation } = require('./auth/session-revocation');
+const { MysqlSessionStore } = require('./auth/session-store');
 const { rememberAndRedirect } = require('./auth/return-to');
 const { denyAccess } = require('./auth/deny');
 const apiRoutes = require('./routes/api');
@@ -39,8 +40,16 @@ app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// Story AA-71: sessions are kept in MySQL, so restarting the server for a
+// deployment no longer signs everyone out and a second instance would see the
+// same sessions as the first. SESSION_STORE=memory asks for express-session's
+// in-process store instead, which is what the tests use (tests/setup.js): no
+// database to stand up and nothing left behind.
+const sessionStore = process.env.SESSION_STORE === 'memory' ? undefined : new MysqlSessionStore();
+
 app.use(
   session({
+    store: sessionStore,
     secret: process.env.SESSION_SECRET || 'dev-only-secret-change-me',
     resave: false,
     saveUninitialized: false,

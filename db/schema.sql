@@ -33,7 +33,11 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   id INT AUTO_INCREMENT PRIMARY KEY,
   attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   username VARCHAR(64) NOT NULL,
-  success BOOLEAN NOT NULL
+  success BOOLEAN NOT NULL,
+  -- Where the attempt came from, so a lockout can count per origin as well as
+  -- per username (migration 015). NULL when it could not be determined.
+  source_ip VARCHAR(45) NULL,
+  INDEX idx_login_attempts_username_source (username, source_ip, attempted_at)
 );
 
 CREATE TABLE IF NOT EXISTS sponsor_applications (
@@ -134,6 +138,27 @@ CREATE TABLE IF NOT EXISTS rules (
   points INT NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
+);
+-- Signed-in sessions (see migration 016). Kept in the database rather than in
+-- the Node process so a deployment does not sign everyone out.
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id VARCHAR(128) NOT NULL PRIMARY KEY,
+  data TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_sessions_expires_at (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Administrator unlocks (see migration 017). The lockout counts failures since
+-- the last success or unlock, whichever is later, so clearing a lock adds a
+-- record instead of deleting attempts from the audit log.
+CREATE TABLE IF NOT EXISTS login_unlocks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(64) NOT NULL,
+  unlocked_by INT NULL,
+  unlocked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_login_unlocks_username (username, unlocked_at),
+  FOREIGN KEY (unlocked_by) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS driver_alert_preferences (

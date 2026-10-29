@@ -3,7 +3,7 @@
     <div class="page-header">
       <span class="eyebrow">Administration</span>
       <h1>Manage users</h1>
-      <p class="lede">Every account and its current status. Disabling or revoking an account asks you to confirm first. "Sign in as" lets you see the app as an active driver or sponsor.</p>
+      <p class="lede">Every account and its current status. Disabling or revoking an account asks you to confirm first. "Sign in as" lets you see the app as an active driver or sponsor. Accounts blocked by failed sign-ins are marked, and <a href="/admin/locked-users">Locked users</a> can let them back in.</p>
     </div>
     <% if (notice) { %>
       <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %></p>
@@ -24,9 +24,7 @@
               <th scope="col">Username</th>
               <th scope="col">Role</th>
               <th scope="col">Status</th>
-              <th scope="col">Change status</th>
               <th scope="col">Password</th>
-              <th scope="col">Setup link</th>
               <th scope="col">Sponsors</th>
               <th scope="col">Impersonate</th>
             </tr>
@@ -36,36 +34,43 @@
               <tr>
                 <td class="cell-strong"><%= user.username %><% if (user.id === currentUserId) { %> <span class="muted small">(you)</span><% } %></td>
                 <td><span class="role-chip"><%= user.role %></span></td>
-                <td><span class="status-badge status-<%= user.status %>"><%= user.status %></span></td>
                 <td>
+                  <%# The dropdown already shows the current status, so it is the
+                      badge as well: one cell instead of a badge beside a copy of it. %>
                   <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/status">
                     <input type="hidden" name="token" value="<%= token %>">
                     <input type="hidden" name="from" value="manage-users">
-                    <label for="status-<%= user.id %>" class="sr-only">New status for <%= user.username %></label>
-                    <select id="status-<%= user.id %>" name="status">
+                    <label for="status-<%= user.id %>" class="sr-only">Status for <%= user.username %></label>
+                    <select class="status-select status-<%= user.status %>" id="status-<%= user.id %>" name="status">
                       <% statuses.forEach(status => { %>
                         <option value="<%= status %>" <%= status === user.status ? 'selected' : '' %>><%= status %></option>
                       <% }); %>
                     </select>
                     <button type="submit">Update</button>
                   </form>
-                </td>
-                <td>
-                  <% if (user.id === currentUserId) { %>
-                    <a class="button-link button--small" href="/profile/password">Change</a>
-                  <% } else { %>
-                    <a class="button-link button--small" href="/admin/manage-users/<%= user.id %>/password?from=manage-users">Reset</a>
+                  <%# Story AA-72: being blocked by failed sign-ins is not an account
+                      status, so it sits beside the status rather than inside it. The
+                      chip links to the page that can clear it. %>
+                  <% if (user.locked) { %>
+                    <p class="cell-note">
+                      <a class="status-badge status-locked" href="/admin/locked-users"
+                         title="Blocked by failed sign-ins. Unlock on the Locked users page.">locked</a>
+                    </p>
                   <% } %>
                 </td>
                 <td>
-                  <%# Only for accounts that were sent a link and never used one. %>
+                  <%# A new account has no password yet, so it gets a setup link rather
+                      than a reset. These were two columns, each offering the other's
+                      action to accounts it could not apply to. %>
                   <% if (user.awaitingSetup) { %>
                     <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/setup-link">
                       <input type="hidden" name="token" value="<%= token %>">
                       <button type="submit" class="button--small">Send new link</button>
                     </form>
+                  <% } else if (user.id === currentUserId) { %>
+                    <a class="button-link button--small" href="/profile/password">Change</a>
                   <% } else { %>
-                    <span class="muted small">Password set</span>
+                    <a class="button-link button--small" href="/admin/manage-users/<%= user.id %>/password?from=manage-users">Reset</a>
                   <% } %>
                 </td>
                 <td>

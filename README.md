@@ -42,22 +42,95 @@ capped at half the idle window, so `SESSION_IDLE_MINUTES=0.5` still warns.
 The browser only mirrors the server's clock: the timings come from the page, and
 with scripts disabled the session still expires exactly the same way.
 
+## Where sessions are kept (story AA-71)
+
+Signed-in sessions are rows in the `sessions` table (migration 016), read and
+written by `src/auth/session-store.js`.
+
+They used to live in express-session's default store, which is a JavaScript
+object inside the running Node process. That is fine on a laptop and wrong
+everywhere else:
+
+- **every deployment signed everyone out.** Shipping a change restarts the
+  process, and the object goes with it. Anyone using the site was dropped on
+  the login page mid-task, for no reason they could see.
+- **a second instance would have been worse.** Two instances behind one load
+  balancer would each recognise only the sessions they created, so a visitor
+  would appear randomly signed out depending on which one answered.
+
+The store is about eighty lines over the existing `src/db.js`, rather than a
+new dependency: express-session's store interface is four methods, and this way
+the table lives in our own migration and the session id stays a query
+parameter like everything else.
+
+**The row lifetime is not the session lifetime.** The obvious version of this
+expires the row at the idle limit, and it is a bug: a visitor returning to an
+expired session would arrive with no session at all, which the site cannot tell
+apart from someone who was never signed in &mdash; so they would be dropped on
+the login page with no explanation, losing the "your session expired" message
+that story 22208 exists to provide. Rows are kept for `SESSION_ROW_HOURS`
+(default 24), never less than two idle windows, and `sessionTimeout` stays the
+only thing that decides when a session is over.
+
+Expiries are written with `FROM_UNIXTIME(? / 1000)` and compared against
+`NOW()`, so no timestamp is ever rebuilt in Node's local zone. That is the trap
+this project has already hit twice (see the lockout notes above), and a session
+store is exactly where it would have hit a third time.
+
+Expired rows are cleared out hourly (`SESSION_PRUNE_MINUTES`) by
+`startPruning()`, which `src/server.js` starts after the server is listening:
+the app itself never starts a timer, so importing it in a test leaves nothing
+running. A failed sweep is logged and ignored &mdash; expired rows are already
+refused, so not clearing them is untidy rather than harmful.
+
+`SESSION_STORE=memory` asks for the old in-process store. `tests/setup.js` sets
+it, because the suite mocks the database query by query and would otherwise
+need all 46 files to answer session reads. The default is the database, so the
+deployed app cannot quietly end up with the memory store.
+
+One cost worth knowing: the idle window slides forward on every request, which
+changes the session, which means a row write on nearly every request. The
+alternative is not sliding it, which would log people out while they were
+working.
+
+`tests/session-rows.test.js` runs the real app against a fake sessions table.
+The test that matters is **a session row this process never wrote is honoured**,
+because that is a deployment in miniature, and it fails if the store is not
+wired in.
+
+**Checked against the live RDS database**, because mocks hand back `Date`
+objects and so cannot see a timestamp crossing between MySQL and Node:
+
+- a session written through the store and read back came out intact, and MySQL
+  put its expiry 1440 minutes out &mdash; exactly 24 hours, so there is no zone
+  skew hiding in `FROM_UNIXTIME`;
+- pruning deleted an hour-old row and left a live one alone;
+- with a session row planted as an earlier process would have left it, a
+  freshly started server answered the keep-alive `200`, was stopped the way a
+  deployment stops it, and the next server answered `200` again. The same
+  request against `SESSION_STORE=memory` answered `401`, which is what every
+  deployment used to do to everyone signed in.
+
 ## Signing out of all sessions (story AA-13)
 
 **Profile → Sign out of all sessions** ends the account's session on every
 browser and device, including the one that asked. Other devices land on the
 login page with an explanation the next time they ask for a page.
 
-Sessions are held in memory, so there is no list of them to delete — express's
-default store cannot be asked "which sessions belong to this user?". Instead
-each session records when it was issued, and the account carries a cutoff in
-`users.sessions_valid_from`. Signing out everywhere just stamps that column with
+Rather than deleting the account's sessions, each session records when it was
+issued and the account carries a cutoff in `users.sessions_valid_from`. Signing out everywhere just stamps that column with
 the current time; `src/auth/session-revocation.js` then refuses any session
 issued before it. That reaches sessions this request never touches, on any
 server instance, and it outlives a restart because the cutoff is in the database.
 
 The cost is one indexed lookup per signed-in request. Signed-out requests, the
 login page included, do not query at all.
+
+This was the only option when sessions lived in memory and could not be listed
+by user. Story AA-71 moved them into a table, so deleting a user's rows is now
+possible &mdash; the cutoff is kept anyway, because it is one check that also
+covers a session saved between the delete and the reply, and it refuses a
+signed-out session even if its row somehow survives.
 
 Two details are easy to undo by accident, so they are worth knowing:
 
@@ -96,16 +169,67 @@ account has no sessions yet, and that flow is covered by story 22255.
 
 ## Account lockout (story 22214)
 
-Five failed sign-ins lock an account for 15 minutes. Only failures **since your
-last successful sign-in** count, so signing in successfully clears the tally.
-While locked, the correct password is refused too — that is the point — and the
-message says how many minutes remain. Every blocked attempt is still recorded in
-`login_attempts`.
+Five failed sign-ins block further attempts for a while. Only failures **since
+the last successful sign-in** count, so signing in successfully clears the
+tally. While locked, the correct password is refused too — that is the point —
+and the message says how many minutes remain. Every blocked attempt is still
+recorded in `login_attempts`.
 
 The lock is worked out from that audit table, so there is nothing to reset by
-hand and it expires on its own. Set `LOGIN_MAX_FAILURES` and
-`LOGIN_LOCKOUT_MINUTES` in `.env` to change the policy; `LOGIN_LOCKOUT_MINUTES=1`
-makes it easy to demonstrate.
+hand and it expires on its own. Set `LOGIN_MAX_FAILURES`,
+`LOGIN_FIRST_WAIT_MINUTES` and `LOGIN_LOCKOUT_MINUTES` in `.env` to change the
+policy; `LOGIN_LOCKOUT_MINUTES=1` makes it easy to demonstrate.
+
+### Counted per origin, not per account (story AA-70)
+
+Counting failures by username alone meant anyone who knew a username could keep
+that account locked for as long as they cared to — the account was punished for
+what somebody else did, and a password nobody can use is as good as no account.
+Failures are now counted per `(username, source_ip)` pair, so a lock lands on
+whoever caused it and the real user still signs in from their own machine.
+
+Two details are easy to undo by accident:
+
+- `source_ip <=> ?` is **NULL-safe** equality. Attempts whose origin could not
+  be worked out are counted against each other; with plain `=` they would match
+  nothing and never lock at all.
+- The success that clears the tally is looked up **for the same pair**. A global
+  one would hand an attacker a fresh five guesses every time the real user
+  signed in. `tests/lockout-per-source.test.js` names that case.
+
+The origin comes from `req.ip` (`requestSource` in `src/auth/routes.js`), which
+needs `app.set('trust proxy', 1)` to be the visitor's address rather than the
+load balancer's behind Elastic Beanstalk. An IPv4 address arriving in IPv6 form
+is trimmed back to `203.0.113.7` so the same visitor is one bucket, not two.
+
+A shared office or campus NAT does put colleagues in one bucket, which is the
+known trade-off: being slowed down alongside your neighbours is recoverable,
+being locked out by a stranger is not.
+
+Checked against the live RDS database with `LOGIN_MAX_FAILURES=3`, because
+mocked tests cannot see a timestamp crossing between MySQL and Node (the note
+at the end of this section): guessing from one address answered `429` while the
+real user signed in from another with `302`.
+
+### The wait grows instead of being one fixed block (story AA-70)
+
+The lock at the limit is **1 minute**, and each further failure doubles it — 1,
+2, 4, 8, then 15 — up to `LOGIN_LOCKOUT_MINUTES`. One flat block treated two
+unlike visitors the same: fifteen minutes is a long time to lose over a typo,
+while someone working through a password list is barely inconvenienced by it and
+simply comes back for five more guesses. A doubling wait is cheap for the typo
+and expensive for the list.
+
+Failures are only counted for `LOGIN_LOCKOUT_MINUTES`, which is also the longest
+wait, so sitting out the longest wait empties the tally: **nobody can be locked
+out permanently**, however high the count went. `waitMinutes` relies on
+`2 ** n` being `Infinity` rather than an error, which `Math.min` turns back into
+the cap — there is no special case for an absurd failure count, and
+`tests/lockout-backoff.test.js` pins that down.
+
+The lengths themselves are plain arithmetic on a failure count, so the mocked
+tests do cover them; the one value that crosses between MySQL and Node here is
+the newest failure's timestamp, which this change did not touch.
 
 ### Getting back in (story 22215)
 
@@ -125,6 +249,68 @@ usernames that were never real, so a locked reply reads identically either way.
 `tests/lockout-message.test.js` and `tests/lockout-login.test.js` hold that
 property in place — a locked response for an invented username is compared
 character for character against one for a real account.
+
+### An administrator can unlock an account (story AA-72)
+
+**Locked users** (`/admin/locked-users`, in the Users menu) lists the accounts
+that cannot sign in right now, each with an **Unlock** button behind the same
+form token as every other admin action. Unlocking says so and returns to the
+page it was done from; unlocking an account that is not locked changes nothing
+and says that instead.
+
+**Manage users** marks a locked account with a red `locked` chip that links to
+that page, but does not carry the button itself: the question "who is locked
+out?" comes up when somebody calls for help, and answering it should not mean
+reading every row. Both pages get their answer from the same
+`lockedUsernames()`, so they cannot disagree.
+
+That split also took the user list from nine columns to six. Two pairs were the
+same fact twice: **Status** and **Change status** (the dropdown already shows
+the current status, so it is now the badge as well, coloured green, grey or red
+by status), and **Password** and **Setup link** (an account either has a
+password or is still waiting to set one &mdash; each column was offering the
+other's action to accounts that could not use it).
+
+Clearing the lock needed a decision, because the lock is not stored anywhere:
+it is counted from `login_attempts`. There is no flag to switch off, and the
+two obvious ways are both wrong:
+
+- **deleting the failed attempts** destroys the audit log the course spec
+  requires, along with the evidence of whatever the admin was reacting to;
+- **inserting a successful attempt** puts a lie in that same log.
+
+So an unlock is its own row in `login_unlocks` (migration 017), and the count
+starts after the latest one: nothing is rewritten, and the unlock is itself
+auditable &mdash; which administrator, and when. `tests/lockout-unlock.test.js`
+asserts that no `DELETE` or `UPDATE` ever touches `login_attempts`.
+
+Two consequences worth keeping:
+
+- **It cannot be used to switch the lockout off.** Only failures after the
+  unlock count towards a new lock, so the next run of failures locks the
+  account again.
+- **An unlock covers every origin for that username.** The lock is keyed on
+  `(username, source_ip)` since story AA-70, but an administrator acts on an
+  account and must never be asked to type an address.
+
+The list asks one grouped question for the whole page rather than running a
+lockout check per row, and both that query and the sign-in check hand their
+result to the same `lockFrom()` &mdash; so the badge on the page and the refusal
+at the sign-in form cannot drift apart.
+
+**Checked against the live RDS database**, because mocked tests match on the
+SQL string and never parse it &mdash; a bad correlated subquery would pass every
+one of them and fail on the deployed site. Five failures planted for a username
+nobody owns locked it, the grouped lookup listed it, the unlock cleared it, and
+the row recorded the right administrator. The synthetic rows were deleted
+afterwards; nothing else in `login_attempts` was touched.
+
+`unlocked_at` and `attempted_at` are both `TIMESTAMP`, which MySQL keeps to
+whole seconds, so a failed attempt in the same second as an unlock is not
+counted. That is deliberate: the cost is a guess or two inside one second, on
+an account an administrator has just decided to let back in, and the
+alternative is widening the audit table's own column for nothing else's
+benefit.
 
 **The newest failure is read as epoch milliseconds, deliberately**
 (`UNIX_TIMESTAMP(MAX(attempted_at)) * 1000`). A `DATETIME` comes back from MySQL

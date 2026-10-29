@@ -11,15 +11,46 @@ const db = require('../db');
 
 const DEFAULT_MAX_FAILURES = 5;
 const DEFAULT_LOCKOUT_MINUTES = 15;
+const DEFAULT_FIRST_WAIT_MINUTES = 1;
 
 // Read per call so a demo or a test can use a short window without a restart.
+//
+// lockoutMinutes is the longest a wait can get, not the only length there is:
+// see waitMinutes below.
 function lockoutPolicy() {
   const maxFailures = Number.parseInt(process.env.LOGIN_MAX_FAILURES, 10);
   const minutes = Number.parseFloat(process.env.LOGIN_LOCKOUT_MINUTES);
+  const firstWait = Number.parseFloat(process.env.LOGIN_FIRST_WAIT_MINUTES);
+  const lockoutMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : DEFAULT_LOCKOUT_MINUTES;
+  const firstWaitMinutes = Number.isFinite(firstWait) && firstWait > 0 ? firstWait : DEFAULT_FIRST_WAIT_MINUTES;
   return {
     maxFailures: Number.isInteger(maxFailures) && maxFailures > 0 ? maxFailures : DEFAULT_MAX_FAILURES,
-    lockoutMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : DEFAULT_LOCKOUT_MINUTES,
+    lockoutMinutes,
+    // A first wait longer than the cap would make the cap meaningless.
+    firstWaitMinutes: Math.min(firstWaitMinutes, lockoutMinutes),
   };
+}
+
+// Story AA-70: how long a wait is, given how many failures are standing.
+//
+// The first lock is short and each further failure doubles it, up to
+// lockoutMinutes. With the defaults that is 1, 2, 4, 8, then 15 minutes from
+// the fifth failure on.
+//
+// A single fixed block treated two very different visitors the same way. The
+// person who mistypes their own password five times is the common case by far,
+// and fifteen minutes is a long time to lose over a typo; someone working
+// through a password list is not inconvenienced by a flat fifteen minutes at
+// all, because they can simply come back and spend five more guesses. A
+// doubling wait is gentle on the typo and ruinous for the list: the cost of
+// each extra guess grows while the real user never leaves the first step.
+//
+// 2 ** a large number is Infinity rather than an error, and Math.min still
+// returns the cap, so an extreme failure count needs no special case.
+function waitMinutes(failures, { maxFailures, lockoutMinutes, firstWaitMinutes }) {
+  const failuresPastLimit = failures - maxFailures;
+  if (failuresPastLimit < 0) return 0;
+  return Math.min(lockoutMinutes, firstWaitMinutes * 2 ** failuresPastLimit);
 }
 
 // Failures since the last success, within the lockout window. MySQL's clock is
@@ -30,16 +61,38 @@ function lockoutPolicy() {
 // the machine's local zone. Against a UTC database that put every failure
 // hours into the future, so a fifteen-minute lock lasted four hours and the
 // visitor was told to wait 255 minutes.
-async function recentFailureCount(username, lockoutMinutes) {
+// Story AA-70: counted per username AND source, not per username alone.
+// Keying on the username by itself meant anyone who knew a username could keep
+// that account locked for as long as they cared to: the account was punished
+// for what someone else did. Keying on the pair puts the failures on whoever
+// produced them, so the real user still signs in from their own machine.
+//
+// <=> is NULL-safe equality, so attempts whose source could not be determined
+// are counted against each other rather than matching nothing.
+//
+// The success that clears the tally is scoped to the same pair as well. A
+// global one would let the victim's own successful sign-in wipe an attacker's
+// count every time they logged in.
+//
+// Story AA-72: an administrator's unlock is the other way the tally starts
+// over. It is a record in login_unlocks rather than a change to the attempts,
+// so the audit log still holds every attempt that really happened — see
+// clearLockout below. An unlock covers every origin for the username, because
+// the admin acts on an account and cannot be asked which address to clear.
+async function recentFailureCount(username, source, lockoutMinutes) {
   const rows = await db.query(
     'SELECT COUNT(*) AS failures, UNIX_TIMESTAMP(MAX(attempted_at)) * 1000 AS latest_failure ' +
       'FROM login_attempts ' +
-      'WHERE username = ? AND success = 0 ' +
+      'WHERE username = ? AND source_ip <=> ? AND success = 0 ' +
       '  AND attempted_at > NOW() - INTERVAL ? MINUTE ' +
       '  AND attempted_at > COALESCE((' +
-      '    SELECT MAX(attempted_at) FROM login_attempts s WHERE s.username = ? AND s.success = 1' +
+      '    SELECT MAX(attempted_at) FROM login_attempts s ' +
+      '     WHERE s.username = ? AND s.source_ip <=> ? AND s.success = 1' +
+      "  ), '1970-01-01 00:00:00') " +
+      '  AND attempted_at > COALESCE((' +
+      '    SELECT MAX(unlocked_at) FROM login_unlocks u WHERE u.username = ?' +
       "  ), '1970-01-01 00:00:00')",
-    [username, lockoutMinutes, username]
+    [username, source, lockoutMinutes, username, source, username]
   );
   const row = rows[0] || {};
   return {
@@ -50,23 +103,72 @@ async function recentFailureCount(username, lockoutMinutes) {
 }
 
 // Whether this username may attempt a sign-in right now. The lock runs from the
-// most recent failure, so guessing again during a lock extends it.
-async function checkLockout(username) {
-  const { maxFailures, lockoutMinutes } = lockoutPolicy();
-  const { failures, latestFailure } = await recentFailureCount(username, lockoutMinutes);
-
+// most recent failure, so guessing again during a lock restarts the wait, and
+// because the failure count went up it restarts it longer than before.
+//
+// Failures are only counted for lockoutMinutes, which is also the longest wait,
+// so sitting out the longest wait empties the tally: nobody can end up locked
+// out for good.
+// The one place that turns a count of failures into a lock, so the sign-in
+// check and the administrator's list can never disagree about who is locked.
+function lockFrom(failures, latestFailure, policy) {
+  const { maxFailures } = policy;
   if (failures < maxFailures || !latestFailure) {
-    return { locked: false, failures, maxFailures, minutesRemaining: 0 };
+    return { locked: false, failures, maxFailures, waitMinutes: 0, minutesRemaining: 0 };
   }
 
-  const unlocksAt = latestFailure.getTime() + lockoutMinutes * 60 * 1000;
+  const wait = waitMinutes(failures, policy);
+  const unlocksAt = latestFailure.getTime() + wait * 60 * 1000;
   const msRemaining = Math.max(0, unlocksAt - Date.now());
   return {
     locked: msRemaining > 0,
     failures,
     maxFailures,
+    waitMinutes: wait,
     minutesRemaining: Math.max(1, Math.ceil(msRemaining / 60000)),
   };
+}
+
+async function checkLockout(username, source = null) {
+  const policy = lockoutPolicy();
+  const { failures, latestFailure } = await recentFailureCount(username, source ?? null, policy.lockoutMinutes);
+  return lockFrom(failures, latestFailure, policy);
+}
+
+// Story AA-72: which accounts are locked out right now, for the admin user
+// list. One grouped query for the whole page rather than a lockout check per
+// row, which on a long list would be a query per account.
+//
+// The lock is per (username, origin), so a username is reported as locked when
+// any one origin is: that is what the administrator is being asked about, and
+// what the Unlock button clears.
+async function lockedUsernames() {
+  const policy = lockoutPolicy();
+  const rows = await db.query(
+    'SELECT username, COUNT(*) AS failures, UNIX_TIMESTAMP(MAX(attempted_at)) * 1000 AS latest_failure ' +
+      'FROM login_attempts a ' +
+      'WHERE success = 0 ' +
+      '  AND attempted_at > NOW() - INTERVAL ? MINUTE ' +
+      '  AND attempted_at > COALESCE((' +
+      '    SELECT MAX(attempted_at) FROM login_attempts s ' +
+      '     WHERE s.username = a.username AND s.source_ip <=> a.source_ip AND s.success = 1' +
+      "  ), '1970-01-01 00:00:00') " +
+      '  AND attempted_at > COALESCE((' +
+      '    SELECT MAX(unlocked_at) FROM login_unlocks u WHERE u.username = a.username' +
+      "  ), '1970-01-01 00:00:00') " +
+      'GROUP BY username, source_ip ' +
+      'HAVING failures >= ?',
+    [policy.lockoutMinutes, policy.maxFailures]
+  );
+
+  const locked = new Set();
+  for (const row of rows) {
+    // Same epoch-milliseconds handling as recentFailureCount, for the same
+    // reason: a DATETIME read into Node is rebuilt in the machine's zone.
+    const latestFailure = row.latest_failure == null ? null : new Date(Number(row.latest_failure));
+    if (lockFrom(Number(row.failures || 0), latestFailure, policy).locked) locked.add(row.username);
+  }
+  return locked;
 }
 
 // Story 22215: being told the sign-in is blocked is only half of it. These
@@ -100,11 +202,32 @@ function lockoutGuidance({ minutesRemaining }) {
     waitText: `Wait ${minutesLabel(minutesRemaining)} and try again.`,
     // The lock runs from the most recent failure (see checkLockout), so each
     // attempt during it pushes the wait back. Nobody guesses that by itself.
-    retryWarning: 'Trying again before then restarts the wait.',
+    retryWarning: 'Trying again before then restarts the wait, and each extra attempt makes the next wait longer.',
     resetPath: RESET_PATH,
     resetText: 'Reset your password to sign in right away.',
     adminText: 'If you cannot use a reset link, ask an administrator to help you back in.',
   };
 }
 
-module.exports = { checkLockout, lockoutPolicy, lockoutMessage, lockoutGuidance, RESET_PATH };
+// Story AA-72: let a locked-out user back in now, without waiting out the
+// clock and without touching what the audit log says happened.
+//
+// Only failures after the unlock count towards a new lock, so this is not a way
+// to switch the lockout off: the next run of failures locks the account again.
+//
+// unlocked_at and attempted_at are both TIMESTAMP, which MySQL keeps to whole
+// seconds, so a failed attempt in the same second as the unlock is not counted.
+// That is deliberate: the cost is a guess or two inside one second, against an
+// account an administrator has just decided to let back in, and the alternative
+// is widening the audit table's own column for nothing else's benefit.
+async function clearLockout(username, adminId = null) {
+  await db.query(
+    'INSERT INTO login_unlocks (username, unlocked_by) VALUES (?, ?)',
+    [username, adminId]
+  );
+}
+
+module.exports = {
+  checkLockout, clearLockout, lockedUsernames, lockoutPolicy, waitMinutes,
+  lockoutMessage, lockoutGuidance, RESET_PATH,
+};

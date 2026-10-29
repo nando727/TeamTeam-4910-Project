@@ -281,6 +281,8 @@ form > button { width: 100%; }
 .status-active { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
 .status-inactive, .status-disabled { background: var(--gray-bg); color: var(--gray); border-color: var(--gray-border); }
 .status-revoked { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
+/* Blocked by too many failed sign-ins (story AA-72), not an account status. */
+.status-locked { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
 .status-pending { background: var(--gray-bg); color: var(--gray); border-color: var(--gray-border); }
 .status-approved { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
 .status-rejected { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
@@ -294,6 +296,24 @@ form > button { width: 100%; }
 .status-form { display: flex; gap: 8px; align-items: center; margin: 0; }
 .status-form select { width: auto; min-width: 128px; padding: 7px 34px 7px 10px; font-size: 0.9rem; }
 .status-form > button { width: auto; margin-top: 0; padding: 8px 14px; font-size: 0.88rem; }
+
+/* The status control on Manage users is both the current status and the way to
+   change it, so it carries the status colour itself rather than sitting next to
+   a badge that repeats it. The caret is restated here because the colour rules
+   above use the `background` shorthand, which would otherwise drop it. */
+.status-select { font-weight: 600; text-transform: capitalize;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%235d6b7c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; }
+.status-select.status-active { background-color: var(--green-bg); color: var(--green); border-color: var(--green-border); }
+.status-select.status-disabled { background-color: var(--gray-bg); color: var(--gray); border-color: var(--gray-border); }
+.status-select.status-revoked { background-color: var(--red-bg); color: var(--red); border-color: var(--red-border); }
+/* The open dropdown stays legible on every platform. */
+.status-select option { color: var(--text); background: var(--surface); }
+
+/* A chip that is also a link: "locked" goes to the Locked users page. */
+a.status-badge { text-decoration: none; }
+a.status-badge:hover { filter: brightness(0.97); }
+.cell-note { margin: 6px 0 0; }
 
 /* ---- Home dashboard ------------------------------------------------------------ */
 

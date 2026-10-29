@@ -6,5 +6,10 @@
 import http from 'node:http';
 import https from 'node:https';
 
+// Story AA-71: the app stores sessions in MySQL by default. The tests mock the
+// database query by query, so they use express-session's in-process store and
+// leave the store itself to tests/session-store.test.js.
+process.env.SESSION_STORE = 'memory';
+
 http.globalAgent = new http.Agent({ keepAlive: false });
 https.globalAgent = new https.Agent({ keepAlive: false });
