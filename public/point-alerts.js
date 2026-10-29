@@ -1,4 +1,4 @@
-// Load point-change alerts on each driver page; dismissals are saved per account.
+// Load point-change and required sponsor-removal alerts on each driver page.
 fetch('/points/alerts')
   .then(response => {
     if (!response.ok || response.redirected) throw new Error('Alerts unavailable');
@@ -6,5 +6,5 @@ fetch('/points/alerts')
   })
   .then(html => { document.getElementById('point-alerts').innerHTML = html; })
   .catch(() => {
-    document.getElementById('point-alerts').textContent = 'Point alerts could not be loaded. Refresh to try again.';
+    document.getElementById('point-alerts').textContent = 'Alerts could not be loaded. Refresh to try again.';
   });

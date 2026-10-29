@@ -1,3 +1,14 @@
+<% removals.forEach(alert => { %>
+  <section class="info">
+    <p><strong>Sponsor affiliation ended</strong></p>
+    <p>You were removed from <%= alert.sponsor_name %>. You no longer belong to this sponsor's incentive program.</p>
+    <p><%= new Date(alert.created_at).toISOString().slice(0, 19).replace('T', ' ') %> UTC</p>
+    <form method="POST" action="/points/removal-alerts/<%= alert.id %>/acknowledge">
+      <input type="hidden" name="token" value="<%= token %>">
+      <button type="submit" class="button--small">Acknowledge</button>
+    </form>
+  </section>
+<% }); %>
 <% alerts.forEach(alert => { %>
   <section class="<%= alert.points_change < 0 ? 'info' : 'success' %>">
     <p><strong><%= alert.points_change < 0 ? 'Points deducted: ' : 'Points added: +' %><%= alert.points_change %></strong> from <%= alert.sponsor_name %></p>

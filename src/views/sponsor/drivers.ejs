@@ -3,14 +3,26 @@
     <%- include('../partials/shield') %>
     <div>
       <h1>Your Drivers</h1>
-      <p>Drivers currently associated with your organization.</p>
+      <p>Drivers and sponsor accounts in your organization.</p>
     </div>
   </section>
 
+  <% if (notice) { %>
+    <p class="<%= notice.kind === 'error' ? 'error' : 'success' %>" role="status"><%= notice.text %></p>
+  <% } %>
+
   <form method="GET" action="/drivers" class="filter-form">
-    <label for="name">Filter by name:</label>
+    <label for="name">Name:</label>
     <input type="text" id="name" name="name" value="<%= nameFilter %>" maxlength="128" placeholder="Driver name...">
+
+    <label for="minBalance">Balance from:</label>
+    <input type="number" id="minBalance" name="minBalance" value="<%= minBalance %>" step="1">
+
+    <label for="maxBalance">to:</label>
+    <input type="number" id="maxBalance" name="maxBalance" value="<%= maxBalance %>" step="1">
+
     <button type="submit">Filter</button>
+    <a href="/drivers">Clear</a>
   </form>
 
   <table class="table">
@@ -19,7 +31,9 @@
         <th>Name</th>
         <th>Email</th>
         <th>Username</th>
+        <th>Balance</th>
         <th>Status</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -28,12 +42,64 @@
           <td><%= driver.name %></td>
           <td><%= driver.email %></td>
           <td><%= driver.username %></td>
+          <td><%= driver.balance %></td>
           <td><%= driver.status %></td>
+          <td>
+            <a href="/drivers/<%= driver.id %>/edit">Edit</a>
+            <% if (driver.status === 'revoked') { %>
+              <span>Revoked by an administrator</span>
+            <% } else { %>
+              <form method="POST" action="/drivers/<%= driver.id %>/status" class="inline-form">
+                <input type="hidden" name="token" value="<%= formToken %>">
+                <input type="hidden" name="status" value="<%= driver.status === 'active' ? 'disabled' : 'active' %>">
+                <button type="submit"><%= driver.status === 'active' ? 'Deactivate' : 'Reactivate' %></button>
+              </form>
+            <% } %>
+            <form method="POST" action="/accounts/<%= driver.id %>/delete" class="inline-form"
+                  onsubmit="return confirm('Permanently delete this account? This cannot be undone.');">
+              <input type="hidden" name="token" value="<%= formToken %>">
+              <button type="submit">Delete</button>
+            </form>
+          </td>
         </tr>
       <% }) %>
       <% if (drivers.length === 0) { %>
-        <tr><td colspan="4">No drivers found.</td></tr>
+        <tr><td colspan="6">No drivers found.</td></tr>
       <% } %>
+    </tbody>
+  </table>
+
+  <h2 class="section-title">Sponsor accounts</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Username</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% sponsorAccounts.forEach(account => { %>
+        <tr>
+          <td><%= account.name %></td>
+          <td><%= account.email %></td>
+          <td><%= account.username %></td>
+          <td><%= account.status %></td>
+          <td>
+            <% if (account.id === currentUserId) { %>
+              <span>This is you</span>
+            <% } else { %>
+              <form method="POST" action="/accounts/<%= account.id %>/delete" class="inline-form"
+                    onsubmit="return confirm('Permanently delete this account? This cannot be undone.');">
+                <input type="hidden" name="token" value="<%= formToken %>">
+                <button type="submit">Delete</button>
+              </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
     </tbody>
   </table>
 

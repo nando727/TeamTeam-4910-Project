@@ -21,6 +21,12 @@
       <input id="reason" name="reason" maxlength="255" required>
       <button type="submit">Save point adjustment</button>
     </form>
+    <h2>Remove a driver</h2>
+    <ul>
+      <% drivers.forEach(driver => { %>
+        <li><a href="/points/drivers/<%= driver.id %>/remove">Remove <%= driver.displayName %> (<%= driver.username %>)</a></li>
+      <% }); %>
+    </ul>
   <% } %>
 </section>
 <%- include('../partials/foot') %>

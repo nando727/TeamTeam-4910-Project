@@ -496,6 +496,31 @@ Sample data: `npm run db:seed:purchases` adds purchases for the demo drivers
 under Demo Sponsor spread over the last three months. It skips a sponsor that
 already has purchases, so it is safe to rerun.
 
+## Sprint 6: alert settings and sponsor removal
+
+Apply `db/migrations/015_driver_alert_preferences.sql` to the app database before
+using these features. This adds tables without changing existing memberships or points.
+
+Drivers can open **My points → Alert settings** to disable or enable addition and
+deduction alerts. Alerts default to enabled and the setting persists across logins.
+Disabled alerts are hidden; enabling them again shows undismissed changes.
+Point history and balances are unaffected by the setting.
+
+Sponsors can use **Adjust points → Remove a driver**, then confirm the removal.
+The existing admin membership-removal screen also creates the same required alert.
+Removing one sponsor leaves other memberships and point history intact. Removal
+and notification are saved together. Drivers see the sponsor name and removal date
+even with point alerts disabled, and can acknowledge the message after reading it.
+
+Check with a test driver: disable point alerts, add/deduct points, and verify that
+history and balance still change but point alerts are hidden. Re-enable to see them.
+Disable again, remove that driver using the sponsor or admin screen, then log in as
+the driver and verify the required removal message. Acknowledge it and refresh.
+
+Testing story 23 was already covered in `tests/point-adjustments.test.js` (awards,
+deductions, history and balance writes, ownership, validation, and rollback).
+Sprint 6 extends those tests for preferences and adds membership-removal alert tests.
+
 ## Sprint 5: driver point updates
 
 Apply `db/migrations/011_point_alerts.sql` to the application's database before

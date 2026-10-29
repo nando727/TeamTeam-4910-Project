@@ -1,0 +1,14 @@
+<%- include('../partials/head', { title: 'Alert settings' }) %>
+<section class="card card--form">
+  <h1>Alert settings</h1>
+  <p>Point-change alerts are currently <strong><%= enabled ? 'enabled' : 'disabled' %></strong>.</p>
+  <form method="POST" action="/points/settings">
+    <input type="hidden" name="token" value="<%= token %>">
+    <input type="hidden" name="enabled" value="<%= enabled ? '0' : '1' %>">
+    <button type="submit"><%= enabled ? 'Disable' : 'Enable' %> point-change alerts</button>
+  </form>
+  <p>This controls both addition and deduction alerts. Enabling alerts shows any undismissed point changes again.</p>
+  <p>Alerts about being removed from a sponsor cannot be disabled.</p>
+  <a href="/driver/programs">Back to my points</a>
+</section>
+<%- include('../partials/foot') %>

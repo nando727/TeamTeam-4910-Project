@@ -21,10 +21,22 @@ const sponsors = [
 ];
 let passwordHash;
 let memberships;
+let removalAlerts;
+let conn;
 
 beforeAll(async () => { passwordHash = await hashPassword(PASSWORD); });
 
 beforeEach(() => {
+  removalAlerts = [];
+  conn = {
+    beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn(), release: vi.fn(),
+    execute: vi.fn(async (sql, params) => {
+      if (sql.startsWith('SELECT s.name')) return [memberships.filter(m => m.driverId === params[0] && m.sponsorId === params[1]).map(m => ({ name: sponsors.find(s => s.id === m.sponsorId).name }))];
+      if (sql.startsWith('INSERT INTO sponsor_removal_alerts')) { removalAlerts.push(params); return [{ affectedRows: 1 }]; }
+      return [await db.query(sql, params)];
+    }),
+  };
+  vi.spyOn(db.pool, 'getConnection').mockResolvedValue(conn);
   memberships = [{ driverId: 1, sponsorId: 1, balance: 260, joinedAt: new Date('2026-10-01T00:00:00Z') }];
   vi.spyOn(db, 'query').mockImplementation(async (sql, params = []) => {
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
@@ -128,6 +140,8 @@ describe('removing one sponsorship (story 10)', () => {
     const confirmId = hidden(confirm, 'confirmId');
     await admin.post(`${PAGE}/1/remove/confirm`).type('form').send({ token, confirmId }).expect(303).expect('Location', PAGE);
     expect(memberships.map(m => m.sponsorId)).toEqual([2]);
+    expect(removalAlerts).toEqual([[1, 'Demo Sponsor']]);
+    expect(conn.commit).toHaveBeenCalledOnce();
     const after = await admin.get(PAGE).expect(200);
     expect(after.text).toContain('Removed driver1 from Demo Sponsor. Other sponsorships were left in place.');
     expect(after.text).not.toContain('Remove driver1 from');
