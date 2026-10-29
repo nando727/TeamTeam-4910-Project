@@ -106,7 +106,9 @@ describe('who is offered a new link', () => {
     const { page } = await loadList(agent);
 
     expect(page.text).not.toContain('/admin/manage-users/2/setup-link');
-    expect(page.text).toContain('Password set');
+    // The one Password column offers a reset instead: an account that has a
+    // password cannot use a setup link, and never saw both options.
+    expect(page.text).toContain('/admin/manage-users/2/password');
   });
 });
 

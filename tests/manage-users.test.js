@@ -163,3 +163,22 @@ test('a status form without the session token is rejected', async () => {
     .send({ status: 'disabled' }).expect(403);
   expect(statusUpdates).toEqual([]);
 });
+
+// The table had grown to nine columns, two of which said the same thing twice.
+test('the status control is the status: one coloured cell, no badge repeating it', async () => {
+  const agent = await login('admin1');
+  const { page } = await loadList(agent);
+
+  // sponsor1 is disabled here, the other two are active.
+  expect(page.text).toContain('class="status-select status-disabled"');
+  expect(page.text).toContain('class="status-select status-active"');
+  expect(page.text).not.toMatch(/status-badge status-(active|disabled|revoked)/);
+});
+
+test('the list stays at six columns', async () => {
+  const agent = await login('admin1');
+  const { page } = await loadList(agent);
+
+  const headers = [...page.text.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map(m => m[1]);
+  expect(headers).toEqual(['Username', 'Role', 'Status', 'Password', 'Sponsors', 'Impersonate']);
+});

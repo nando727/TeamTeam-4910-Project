@@ -115,24 +115,33 @@ async function loadList(agent) {
 const signInAs = (username, password) =>
   request(app).post('/login').type('form').set('X-Forwarded-For', LAPTOP).send({ username, password });
 
-describe('what the admin sees', () => {
-  test('a locked account is marked, with a way to unlock it', async () => {
+describe('what Manage users shows', () => {
+  test('a locked account is marked, and the mark leads to where it can be cleared', async () => {
     lockOut('driver1');
     const agent = await login('admin1');
 
     const { page } = await loadList(agent);
 
-    expect(page.text).toContain('/admin/manage-users/1/unlock');
     expect(page.text).toMatch(/status-locked[^>]*>locked/);
+    expect(page.text).toContain('href="/admin/locked-users"');
   });
 
-  test('an account that can sign in is not offered an unlock', async () => {
+  test('an account that can sign in is not marked', async () => {
+    const agent = await login('admin1');
+
+    const { page } = await loadList(agent);
+
+    expect(page.text).not.toMatch(/status-locked/);
+  });
+
+  test('the unlock itself lives on the focused page, not in every row', async () => {
+    // The column it used to sit in said "Not locked" for almost every account.
+    lockOut('driver1');
     const agent = await login('admin1');
 
     const { page } = await loadList(agent);
 
     expect(page.text).not.toContain('/unlock');
-    expect(page.text).toContain('Not locked');
   });
 
   test('only the locked account is marked', async () => {
@@ -141,12 +150,56 @@ describe('what the admin sees', () => {
 
     const { page } = await loadList(agent);
 
+    // driver1 is id 1; the chip sits in that row and nowhere else.
+    expect(page.text.match(/status-locked/g)).toHaveLength(1);
+  });
+});
+
+describe('the locked users page', () => {
+  const loadLocked = async (agent) => {
+    const page = await agent.get('/admin/locked-users').expect(200);
+    return { page, token: page.text.match(/name="token" value="([^"]+)"/)[1] };
+  };
+
+  test('lists only the accounts that cannot sign in', async () => {
+    lockOut('driver1');
+    const agent = await login('admin1');
+
+    const { page } = await loadLocked(agent);
+
+    expect(page.text).toContain('driver1');
+    expect(page.text).not.toContain('sponsor1');
     expect(page.text).toContain('/admin/manage-users/1/unlock');
-    expect(page.text).not.toContain('/admin/manage-users/2/unlock');
+  });
+
+  test('says so plainly when nobody is locked out', async () => {
+    const agent = await login('admin1');
+
+    const page = await agent.get('/admin/locked-users').expect(200);
+
+    expect(page.text).toMatch(/Nobody is locked out/);
+    expect(page.text).not.toContain('/unlock');
+  });
+
+  test('is reachable from the admin navigation', async () => {
+    const agent = await login('admin1');
+
+    const page = await agent.get('/admin/manage-users').expect(200);
+
+    expect(page.text).toContain('href="/admin/locked-users"');
+  });
+
+  test('a driver cannot open it', async () => {
+    const agent = await login('driver1');
+
+    await agent.get('/admin/locked-users').expect(403);
   });
 });
 
 describe('unlocking', () => {
+  const unlock = (agent, id, token, from) =>
+    agent.post(`/admin/manage-users/${id}/unlock`).type('form').send({ token, from });
+
   test('the user can sign in again straight away', async () => {
     lockOut('driver1');
     // Blocked before the unlock, even with the right password.
@@ -154,21 +207,32 @@ describe('unlocking', () => {
 
     const agent = await login('admin1');
     const { token } = await loadList(agent);
-    await agent.post('/admin/manage-users/1/unlock').type('form').send({ token }).expect(303);
+    await unlock(agent, 1, token, 'locked-users').expect(303);
 
     expect((await signInAs('driver1', PASSWORD)).status).toBe(302);
   });
 
-  test('the admin is told it worked, and the account no longer shows as locked', async () => {
+  test('the admin lands back on the page they acted from, and is told it worked', async () => {
     lockOut('driver1');
     const agent = await login('admin1');
     const { token } = await loadList(agent);
 
-    await agent.post('/admin/manage-users/1/unlock').type('form').send({ token }).expect(303);
-    const page = await agent.get('/admin/manage-users').expect(200);
+    const res = await unlock(agent, 1, token, 'locked-users').expect(303);
+    expect(res.headers.location).toBe('/admin/locked-users');
 
+    const page = await agent.get('/admin/locked-users').expect(200);
     expect(page.text).toContain('driver1 can sign in again.');
-    expect(page.text).not.toContain('/admin/manage-users/1/unlock');
+    expect(page.text).toMatch(/Nobody is locked out/);
+  });
+
+  test('an unlock from anywhere else returns to Manage users', async () => {
+    lockOut('driver1');
+    const agent = await login('admin1');
+    const { token } = await loadList(agent);
+
+    const res = await unlock(agent, 1, token).expect(303);
+
+    expect(res.headers.location).toBe('/admin/manage-users');
   });
 
   test('it is recorded against the administrator who did it', async () => {
@@ -176,7 +240,7 @@ describe('unlocking', () => {
     const agent = await login('admin1');
     const { token } = await loadList(agent);
 
-    await agent.post('/admin/manage-users/1/unlock').type('form').send({ token }).expect(303);
+    await unlock(agent, 1, token, 'locked-users').expect(303);
 
     expect(unlocks).toEqual([{ username: 'driver1', by: 3, at: expect.any(Number) }]);
   });
@@ -185,8 +249,8 @@ describe('unlocking', () => {
     const agent = await login('admin1');
     const { token } = await loadList(agent);
 
-    await agent.post('/admin/manage-users/1/unlock').type('form').send({ token }).expect(303);
-    const page = await agent.get('/admin/manage-users').expect(200);
+    await unlock(agent, 1, token, 'locked-users').expect(303);
+    const page = await agent.get('/admin/locked-users').expect(200);
 
     expect(page.text).toMatch(/No change needed, driver1 is not locked out/);
     expect(unlocks).toEqual([]);

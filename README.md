@@ -252,10 +252,24 @@ character for character against one for a real account.
 
 ### An administrator can unlock an account (story AA-72)
 
-**Manage users** marks any account that cannot sign in right now with a red
-`locked` badge and an **Unlock** button, behind the same form token as every
-other action on that page. Unlocking says so, and a request to unlock an
-account that is not locked changes nothing and says that instead.
+**Locked users** (`/admin/locked-users`, in the Users menu) lists the accounts
+that cannot sign in right now, each with an **Unlock** button behind the same
+form token as every other admin action. Unlocking says so and returns to the
+page it was done from; unlocking an account that is not locked changes nothing
+and says that instead.
+
+**Manage users** marks a locked account with a red `locked` chip that links to
+that page, but does not carry the button itself: the question "who is locked
+out?" comes up when somebody calls for help, and answering it should not mean
+reading every row. Both pages get their answer from the same
+`lockedUsernames()`, so they cannot disagree.
+
+That split also took the user list from nine columns to six. Two pairs were the
+same fact twice: **Status** and **Change status** (the dropdown already shows
+the current status, so it is now the badge as well, coloured green, grey or red
+by status), and **Password** and **Setup link** (an account either has a
+password or is still waiting to set one &mdash; each column was offering the
+other's action to accounts that could not use it).
 
 Clearing the lock needed a decision, because the lock is not stored anywhere:
 it is counted from `login_attempts`. There is no flag to switch off, and the
