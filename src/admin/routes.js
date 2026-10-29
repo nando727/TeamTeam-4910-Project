@@ -163,7 +163,11 @@ function statusDraftFor(req) {
 // A status change can start from either list page. The form says which one
 // (hidden `from` field) and the admin is sent back there afterwards. Anything
 // not on this list falls back to the full user list.
-const STATUS_PAGES = { 'manage-users': '/admin/manage-users', 'admin-accounts': '/admin/admin-accounts' };
+const STATUS_PAGES = {
+  'manage-users': '/admin/manage-users',
+  'admin-accounts': '/admin/admin-accounts',
+  'locked-users': '/admin/locked-users',
+};
 const pageKey = value => (Object.prototype.hasOwnProperty.call(STATUS_PAGES, value) ? value : 'manage-users');
 const returnPathFor = req => STATUS_PAGES[pageKey(read(req, 'from'))];
 
@@ -193,6 +197,17 @@ router.get('/manage-users', async (req, res, next) => {
       })),
       statuses: USER_STATUSES, notice: takeNotice(req), currentUserId: req.session.user.id, token: formToken(req),
     });
+  } catch (err) { next(err); }
+});
+
+// Story AA-72: the accounts that cannot sign in right now, on their own page.
+// Manage users marks them, but "who is locked out?" is the question an admin
+// has when somebody calls them, and it should not mean reading every row.
+router.get('/locked-users', async (req, res, next) => {
+  try {
+    const locked = await lockedUsernames();
+    const users = (await listUsers()).filter(user => locked.has(user.username));
+    res.render('locked-users', { users, notice: takeNotice(req), token: formToken(req) });
   } catch (err) { next(err); }
 });
 
@@ -239,15 +254,16 @@ router.post('/manage-users/:userId/unlock', async (req, res, next) => {
   try {
     // Checked first so the notice tells the truth, the same way a status
     // change that changes nothing says so.
+    const returnTo = returnPathFor(req);
     const locked = await lockedUsernames();
     if (!locked.has(user.username)) {
-      return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, ${user.username} is not locked out.` });
+      return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, ${user.username} is not locked out.` }, returnTo);
     }
 
     // Recorded against the administrator who did it; the failed attempts stay
     // in the audit log exactly as they were.
     await clearLockout(user.username, req.session.user.id);
-    flashAndRedirect(req, res, { kind: 'success', text: `${user.username} can sign in again.` });
+    flashAndRedirect(req, res, { kind: 'success', text: `${user.username} can sign in again.` }, returnTo);
   } catch (err) { next(err); }
 });
 

@@ -1,0 +1,45 @@
+<%- include('partials/head', { title: 'Locked users' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Locked users</h1>
+      <p class="lede">Accounts that cannot sign in right now because of repeated failed attempts. The block lifts on its own, and it lifts sooner if you unlock it here. Nothing is removed from the sign-in log either way.</p>
+    </div>
+    <% if (notice) { %>
+      <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %></p>
+    <% } %>
+    <% if (users.length === 0) { %>
+      <p class="info" role="status">Nobody is locked out. <a href="/admin/manage-users">Manage users</a> lists every account.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Username</th>
+              <th scope="col">Role</th>
+              <th scope="col">Status</th>
+              <th scope="col">Sign-in</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% users.forEach(user => { %>
+              <tr>
+                <td class="cell-strong"><%= user.username %></td>
+                <td><span class="role-chip"><%= user.role %></span></td>
+                <td><span class="status-badge status-<%= user.status %>"><%= user.status %></span></td>
+                <td>
+                  <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/unlock">
+                    <input type="hidden" name="token" value="<%= token %>">
+                    <input type="hidden" name="from" value="locked-users">
+                    <span class="status-badge status-locked">locked</span>
+                    <button type="submit" class="button--small">Unlock</button>
+                  </form>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+<%- include('partials/foot') %>
