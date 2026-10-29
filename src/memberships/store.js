@@ -28,8 +28,27 @@ async function addDriverSponsor(driverId, sponsorId) {
 // Removes one membership and leaves the others. Point history stays in
 // point_transactions; the balance for that sponsor goes with the row.
 async function removeDriverSponsor(driverId, sponsorId) {
-  const result = await db.query('DELETE FROM driver_sponsors WHERE driver_id = ? AND sponsor_id = ?', [driverId, sponsorId]);
-  return result.affectedRows > 0;
+  const conn = await db.pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [members] = await conn.execute(
+      'SELECT s.name FROM driver_sponsors ds JOIN sponsors s ON s.id = ds.sponsor_id WHERE ds.driver_id = ? AND ds.sponsor_id = ? FOR UPDATE',
+      [driverId, sponsorId]
+    );
+    if (!members.length) {
+      await conn.commit();
+      return false;
+    }
+    await conn.execute('DELETE FROM driver_sponsors WHERE driver_id = ? AND sponsor_id = ?', [driverId, sponsorId]);
+    await conn.execute('INSERT INTO sponsor_removal_alerts (driver_id, sponsor_name) VALUES (?, ?)', [driverId, members[0].name]);
+    await conn.commit();
+    return true;
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
 }
 
 module.exports = { listDriverSponsors, addDriverSponsor, removeDriverSponsor, MembershipError };

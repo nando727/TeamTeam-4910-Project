@@ -1,0 +1,13 @@
+<%- include('../partials/head', { title: 'Remove driver' }) %>
+<section class="card card--form">
+  <h1>Remove <%= driver.displayName %> from your organization?</h1>
+  <p>The driver's balance of <%= driver.balance %> points with your sponsor will be removed. Point history and other sponsor memberships remain.</p>
+  <p>The driver will receive an alert that cannot be disabled.</p>
+  <form method="POST" action="/points/drivers/<%= driver.id %>/remove">
+    <input type="hidden" name="token" value="<%= token %>">
+    <input type="hidden" name="confirm" value="remove">
+    <button type="submit">Confirm removal</button>
+  </form>
+  <a href="/points">Cancel</a>
+</section>
+<%- include('../partials/foot') %>
