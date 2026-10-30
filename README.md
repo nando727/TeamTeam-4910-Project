@@ -418,6 +418,35 @@ link, chooses their own password, and is sent to the login page.
 Links expire after 48 hours; set `SETUP_LINK_HOURS` in `.env` to change that.
 A link works once: reusing it shows a "no longer works" page.
 
+### Setting a password voids the setup link (story 22225)
+
+An unused setup link dies the moment the account gets a password, however that
+happens: the admin's **Reset**, the user changing their own password, a reset
+by emailed link, or claiming the account through a different link.
+
+It used to survive. An account created with a link and then given a password
+another way &mdash; most likely the visitor ignoring the link and using "forgot
+password" instead &mdash; kept a working setup link until it expired, and
+anyone holding that link (a forwarded email, a shared inbox, the server log it
+is printed to) could set the password again and take the account over.
+
+The voiding lives in `updateUserPassword()` (`src/users/store.js`), not in the
+four routes that call it. Claiming an account used to write its own hash and
+its own `UPDATE`, so the first commit of this story routed that through the
+same function: there is now exactly one place in the codebase where a password
+is written, and anything that must happen whenever one is set has one home. A
+fifth path cannot forget it.
+
+**The link is spent before the new password is stored**, deliberately. If the
+write fails in between, the worst case is a spent link an administrator can
+resend. The other order fails the wrong way round: a failed void leaves a live
+link to an account whose password has just changed, which is the hole this
+closes. `tests/setup-link-voided.test.js` pins the order down, because it reads
+like an arbitrary choice and is not one.
+
+Voiding marks the row used; it never deletes it. The record that a link was
+issued is part of the account's history.
+
 ## Driver point history (DF-17, DF-20, DF-22)
 
 Drivers can open **View my point history** from their homepage or **My sponsor

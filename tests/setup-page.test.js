@@ -37,8 +37,17 @@ beforeEach(() => {
       const [tokenHash] = params;
       return tokenHash === tokenRow.token_hash ? [tokenRow] : [];
     }
-    if (sql.startsWith('UPDATE setup_tokens SET used_at')) {
+    // consumeToken spends this one link, by id.
+    if (sql.startsWith('UPDATE setup_tokens SET used_at = NOW() WHERE id =')) {
       if (tokenRow.used_at) return { affectedRows: 0 };
+      tokenRow.used_at = new Date();
+      return { affectedRows: 1 };
+    }
+    // Story 22225: writing the password then spends any other unused link for
+    // the same account. By the time it runs, the link above is already spent.
+    if (sql.startsWith('UPDATE setup_tokens SET used_at = NOW() WHERE user_id =')) {
+      const [userId] = params;
+      if (tokenRow.used_at || tokenRow.user_id !== userId) return { affectedRows: 0 };
       tokenRow.used_at = new Date();
       return { affectedRows: 1 };
     }

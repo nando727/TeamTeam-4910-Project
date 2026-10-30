@@ -1,5 +1,6 @@
 const db = require('../db');
 const { hashPassword, NO_PASSWORD } = require('../auth/password');
+const { invalidateSetupTokens } = require('../auth/setup-tokens');
 
 const VALID_ROLES = ['driver', 'sponsor', 'admin'];
 const USER_STATUSES = ['active', 'disabled', 'revoked'];
@@ -56,8 +57,28 @@ async function findUserCredentials(id) {
 
 // Replaces the stored hash. Every caller must run passwordProblems() first;
 // this function only hashes and saves.
+// Story 22225 (AA-23): whenever a password is set, any setup link for the
+// account that was never used is spent.
+//
+// Without this, an account created with a link and then given a password some
+// other way -- an administrator's reset, or the visitor using "forgot
+// password" instead of the link they were sent -- kept a working setup link
+// until it expired. Anyone holding that link (a forwarded email, a shared
+// inbox, the server log it is written to) could set the password again and
+// take the account over.
+//
+// Every password in the app is written here, which is the point: the four
+// paths that set one cannot each be relied on to remember this.
+//
+// The link is spent BEFORE the new password is stored, deliberately. If the
+// write fails after it, the worst case is a link an administrator has to
+// resend. The other order fails the wrong way round: a failed void leaves a
+// live link to an account whose password has just changed.
 async function updateUserPassword(id, password) {
+  // Hashing first keeps the window between voiding and writing as short as it
+  // can be; it touches nothing, so a failure here changes nothing.
   const passwordHash = await hashPassword(password);
+  await invalidateSetupTokens(id);
   const result = await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
   return result.affectedRows > 0;
 }

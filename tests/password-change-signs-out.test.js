@@ -45,6 +45,9 @@ beforeEach(() => {
 
     // --- passwords ---
     if (sql.startsWith('UPDATE users SET password_hash')) return { affectedRows: 1 };
+    // Story 22225: setting a password spends any unused setup link for the
+    // account. Nothing here was sent one.
+    if (sql.startsWith('UPDATE setup_tokens SET used_at')) return { affectedRows: 0 };
     if (sql.startsWith('SELECT id, username, password_hash FROM users WHERE id')) {
       return params[0] === USER.id ? [{ id: USER.id, username: USER.username, password_hash: passwordHash }] : [];
     }

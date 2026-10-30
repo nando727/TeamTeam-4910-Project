@@ -59,6 +59,9 @@ beforeEach(() => {
       return { affectedRows: r ? 1 : 0 };
     }
     if (sql.startsWith('UPDATE users SET password_hash')) { passwordUpdates.push(params); return { affectedRows: 1 }; }
+    // Story 22225: setting a password spends any unused setup link for the
+    // account. Nothing here was sent one.
+    if (sql.startsWith('UPDATE setup_tokens SET used_at')) return { affectedRows: 0 };
     // Backlog AA-14: a password change signs the account out elsewhere.
     if (sql.startsWith('UPDATE users SET sessions_valid_from')) return { affectedRows: 1 };
     if (sql.startsWith('SELECT UNIX_TIMESTAMP(sessions_valid_from)')) return [{ cutoff_ms: Date.now() }];
