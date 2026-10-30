@@ -53,6 +53,8 @@ beforeEach(() => {
     if (sql.includes('UNIX_TIMESTAMP(sessions_valid_from)')) return [{ cutoff_ms: Date.now() }];
     if (sql.includes('COUNT(*) AS count FROM login_attempts')) return [{ count: 0 }];
     if (sql.startsWith('UPDATE users SET password_hash')) return { affectedRows: 1 };
+    // Audit log requirement: every password change is recorded.
+    if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
 
     if (sql.startsWith('SELECT id, username, password_hash FROM users WHERE id')) {
       return users.filter(u => u.id === params[0]).map(u => ({ ...u, password_hash: passwordHash }));

@@ -2,6 +2,10 @@ const db = require('../db');
 const { hashPassword, NO_PASSWORD } = require('../auth/password');
 const { invalidateSetupTokens } = require('../auth/setup-tokens');
 
+// How a password came to be set, for the audit log. Anything else is recorded
+// as 'unknown' rather than dropped.
+const PASSWORD_CHANGE_METHODS = ['profile', 'admin-reset', 'reset-link', 'setup-link'];
+
 const VALID_ROLES = ['driver', 'sponsor', 'admin'];
 const USER_STATUSES = ['active', 'disabled', 'revoked'];
 
@@ -74,13 +78,35 @@ async function findUserCredentials(id) {
 // write fails after it, the worst case is a link an administrator has to
 // resend. The other order fails the wrong way round: a failed void leaves a
 // live link to an account whose password has just changed.
-async function updateUserPassword(id, password) {
+//
+// Audit log requirement: the change is recorded in password_changes. `method`
+// says which route set it and `changedBy` who was signed in at the time, both
+// of which only the caller knows. An unrecognised or missing method is still
+// recorded, as 'unknown': a password change nobody can account for is exactly
+// the thing the log exists to show, so it must never be the quiet case.
+async function updateUserPassword(id, password, { method, changedBy = null } = {}) {
   // Hashing first keeps the window between voiding and writing as short as it
   // can be; it touches nothing, so a failure here changes nothing.
   const passwordHash = await hashPassword(password);
   await invalidateSetupTokens(id);
   const result = await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
-  return result.affectedRows > 0;
+  if (!result.affectedRows) return false;
+
+  // Written after the password, so the log only claims changes that happened.
+  // The two statements are not in one transaction: if this insert fails the
+  // request errors out with the password already changed and no record of it.
+  // A transaction is the real answer and db.js would need a helper for one.
+  await recordPasswordChange(id, changedBy, method);
+  return true;
+}
+
+// Never the password and never the hash: whose password changed, who changed
+// it, how, and when (the column defaults to the database's clock).
+async function recordPasswordChange(userId, changedByUserId, method) {
+  await db.query(
+    'INSERT INTO password_changes (user_id, changed_by_user_id, method) VALUES (?, ?, ?)',
+    [userId, changedByUserId, PASSWORD_CHANGE_METHODS.includes(method) ? method : 'unknown']
+  );
 }
 
 // Failed sign-ins for a username in the last 24 hours. Read-only: the audit
@@ -178,6 +204,7 @@ async function sessionsRevokedSince(id, issuedAtMs) {
 module.exports = {
   VALID_ROLES, USER_STATUSES, DuplicateError,
   createUser, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
+  PASSWORD_CHANGE_METHODS,
   listUsers, updateUserStatus, countRecentFailedLogins,
   revokeSessions, sessionsRevokedSince,
 };

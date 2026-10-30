@@ -51,6 +51,8 @@ beforeEach(() => {
       tokenRow.used_at = new Date();
       return { affectedRows: 1 };
     }
+    // Audit log requirement: every password change is recorded.
+    if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
     if (sql.startsWith('UPDATE users SET password_hash')) {
       const [hash, userId] = params;
       passwordUpdates.push({ hash, userId });

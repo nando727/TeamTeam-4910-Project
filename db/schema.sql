@@ -176,3 +176,17 @@ CREATE TABLE IF NOT EXISTS sponsor_removal_alerts (
   INDEX idx_removal_alert_driver (driver_id, acknowledged_at),
   FOREIGN KEY (driver_id) REFERENCES users(id)
 );
+
+-- Password changes (see migration 018), part of the audit log requirement.
+-- Never holds a password or a hash: whose password changed, who changed it,
+-- how, and when.
+CREATE TABLE IF NOT EXISTS password_changes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  changed_by_user_id INT NULL,
+  method VARCHAR(32) NOT NULL,
+  changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_password_changes_user (user_id, changed_at),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (changed_by_user_id) REFERENCES users(id)
+);

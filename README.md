@@ -418,6 +418,37 @@ link, chooses their own password, and is sent to the login page.
 Links expire after 48 hours; set `SETUP_LINK_HOURS` in `.env` to change that.
 A link works once: reusing it shows a "no longer works" page.
 
+### Password changes are recorded (audit log requirement)
+
+Every password that gets set writes a row to `password_changes` (migration
+018): whose password it was, who changed it, how, and when. **Never the
+password and never its hash.**
+
+Nothing recorded this before. `password_resets` looks like it does, but it
+holds reset *tokens* &mdash; it says a link was requested, not that a password
+was ever changed, and it knows nothing about an administrator's reset or
+someone changing their own.
+
+`method` is one of `profile`, `admin-reset`, `reset-link` or `setup-link`.
+Anything else is written as `unknown` rather than dropped: a password change
+nobody can account for is precisely what the log exists to surface, so it must
+never be the quiet case. A caller that passes no method at all gets the same
+treatment, which is what makes this safe to rely on when a fifth path appears.
+
+`changed_by_user_id` is NULL where nobody was signed in &mdash; a reset link or
+a setup link, where the link itself is the credential. Where somebody was, it
+is **the person at the keyboard**: an administrator who is impersonating a
+driver and changes that driver's password is recorded as the administrator,
+not as the driver whose session it technically is. A log that names the wrong
+person is worse than no log.
+
+The row is written after the password, so the log only claims changes that
+happened. The two statements are not in one transaction: if the insert fails,
+the request errors with the password already changed and nothing recorded. A
+transaction is the honest fix and would need a helper in `src/db.js`, which
+every other feature would then want too &mdash; worth its own story rather than
+being smuggled in here.
+
 ### Setting a password voids the setup link (story 22225)
 
 An unused setup link dies the moment the account gets a password, however that

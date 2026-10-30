@@ -305,7 +305,8 @@ router.post('/reset-password/:token', async (req, res, next) => {
 
     // Spend the token before writing, so a second submit with the same link fails.
     if (!(await consumeReset(reset.id))) return renderReset(req, res, null, { status: 404 });
-    await updateUserPassword(reset.userId, newPassword);
+    // Nobody is signed in: whoever opened the emailed link did this.
+    await updateUserPassword(reset.userId, newPassword, { method: 'reset-link' });
     // Backlog AA-14: whoever was signed in as this account is signed out.
     // That is the point of resetting a password you think someone else knows.
     await revokeSessions(reset.userId);

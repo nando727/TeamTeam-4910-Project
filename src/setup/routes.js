@@ -63,7 +63,8 @@ router.post('/setup/:token', requireFormToken, async (req, res, next) => {
     // used to be the one password write with its own hashing and its own
     // UPDATE, which meant anything that has to happen whenever a password is
     // set had to be remembered in four places instead of one.
-    await updateUserPassword(setupToken.user_id, password);
+    // Nobody is signed in here: the link is the credential.
+    await updateUserPassword(setupToken.user_id, password, { method: 'setup-link' });
 
     res.redirect('/login?setup=1');
   } catch (err) {

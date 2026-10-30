@@ -428,7 +428,10 @@ router.post('/manage-users/:userId/password', async (req, res, next) => {
       const failedLogins = await countRecentFailedLogins(user.username);
       return renderResetPassword(req, res, { from, failedLogins, error: problems.join(' '), status: 400 });
     }
-    await updateUserPassword(user.id, newPassword);
+    await updateUserPassword(user.id, newPassword, {
+      method: 'admin-reset',
+      changedBy: req.session.impersonator ? req.session.impersonator.id : req.session.user.id,
+    });
 
     // Backlog AA-14: the account being reset is signed out everywhere. An
     // admin resetting their own password keeps the session they are using.

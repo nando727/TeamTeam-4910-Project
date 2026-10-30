@@ -42,6 +42,8 @@ beforeEach(() => {
     // Story 22225: setting a password spends any unused setup link for the
     // account. Nothing here was sent one.
     if (sql.startsWith('UPDATE setup_tokens SET used_at')) return { affectedRows: 0 };
+    // Audit log requirement: every password change is recorded.
+    if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
     if (sql.startsWith('SELECT id FROM users WHERE email')) return [];
     if (sql.startsWith('INSERT INTO users')) { inserts.push(params); return { insertId: 9 }; }
     // Backlog AA-14: a password change signs the account out elsewhere.
