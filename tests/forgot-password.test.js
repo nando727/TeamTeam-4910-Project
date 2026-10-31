@@ -43,9 +43,15 @@ beforeEach(() => {
       for (const r of resets) if (r.user_id === params[0] && !r.used_at) { r.used_at = new Date(); n++; }
       return { affectedRows: n };
     }
+    // Story AA-20: how many links this account has asked for recently.
+    if (sql.includes('COUNT(*) AS requests FROM password_resets')) {
+      const [userId, minutes] = params;
+      const since = Date.now() - minutes * 60 * 1000;
+      return [{ requests: resets.filter(r => r.user_id === userId && r.created_at > since).length }];
+    }
     if (sql.startsWith('INSERT INTO password_resets')) {
       const [user_id, token_hash, minutes] = params;
-      resets.push({ id: resets.length + 1, user_id, token_hash, expires_at: new Date(Date.now() + minutes * 60000), used_at: null });
+      resets.push({ id: resets.length + 1, user_id, token_hash, expires_at: new Date(Date.now() + minutes * 60000), used_at: null, created_at: Date.now() });
       return { insertId: resets.length };
     }
     if (sql.includes('FROM password_resets r')) {

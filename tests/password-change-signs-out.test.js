@@ -63,6 +63,9 @@ beforeEach(() => {
     }
 
     // --- reset links ---
+    // Story AA-20: the form checks how many links this account has asked
+    // for recently. One request per test here, so never near the limit.
+    if (sql.includes('COUNT(*) AS requests FROM password_resets')) return [{ requests: 0 }];
     if (sql.startsWith('INSERT INTO password_resets')) {
       const [user_id, token_hash, minutes] = params;
       resets.push({ id: resets.length + 1, user_id, token_hash, expires_at: new Date(Date.now() + minutes * 60000), used_at: null });

@@ -418,6 +418,56 @@ link, chooses their own password, and is sent to the login page.
 Links expire after 48 hours; set `SETUP_LINK_HOURS` in `.env` to change that.
 A link works once: reusing it shows a "no longer works" page.
 
+### Reset links are emailed (story 22222)
+
+**Forgot your password?** on the sign-in page takes a username, and a link to
+choose a new password is emailed to the address on the account. The link is
+random, stored only as a SHA-256 hash, expires after 30 minutes and works
+once; issuing one retires any earlier unused link, so at most one is live.
+
+Mail goes through `sendMail()` (`src/mail/mailer.js`), which has a real `smtp`
+transport using nodemailer. `MAIL_TRANSPORT` chooses: `console` stays the
+default so a fresh checkout needs no mail settings and still shows the link in
+the server log. With `smtp` selected but settings missing, the app **says which
+ones are missing and falls back to the log** &mdash; a link that reaches
+neither the inbox nor the log is the worst of both. Only the names of the
+settings are ever logged, never the values; one of them is the password.
+
+The connection has explicit timeouts (10s connect, 10s greeting, 15s socket).
+A visitor is waiting on this request, and an SMTP server that accepts the
+connection and then goes quiet would otherwise hold the page open for minutes.
+A send that fails is logged and recorded as undelivered, and the thing that
+triggered it still succeeds: an account is created whether or not its mail got
+out.
+
+**In SES's sandbox, mail only reaches verified addresses.** A reset to an
+unverified inbox is refused with `554 Message rejected`, which shows up as an
+undelivered message in the log rather than as an error for the visitor. Either
+verify each recipient or ask AWS for production access before relying on it in
+front of an audience.
+
+#### The form cannot be used to fill an inbox
+
+Anyone can post a username to `/forgot-password` as often as they like, and
+every post used to be another email to somebody who never asked for one. An
+account can now be sent **3 links per 15 minutes** (`RESET_LINK_MAX_REQUESTS`,
+`RESET_LINK_WINDOW_MINUTES`); a few in a row are legitimate, since the first
+may have gone to spam.
+
+The count comes from the `password_resets` rows the requests already leave
+behind, so there is no new table and nothing to clean up, and the comparison
+stays in SQL against the database's own clock.
+
+**A refused request looks exactly like an accepted one.** "Too many requests"
+would answer the question the rest of this page works to refuse: whether that
+account exists. The refusal is visible in the server log instead, and
+`tests/forgot-password-limit.test.js` compares the two responses body for body,
+and against the response for a username that was never real.
+
+What this does not cover: someone cycling through *different* usernames. That
+needs the request's origin, which `password_resets` does not record &mdash; a
+column and a migration, worth its own story rather than being tacked on here.
+
 ### Password changes are recorded (audit log requirement)
 
 Every password that gets set writes a row to `password_changes` (migration

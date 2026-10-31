@@ -8,6 +8,44 @@ const TOKEN_BYTES = 32;
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 const EXPIRY_MINUTES = 30;
 
+// Story AA-20 (22222): now that these links are actually emailed, the form is
+// a way to send mail to somebody else's inbox. Anyone can post a username to
+// it, as many times as they like, and every post would be another message to
+// a person who never asked for any of them.
+//
+// A few in a row are legitimate -- the first went to spam, or arrived while
+// they were looking elsewhere -- so this allows a handful and then stops,
+// rather than one every so often.
+const DEFAULT_MAX_REQUESTS = 3;
+const DEFAULT_WINDOW_MINUTES = 15;
+
+function requestPolicy() {
+  const max = Number.parseInt(process.env.RESET_LINK_MAX_REQUESTS, 10);
+  const minutes = Number.parseFloat(process.env.RESET_LINK_WINDOW_MINUTES);
+  return {
+    maxRequests: Number.isInteger(max) && max > 0 ? max : DEFAULT_MAX_REQUESTS,
+    windowMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : DEFAULT_WINDOW_MINUTES,
+  };
+}
+
+// Counted from the rows the requests already leave behind, so there is no new
+// table and nothing to clean up. created_at is the database's own clock, and
+// the comparison stays in SQL where it cannot be rebuilt in another zone.
+async function recentRequestCount(userId, windowMinutes) {
+  const rows = await db.query(
+    'SELECT COUNT(*) AS requests FROM password_resets ' +
+      'WHERE user_id = ? AND created_at > NOW() - INTERVAL ? MINUTE',
+    [userId, windowMinutes]
+  );
+  return Number((rows[0] && rows[0].requests) || 0);
+}
+
+// Whether this account has had its allowance of links for now.
+async function requestsExhausted(userId) {
+  const { maxRequests, windowMinutes } = requestPolicy();
+  return (await recentRequestCount(userId, windowMinutes)) >= maxRequests;
+}
+
 const hashToken = token => createHash('sha256').update(token).digest('hex');
 
 // Issues a fresh token for a user and retires any earlier unused ones, so at
@@ -46,4 +84,8 @@ async function consumeReset(id) {
   return result.affectedRows > 0;
 }
 
-module.exports = { createResetToken, findValidReset, consumeReset, hashToken, TOKEN_PATTERN, EXPIRY_MINUTES };
+module.exports = {
+  createResetToken, findValidReset, consumeReset, hashToken,
+  requestsExhausted, recentRequestCount, requestPolicy,
+  TOKEN_PATTERN, EXPIRY_MINUTES,
+};
