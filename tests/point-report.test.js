@@ -112,6 +112,29 @@ async function login(username) {
 const changeQuery = () => db.query.mock.calls.filter(([sql]) => sql.startsWith('SELECT t.id')).pop();
 const rowsOn = page => (page.text.match(/<tbody>[\s\S]*<\/tbody>/) || [''])[0].split('<tr>').length - 1;
 
+describe('a driver with two sponsors', () => {
+  const driverSelect = page => page.text.match(/<select id="driver"[\s\S]*?<\/select>/)[0];
+  beforeEach(() => { drivers.push({ id: 1, username: 'driver1', displayName: 'driver1', sponsorId: 2, sponsorName: 'Other Freight', balance: 15 }); });
+  afterEach(() => { drivers.pop(); });
+
+  test('appears once in the dropdown and keeps a total for each sponsor', async () => {
+    const agent = await login('admin1');
+    const page = await agent.get('/reports/points').expect(200);
+    expect(driverSelect(page).match(/<option value="1"/g)).toHaveLength(1);
+    expect(driverSelect(page).match(/<option value="/g)).toHaveLength(4);
+    expect(page.text).toMatch(/driver1 <span class="muted small">· Demo Sponsor<\/span><\/span>\s*<span class="total__value">260 pts/);
+    expect(page.text).toMatch(/driver1 <span class="muted small">· Other Freight<\/span><\/span>\s*<span class="total__value">15 pts/);
+  });
+
+  test('can still be chosen, showing both totals', async () => {
+    const agent = await login('admin1');
+    const page = await agent.get('/reports/points?driver=1').expect(200);
+    expect(driverSelect(page)).toContain('<option value="1" selected>');
+    expect(page.text).toContain('Driver</dt><dd>driver1</dd>');
+    expect(page.text.match(/class="total__value"/g)).toHaveLength(2);
+  });
+});
+
 describe('access', () => {
   test('logged-out visitors are sent to log in, drivers get 403', async () => {
     await request(app).get('/reports/points').expect(302).expect('Location', '/login');

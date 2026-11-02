@@ -5,13 +5,15 @@ const { listSponsors } = require('../sponsors/store');
 const {
   SORT_COLUMNS, SORT_DIRECTIONS, SALES_SORT_COLUMNS, SALES_VERSIONS,
   listDriversInScope, listPointChanges, countPointChanges, dailyPointTotals,
-  monthlySponsorPurchases, listPurchaseMonths,
-  salesSummary, countSponsorsInScope, salesDetail, countSales, salesTotals,
+  monthlySponsorFees, listPurchaseMonths,
+  salesSummary, countSponsorsInScope, salesDetail, countSales, salesTotals, dailySalesTotals,
+  salesByDriver, countDriversWithSales, listDriversForSales,
 } = require('./store');
 const {
   DAY_MS, isoDate, positiveInt, text, formatStamp, dollars, queryString,
   readDateRange, rangeLabel, datesSummary, quickRangeLinks, sendCsv,
 } = require('./helpers');
+const { niceStep, buildRankedBars, buildTimeColumns } = require('./charts');
 
 const router = express.Router();
 
@@ -21,7 +23,9 @@ const router = express.Router();
 // Story AD-11: the admin-only monthly sponsor fee report.
 const REPORT_ROLES = ['sponsor', 'admin'];
 const PAGE_SIZE = 25;
-const FEE_RATE = 0.01;
+// For labels only: the sponsor_monthly_fees procedure (migration 018) does the
+// calculation, and tests/sponsor-fees.test.js checks the two agree.
+const FEE_PERCENT = 1;
 
 router.use((req, res, next) => {
   if (!req.session.user) return rememberAndRedirect(req, res);
@@ -83,13 +87,6 @@ const SORT_LABELS = {
 // Builds everything the inline SVG needs: one bar per day (or per week when
 // the range is long) of net change, and a running total line. Pure numbers, no
 // library; the template only draws what it is handed.
-
-function niceStep(raw) {
-  if (!(raw > 0)) return 1;
-  const power = 10 ** Math.floor(Math.log10(raw));
-  const unit = raw / power;
-  return (unit <= 1 ? 1 : unit <= 2 ? 2 : unit <= 5 ? 5 : 10) * power;
-}
 
 function buildChart(daily, { from, to }) {
   if (!daily.length) return null;
@@ -191,8 +188,12 @@ router.get('/points', async (req, res, next) => {
       { label: 'Results', value: `${total.toLocaleString('en-US')} change${total === 1 ? '' : 's'}` },
     ];
 
+    // A driver with several sponsors has a row per membership, which the totals
+    // need, but belongs in the dropdown once.
+    const driverOptions = [...new Map(filters.drivers.map(driver => [driver.id, driver])).values()];
+
     res.status(invalid ? 400 : 200).render('reports/points', {
-      isAdmin, sponsors, drivers: filters.drivers, filters,
+      isAdmin, sponsors, drivers: driverOptions, filters,
       error: invalid ? filters.problems.join(' ') : null,
       rows, totals, total, today, quickRanges, sortLinks, summary, chart, scopeSponsor,
       rangeLabel: rangeLabel(filters),
@@ -227,21 +228,14 @@ router.get('/points.csv', async (req, res, next) => {
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const monthLabel = month => new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-const nextMonth = month => {
-  const [y, m] = month.split('-').map(Number);
-  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
-};
 
 async function resolveFees(req) {
   const wanted = text(req.query.month);
   const month = MONTH_PATTERN.test(wanted) ? wanted : isoDate(new Date()).slice(0, 7);
   const problems = wanted && !MONTH_PATTERN.test(wanted) ? ['Choose a month as YYYY-MM.'] : [];
-  const rows = problems.length ? [] : (await monthlySponsorPurchases(`${month}-01`, `${nextMonth(month)}-01`)).map(row => {
-    const totalCents = Number(row.totalCents);
-    // 1% of the month's purchases, rounded to the cent.
-    const feeCents = Math.round(totalCents * FEE_RATE);
-    return { ...row, purchases: Number(row.purchases), totalCents, feeCents };
-  });
+  const rows = problems.length ? [] : (await monthlySponsorFees(month)).map(row => ({
+    ...row, purchases: Number(row.purchases), totalCents: Number(row.totalCents), feeCents: Number(row.feeCents),
+  }));
   const sum = rows.reduce((acc, r) => ({ purchases: acc.purchases + r.purchases, totalCents: acc.totalCents + r.totalCents, feeCents: acc.feeCents + r.feeCents }), { purchases: 0, totalCents: 0, feeCents: 0 });
   return { month, rows, sum, problems };
 }
@@ -258,7 +252,7 @@ router.get('/fees', async (req, res, next) => {
       error: fees.problems.length ? fees.problems.join(' ') : null,
       monthLabel: monthLabel(fees.month),
       months: months.map(m => ({ value: m, label: monthLabel(m), active: m === fees.month })),
-      feePercent: FEE_RATE * 100,
+      feePercent: FEE_PERCENT,
       csvHref: `/reports/fees.csv?month=${fees.month}`,
       dollars,
     });
@@ -271,7 +265,7 @@ router.get('/fees.csv', async (req, res, next) => {
     const fees = await resolveFees(req);
     if (fees.problems.length) return res.status(400).type('text/plain').send(fees.problems.join(' '));
     const lines = [
-      ['Month', 'Sponsor', 'Sponsor status', 'Purchases', 'Purchase total (USD)', `Fee at ${FEE_RATE * 100}% (USD)`],
+      ['Month', 'Sponsor', 'Sponsor status', 'Purchases', 'Purchase total (USD)', `Fee at ${FEE_PERCENT}% (USD)`],
       ...fees.rows.map(r => [fees.month, r.name, r.status, r.purchases, +(r.totalCents / 100).toFixed(2), +(r.feeCents / 100).toFixed(2)]),
       [fees.month, 'All sponsors', '', fees.sum.purchases, +(fees.sum.totalCents / 100).toFixed(2), +(fees.sum.feeCents / 100).toFixed(2)],
     ];
@@ -285,9 +279,20 @@ const SALES_LABELS = {
   summary: { sponsor: 'sponsor', status: 'status', sales: 'number of sales', dollars: 'total dollars', points: 'points spent' },
   detailed: { date: 'date', sponsor: 'sponsor', driver: 'driver', item: 'item', amount: 'amount', points: 'points spent' },
 };
-const DESC_FIRST = ['date', 'dollars', 'sales', 'amount'];
+const DESC_FIRST = ['date', 'dollars', 'sales', 'amount', 'last'];
+const money = cents => +(Number(cents) / 100).toFixed(2);
 
-async function resolveSalesFilters(req) {
+function salesSortLinks(basePath, columns, filters, state) {
+  const links = {};
+  for (const key of Object.keys(columns)) {
+    const active = filters.sort === key;
+    const dir = active ? (filters.dir === 'asc' ? 'desc' : 'asc') : (DESC_FIRST.includes(key) ? 'desc' : 'asc');
+    links[key] = { href: `${basePath}${queryString({ ...state, sort: key, dir })}`, active, dir: filters.dir };
+  }
+  return links;
+}
+
+async function resolveSalesFilters(req, { summaryColumns = SALES_SORT_COLUMNS.summary, summaryDefault = 'sponsor' } = {}) {
   const problems = [];
   const sponsors = await listSponsors();
   let sponsorId = null;
@@ -299,11 +304,11 @@ async function resolveSalesFilters(req) {
   const { from, to } = readDateRange(req.query, problems);
   // Story AD-28: summary (one row per sponsor) or detailed (one row per purchase).
   const version = SALES_VERSIONS.includes(text(req.query.version)) ? text(req.query.version) : 'summary';
-  const columns = SALES_SORT_COLUMNS[version];
-  const defaultSort = version === 'summary' ? 'sponsor' : 'date';
+  const columns = version === 'summary' ? summaryColumns : SALES_SORT_COLUMNS.detailed;
+  const defaultSort = version === 'summary' ? summaryDefault : 'date';
   const sort = Object.prototype.hasOwnProperty.call(columns, text(req.query.sort)) ? text(req.query.sort) : defaultSort;
   const dir = SORT_DIRECTIONS.includes(text(req.query.dir)) ? text(req.query.dir) : (DESC_FIRST.includes(sort) ? 'desc' : 'asc');
-  return { sponsors, sponsorId, from, to, version, sort, dir, problems };
+  return { sponsors, sponsorId, from, to, version, columns, sort, dir, problems };
 }
 
 router.get('/sales', async (req, res, next) => {
@@ -317,6 +322,9 @@ router.get('/sales', async (req, res, next) => {
     const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
     const page = Math.min(positiveInt(text(req.query.page)) || 1, pageCount);
     const paging = { sort: filters.sort, dir: filters.dir, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
+    // Story AD-31: both charts cover every filtered row, in either version.
+    const byEntity = invalid ? null : buildRankedBars(await salesSummary(filters, { sort: 'dollars', dir: 'desc' }), { noun: 'sponsor' });
+    const overTime = invalid ? null : buildTimeColumns(await dailySalesTotals(filters), filters);
     const rows = invalid ? [] : (isSummary ? await salesSummary(filters, paging) : await salesDetail(filters, paging));
     // The grand total always covers the whole filtered set, never one page.
     const grand = invalid ? { sales: 0, totalCents: 0, points: 0 } : await salesTotals(filters);
@@ -324,12 +332,7 @@ router.get('/sales', async (req, res, next) => {
     const keep = { sponsor: filters.sponsorId, version: filters.version };
     const state = { ...keep, from: filters.from, to: filters.to, sort: filters.sort, dir: filters.dir };
     const quickRanges = quickRangeLinks('/reports/sales', { ...keep, sort: filters.sort, dir: filters.dir }, filters, { thisMonth: true });
-    const sortLinks = {};
-    for (const key of Object.keys(SALES_SORT_COLUMNS[filters.version])) {
-      const active = filters.sort === key;
-      const dir = active ? (filters.dir === 'asc' ? 'desc' : 'asc') : (DESC_FIRST.includes(key) ? 'desc' : 'asc');
-      sortLinks[key] = { href: `/reports/sales${queryString({ ...state, sort: key, dir })}`, active, dir: filters.dir };
-    }
+    const sortLinks = salesSortLinks('/reports/sales', filters.columns, filters, state);
     const pageHref = n => `/reports/sales${queryString({ ...state, page: n > 1 ? n : null })}`;
     const versionHref = v => `/reports/sales${queryString({ sponsor: filters.sponsorId, from: filters.from, to: filters.to, version: v })}`;
     const chosenSponsor = filters.sponsorId ? filters.sponsors.find(s => s.id === filters.sponsorId) : null;
@@ -348,7 +351,7 @@ router.get('/sales', async (req, res, next) => {
     res.status(invalid ? 400 : 200).render('reports/sales', {
       filters, sponsors: filters.sponsors, chosenSponsor, isSummary,
       error: invalid ? filters.problems.join(' ') : null,
-      rows, grand, total, today: isoDate(new Date()), quickRanges, sortLinks, summary, versionHref,
+      rows, grand, total, today: isoDate(new Date()), quickRanges, sortLinks, summary, versionHref, byEntity, overTime,
       rangeLabel: rangeLabel(filters),
       page, pageCount,
       pageStart: total ? (page - 1) * PAGE_SIZE + 1 : 0, pageEnd: Math.min(page * PAGE_SIZE, total),
@@ -367,7 +370,6 @@ router.get('/sales.csv', async (req, res, next) => {
     if (filters.problems.length) return res.status(400).type('text/plain').send(filters.problems.join(' '));
     const order = { sort: filters.sort, dir: filters.dir };
     const grand = await salesTotals(filters);
-    const money = cents => +(Number(cents) / 100).toFixed(2);
     let lines;
     if (filters.version === 'summary') {
       const rows = await salesSummary(filters, order);
@@ -386,6 +388,122 @@ router.get('/sales.csv', async (req, res, next) => {
     }
     const span = `${filters.from ? `-from-${filters.from}` : ''}${filters.to ? `-to-${filters.to}` : ''}`;
     sendCsv(res, `sales-by-sponsor-${filters.version}${span}.csv`, lines);
+  } catch (err) { next(err); }
+});
+
+// ---- Sales by Driver (stories AD-32 to AD-34, admin only) --------------------
+
+const DRIVER_SALES_LABELS = {
+  summary: { driver: 'driver', sponsors: 'sponsors', sales: 'number of sales', dollars: 'total dollars', points: 'points spent', last: 'last purchase' },
+  detailed: SALES_LABELS.detailed,
+};
+
+async function resolveDriverSalesFilters(req) {
+  const filters = await resolveSalesFilters(req, { summaryColumns: SALES_SORT_COLUMNS.driverSummary, summaryDefault: 'driver' });
+  const drivers = await listDriversForSales({ sponsorId: filters.sponsorId });
+  let driverId = null;
+  let notice = null;
+  const wanted = text(req.query.driver);
+  if (wanted && wanted !== 'all') {
+    const id = positiveInt(wanted);
+    if (id && drivers.some(driver => driver.id === id)) {
+      driverId = id;
+    } else {
+      // Changing the sponsor while a driver from another sponsor is still
+      // selected is an ordinary thing to do, not a mistake: run the report for
+      // the sponsor and say why the driver was dropped.
+      const known = id && filters.sponsorId ? (await listDriversForSales()).find(driver => driver.id === id) : null;
+      const sponsor = filters.sponsors.find(s => s.id === filters.sponsorId);
+      if (known) notice = `${known.displayName} has no membership or purchases with ${sponsor.name}, so this shows all of ${sponsor.name}'s drivers.`;
+      else filters.problems.push('Choose a driver from the list.');
+    }
+  }
+  return { ...filters, drivers, driverId, notice };
+}
+
+router.get('/sales-by-driver', async (req, res, next) => {
+  try {
+    if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
+    const filters = await resolveDriverSalesFilters(req);
+    const invalid = filters.problems.length > 0;
+    const isSummary = filters.version === 'summary';
+
+    const total = invalid ? 0 : (isSummary ? await countDriversWithSales(filters) : await countSales(filters));
+    const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const page = Math.min(positiveInt(text(req.query.page)) || 1, pageCount);
+    const paging = { sort: filters.sort, dir: filters.dir, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
+    const byEntity = invalid ? null : buildRankedBars(
+      (await salesByDriver(filters, { sort: 'dollars', dir: 'desc' })).map(row => ({
+        ...row, name: row.driverName,
+        tipName: row.driverName === row.driverUsername ? row.driverName : `${row.driverName} (${row.driverUsername})`,
+      })),
+      { noun: 'driver' }
+    );
+    const overTime = invalid ? null : buildTimeColumns(await dailySalesTotals(filters), filters);
+    const rows = invalid ? [] : (isSummary ? await salesByDriver(filters, paging) : await salesDetail(filters, paging));
+    const grand = invalid ? { sales: 0, totalCents: 0, points: 0 } : await salesTotals(filters);
+
+    const basePath = '/reports/sales-by-driver';
+    const keep = { sponsor: filters.sponsorId, driver: filters.driverId, version: filters.version };
+    const state = { ...keep, from: filters.from, to: filters.to, sort: filters.sort, dir: filters.dir };
+    const quickRanges = quickRangeLinks(basePath, { ...keep, sort: filters.sort, dir: filters.dir }, filters, { thisMonth: true });
+    const sortLinks = salesSortLinks(basePath, filters.columns, filters, state);
+    const pageHref = n => `${basePath}${queryString({ ...state, page: n > 1 ? n : null })}`;
+    const versionHref = v => `${basePath}${queryString({ sponsor: filters.sponsorId, driver: filters.driverId, from: filters.from, to: filters.to, version: v })}`;
+    const chosenSponsor = filters.sponsorId ? filters.sponsors.find(s => s.id === filters.sponsorId) : null;
+    const chosenDriver = filters.driverId ? filters.drivers.find(d => d.id === filters.driverId) : null;
+
+    const summary = [
+      { label: 'Sponsor', value: chosenSponsor ? chosenSponsor.name : 'All sponsors' },
+      { label: 'Driver', value: chosenDriver ? chosenDriver.displayName : 'All drivers' },
+      { label: 'Dates', value: datesSummary(filters) },
+      { label: 'Version', value: isSummary ? 'Summary, one row per driver' : 'Detailed, one row per purchase' },
+      { label: 'Sorted by', value: `${DRIVER_SALES_LABELS[filters.version][filters.sort]}, ${filters.dir === 'asc' ? 'ascending' : 'descending'}` },
+      { label: 'Results', value: isSummary
+        ? `${total} driver${total === 1 ? '' : 's'}, ${grand.sales} sale${grand.sales === 1 ? '' : 's'}`
+        : `${grand.sales} sale${grand.sales === 1 ? '' : 's'}` },
+    ];
+
+    res.status(invalid ? 400 : 200).render('reports/sales-by-driver', {
+      filters, sponsors: filters.sponsors, drivers: filters.drivers, chosenSponsor, chosenDriver, isSummary,
+      error: invalid ? filters.problems.join(' ') : null, notice: filters.notice,
+      rows, grand, total, today: isoDate(new Date()), quickRanges, sortLinks, summary, versionHref, byEntity, overTime,
+      rangeLabel: rangeLabel(filters),
+      page, pageCount,
+      pageStart: total ? (page - 1) * PAGE_SIZE + 1 : 0, pageEnd: Math.min(page * PAGE_SIZE, total),
+      prevHref: page > 1 ? pageHref(page - 1) : null, nextHref: page < pageCount ? pageHref(page + 1) : null,
+      csvHref: `${basePath}.csv${queryString(state)}`,
+      formatStamp, dollars,
+    });
+  } catch (err) { next(err); }
+});
+
+// Same filters, version, and sort as the page; every row, no paging.
+router.get('/sales-by-driver.csv', async (req, res, next) => {
+  try {
+    if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
+    const filters = await resolveDriverSalesFilters(req);
+    if (filters.problems.length) return res.status(400).type('text/plain').send(filters.problems.join(' '));
+    const order = { sort: filters.sort, dir: filters.dir };
+    const grand = await salesTotals(filters);
+    let lines;
+    if (filters.version === 'summary') {
+      const rows = await salesByDriver(filters, order);
+      lines = [
+        ['Driver', 'Username', 'Sponsors', 'Number of sales', 'Total (USD)', 'Points spent', 'Last purchase (UTC)'],
+        ...rows.map(r => [r.driverName, r.driverUsername, r.sponsorNames, Number(r.sales), money(r.totalCents), Number(r.points), formatStamp(r.lastPurchase)]),
+        ['All drivers', '', '', Number(grand.sales), money(grand.totalCents), Number(grand.points), ''],
+      ];
+    } else {
+      const rows = await salesDetail(filters, order);
+      lines = [
+        ['Date (UTC)', 'Driver', 'Username', 'Sponsor', 'Item', 'Amount (USD)', 'Points spent'],
+        ...rows.map(r => [formatStamp(r.purchasedAt), r.driverName, r.driverUsername, r.sponsorName, r.item, money(r.amountCents), Number(r.points)]),
+        ['Total', '', '', '', `${Number(grand.sales)} sales`, money(grand.totalCents), Number(grand.points)],
+      ];
+    }
+    const span = `${filters.from ? `-from-${filters.from}` : ''}${filters.to ? `-to-${filters.to}` : ''}`;
+    sendCsv(res, `sales-by-driver-${filters.version}${span}.csv`, lines);
   } catch (err) { next(err); }
 });
 

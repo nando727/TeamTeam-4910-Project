@@ -16,6 +16,7 @@ const accountRoutes = require('./account/routes');
 const adminRoutes = require('./admin/routes');
 const bulkUploadRoutes = require('./bulk/admin-routes');
 const setupRoutes = require('./setup/routes');
+const { healthCheck } = require('./health');
 const { formToken, requireFormToken } = require('./auth/form-token');
 const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES, escapeLike} = require('./applications');
 const db = require('./db');
@@ -36,6 +37,10 @@ app.set('trust proxy', 1);
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+
+// Story INF-10: public, and ahead of sessions so it needs no cookie.
+app.get('/health', healthCheck);
+
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));

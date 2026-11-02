@@ -34,3 +34,48 @@
   // Coming back with the browser's back button restores the page from cache.
   window.addEventListener('pageshow', idle);
 })();
+
+// Chart tooltips (story AD-31): the same details on hover, focus, and tap. The
+// values are also on the chart or in the table under it, so this only adds
+// convenience. Text goes in with textContent because names are user data.
+(function () {
+  var marks = document.querySelectorAll('.chart__mark');
+  if (!marks.length) return;
+  var tip = document.createElement('div');
+  var value = document.createElement('strong');
+  var label = document.createElement('span');
+  tip.className = 'chart-tip';
+  tip.hidden = true;
+  tip.appendChild(value);
+  tip.appendChild(label);
+  document.body.appendChild(tip);
+
+  function show(mark, x, y) {
+    value.textContent = mark.getAttribute('data-tip-value');
+    label.textContent = mark.getAttribute('data-tip-label');
+    tip.hidden = false;
+    var left = Math.min(x - tip.offsetWidth / 2, window.innerWidth - tip.offsetWidth - 8);
+    tip.style.left = Math.max(8, left) + 'px';
+    tip.style.top = Math.max(8, y - tip.offsetHeight - 12) + 'px';
+  }
+  function hide() { tip.hidden = true; }
+  function showAtBar(mark) {
+    var box = (mark.querySelector('.chart__bar') || mark).getBoundingClientRect();
+    show(mark, box.left + box.width / 2, box.top);
+  }
+
+  marks.forEach(function (mark) {
+    mark.addEventListener('pointermove', function (event) { show(mark, event.clientX, event.clientY); });
+    mark.addEventListener('pointerleave', hide);
+    mark.addEventListener('focus', function () { showAtBar(mark); });
+    mark.addEventListener('blur', hide);
+  });
+  document.addEventListener('keydown', function (event) { if (event.key === 'Escape') hide(); });
+  // Tabbing to a mark can scroll the page, so a keyboard user's tooltip follows
+  // the mark. Otherwise a tooltip left behind by scrolling would float over nothing.
+  window.addEventListener('scroll', function () {
+    var active = document.activeElement;
+    if (active && active.matches('.chart__mark:focus-visible')) showAtBar(active);
+    else hide();
+  }, { passive: true });
+})();

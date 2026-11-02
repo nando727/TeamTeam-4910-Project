@@ -82,15 +82,13 @@ async function dailyPointTotals(filters = {}) {
   );
 }
 
-// Story AD-11: every sponsor with its drivers' purchases in one calendar month.
-// `monthStart` and `nextMonthStart` are YYYY-MM-01 strings from the route.
-async function monthlySponsorPurchases(monthStart, nextMonthStart) {
-  return db.query(
-    'SELECT s.id, s.name, s.status, COUNT(p.id) AS purchases, COALESCE(SUM(p.amount_cents), 0) AS totalCents ' +
-      'FROM sponsors s LEFT JOIN purchases p ON p.sponsor_id = s.id AND p.purchased_at >= ? AND p.purchased_at < ? ' +
-      'GROUP BY s.id, s.name, s.status ORDER BY s.name, s.id',
-    [monthStart, nextMonthStart]
-  );
+// Stories AD-11 and INF-33: every sponsor's purchases and 1% fee for one calendar
+// month. The fee is calculated by the sponsor_monthly_fees procedure (migration
+// 018). `month` is YYYY-MM from the route. A CALL answers with the rows and then
+// a status packet, so the rows are the first element.
+async function monthlySponsorFees(month) {
+  const [rows] = await db.query('CALL sponsor_monthly_fees(?, NULL)', [`${month}-01`]);
+  return rows;
 }
 
 // Months that have at least one purchase, newest first, for the month picker.
@@ -108,6 +106,7 @@ const SALES_VERSIONS = ['summary', 'detailed'];
 const SALES_SORT_COLUMNS = {
   summary: { sponsor: 's.name', status: 's.status', sales: 'sales', dollars: 'totalCents', points: 'points' },
   detailed: { date: 'p.purchased_at', sponsor: 's.name', driver: 'driverName', item: 'p.description', amount: 'p.amount_cents', points: 'p.points_spent' },
+  driverSummary: { driver: 'driverName', sponsors: 'sponsorNames', sales: 'sales', dollars: 'totalCents', points: 'points', last: 'lastPurchase' },
 };
 
 function orderClause(version, sort, dir, tieBreak) {
@@ -155,8 +154,9 @@ async function countSponsorsInScope({ sponsorId = null } = {}) {
   return Number((rows[0] && rows[0].total) || 0);
 }
 
-function salesFilter({ sponsorId = null, from = null, to = null } = {}) {
+function salesFilter({ sponsorId = null, driverId = null, from = null, to = null } = {}) {
   const { conditions, params } = purchaseDateFilter({ from, to });
+  if (driverId) { conditions.unshift('p.driver_id = ?'); params.unshift(driverId); }
   if (sponsorId) { conditions.unshift('p.sponsor_id = ?'); params.unshift(sponsorId); }
   return { where: conditions.length ? 'WHERE ' + conditions.join(' AND ') + ' ' : '', params };
 }
@@ -192,9 +192,60 @@ async function salesTotals(filters = {}) {
   return { sales: Number(row.sales || 0), totalCents: Number(row.totalCents || 0), points: Number(row.points || 0) };
 }
 
+// Per-day totals for the sales over time chart, over the whole filtered set.
+async function dailySalesTotals(filters = {}) {
+  const { where, params } = salesFilter(filters);
+  return db.query(
+    "SELECT DATE_FORMAT(p.purchased_at, '%Y-%m-%d') AS day, COUNT(*) AS sales, SUM(p.amount_cents) AS totalCents " +
+      'FROM purchases p ' + where + 'GROUP BY day ORDER BY day',
+    params
+  );
+}
+
+// ---- Sales by Driver (stories AD-32 to AD-34) ----------------------------------
+// The totals read purchases and never join driver_sponsors, so a driver with
+// several sponsors is not counted once per membership, and purchases stay on
+// record after a sponsorship is removed.
+
+// Summary: one row per driver who has a purchase in the filtered set, naming
+// the sponsors those purchases were with.
+async function salesByDriver(filters = {}, { sort = 'driver', dir = 'asc', limit = null, offset = 0 } = {}) {
+  const { where, params } = salesFilter(filters);
+  return db.query(
+    'SELECT u.id, COALESCE(NULLIF(u.name, \'\'), u.username) AS driverName, u.username AS driverUsername, ' +
+      'GROUP_CONCAT(DISTINCT s.name ORDER BY s.name SEPARATOR \', \') AS sponsorNames, ' +
+      'COUNT(p.id) AS sales, SUM(p.amount_cents) AS totalCents, SUM(p.points_spent) AS points, MAX(p.purchased_at) AS lastPurchase ' +
+      'FROM purchases p JOIN users u ON u.id = p.driver_id JOIN sponsors s ON s.id = p.sponsor_id ' +
+      where + 'GROUP BY u.id, u.name, u.username ' +
+      orderClause('driverSummary', sort, dir, 'driverName ASC, u.id ASC') + pagingClause(limit, offset),
+    params
+  );
+}
+
+async function countDriversWithSales(filters = {}) {
+  const { where, params } = salesFilter(filters);
+  const rows = await db.query('SELECT COUNT(DISTINCT p.driver_id) AS total FROM purchases p ' + where, params);
+  return Number((rows[0] && rows[0].total) || 0);
+}
+
+// The driver dropdown: each driver once, however many sponsors they have. In a
+// sponsor's scope that is its current members plus anyone with a purchase there.
+async function listDriversForSales({ sponsorId = null } = {}) {
+  const membership = sponsorId ? ' AND ds.sponsor_id = ?' : '';
+  const purchase = sponsorId ? ' AND p.sponsor_id = ?' : '';
+  return db.query(
+    'SELECT u.id, u.username, COALESCE(NULLIF(u.name, \'\'), u.username) AS displayName FROM users u ' +
+      `WHERE EXISTS (SELECT 1 FROM driver_sponsors ds WHERE ds.driver_id = u.id${membership}) ` +
+      `OR EXISTS (SELECT 1 FROM purchases p WHERE p.driver_id = u.id${purchase}) ` +
+      'ORDER BY displayName, u.username',
+    sponsorId ? [sponsorId, sponsorId] : []
+  );
+}
+
 module.exports = {
   SORT_COLUMNS, SORT_DIRECTIONS, SALES_SORT_COLUMNS, SALES_VERSIONS,
   listDriversInScope, listPointChanges, countPointChanges, dailyPointTotals,
-  monthlySponsorPurchases, listPurchaseMonths,
-  salesSummary, countSponsorsInScope, salesDetail, countSales, salesTotals,
+  monthlySponsorFees, listPurchaseMonths,
+  salesSummary, countSponsorsInScope, salesDetail, countSales, salesTotals, dailySalesTotals,
+  salesByDriver, countDriversWithSales, listDriversForSales,
 };

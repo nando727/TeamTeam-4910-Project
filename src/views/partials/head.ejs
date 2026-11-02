@@ -18,6 +18,7 @@
         { href: '/reports/points', label: 'Driver point tracking' },
         { href: '/reports/fees', label: 'Sponsor fees' },
         { href: '/reports/sales', label: 'Sales by sponsor' },
+        { href: '/reports/sales-by-driver', label: 'Sales by driver' },
       ] });
       navItems.push({ label: 'Users', children: [
         { href: '/admin/create-user', label: 'Create user' },
@@ -35,7 +36,7 @@
     navItems.push({ href: '/login', label: 'Log in' });
   }
   navItems.push({ href: '/about', label: 'About' });
-  const isActive = href => (href === '/' ? path === '/' : path.startsWith(href));
+  const isActive = href => (href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`));
   const groupActive = item => item.children.some(child => isActive(child.href));
 
   // Same mark as partials/logo.ejs, flattened into a data URI for the tab icon.
