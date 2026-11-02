@@ -499,6 +499,52 @@ transaction is the honest fix and would need a helper in `src/db.js`, which
 every other feature would then want too &mdash; worth its own story rather than
 being smuggled in here.
 
+### The owner is told when a password changes (story 22227)
+
+Every password change emails the account: **what changed, when, and how**, with
+nothing a thief could use &mdash; never the password, never its hash, never a
+token. The wording differs per method, because "was that reset mine?" can only
+be answered if a change the owner made reads differently from one made for
+them: from your profile page, by an administrator, or using a reset link.
+
+Without this, a stolen reset is silent. An attacker with access to an inbox
+resets the password, and the real user's first clue is their own password
+failing &mdash; after the attacker has already been in.
+
+Like the audit row and the setup-link voiding, the notice hangs off
+`updateUserPassword()` rather than the four routes that set a password: a
+notice each route has to remember is one that goes missing the first time a
+fifth path appears, and the path that forgets would be the one worth using.
+The wording lives in `src/auth/password-notice.js`, which never touches the
+database &mdash; the store passes it the account row it has already loaded.
+
+A **setup link is the one quiet method**: whoever used it is the person
+choosing the password and is still in front of the form. Everything else is
+announced, including a method this code does not recognise, so silence is never
+the default. An account with no address on file logs a line and sends nothing,
+rather than mailing the `(no email on file)` placeholder at a real SMTP server.
+
+Sending cannot fail the change. `sendMail()` already turns a dead mail server
+into a logged error, so a password the owner asked to change stays changed even
+when the notice does not go out &mdash; `tests/password-change-notice.test.js`
+covers that with a transport that throws.
+
+The timestamp is this process's clock, formatted in UTC and labelled as such.
+Reading `changed_at` back out of the audit row would mean a MySQL `DATETIME`
+crossing into Node, which has already cost this app two fixes; the mail is
+composed within a second of the write, which is close enough for a human
+deciding whether they recognise the change.
+
+The "this was not you" link needs `APP_BASE_URL`, since there is no request
+here to borrow a host from. Without it the mail names the **Forgot password**
+link on the sign-in page instead of pointing at a `localhost` URL the reader
+cannot open.
+
+What this does not cover: the address the notice goes to can still be changed
+with nobody told, so an attacker in a session could swap it and then reset. The
+same treatment on `updateUserContact()` &mdash; mailing the *previous* address
+&mdash; is the fix, and is its own story.
+
 ### Setting a password voids the setup link (story 22225)
 
 An unused setup link dies the moment the account gets a password, however that

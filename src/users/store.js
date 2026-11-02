@@ -1,6 +1,7 @@
 const db = require('../db');
 const { hashPassword, NO_PASSWORD } = require('../auth/password');
 const { invalidateSetupTokens } = require('../auth/setup-tokens');
+const { notifyPasswordChanged, notifiesFor } = require('../auth/password-notice');
 
 // How a password came to be set, for the audit log. Anything else is recorded
 // as 'unknown' rather than dropped.
@@ -97,6 +98,19 @@ async function updateUserPassword(id, password, { method, changedBy = null } = {
   // request errors out with the password already changed and no record of it.
   // A transaction is the real answer and db.js would need a helper for one.
   await recordPasswordChange(id, changedBy, method);
+
+  // Story AA-25 (22227): and the owner is told, after the change is both made
+  // and recorded, so the mail can never announce something that did not
+  // happen. The account is loaded here rather than in the notice module to
+  // keep that module clear of the database; the lookup is skipped for the
+  // methods that send nothing, so claiming a new account costs no extra query.
+  //
+  // Sending cannot fail this function: sendMail turns a dead mail server into
+  // a logged error. A password the owner asked to change stays changed even
+  // when the notice does not go out.
+  if (notifiesFor(method)) {
+    await notifyPasswordChanged(await findUserById(id), { method });
+  }
   return true;
 }
 
