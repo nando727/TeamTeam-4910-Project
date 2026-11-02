@@ -389,11 +389,11 @@ in again. Confirmation means received; it does not mean approved.
 
 Run `npm run db:migrate` before using **My sponsor and points**. Migration 008
 creates `driver_sponsors` and adds memberships for already-approved applications.
-New memberships start with 0 points. Rerunning the migration preserves balances.
-A driver can belong to one sponsor at a time. The migration stops if a driver
-already has multiple approved applications, so those decisions can be resolved
-without silently choosing a sponsor. `users.sponsor_id` continues to identify
-the organization managed by a sponsor-role account.
+New memberships start with 0 points. `npm run db:migrate` runs 008 only while
+that table does not exist, so rerunning it preserves balances and does not bring
+back removed sponsorships. A driver may now belong to several sponsors (migration
+014). `users.sponsor_id` continues to identify the organization managed by a
+sponsor-role account.
 
 Approving a pending application saves its decision and membership together.
 Completed decisions cannot be submitted again. Approval by a second sponsor is
@@ -492,6 +492,21 @@ in the same database transaction as the matching negative `point_transactions`
 row and the `driver_sponsors.point_balance` update, so the fee report, the point
 report, and the driver's balance all agree.
 
+The fee itself is calculated in the database by the `sponsor_monthly_fees`
+procedure (story INF-33, migration 018), so billing logic stays in one place:
+
+```sql
+CALL sponsor_monthly_fees('2026-10-01', NULL);  -- every sponsor, October 2026
+CALL sponsor_monthly_fees('2026-10-01', 2);     -- one sponsor
+```
+
+It takes the first day of the month and a sponsor id or `NULL`, and returns each
+sponsor's purchases, total, and fee, rounded to the cent. The page and CSV show
+what it returns, and the grand total adds up the sponsors' fees. To change the
+rate, put the new procedure in a new migration and in `db/schema.sql`, and update
+`FEE_PERCENT` in `src/reports/routes.js`, which only labels the page. The procedure
+must be on the database before any code that calls it is deployed.
+
 Sample data: `npm run db:seed:purchases` adds purchases for the demo drivers
 under Demo Sponsor spread over the last three months. It skips a sponsor that
 already has purchases, so it is safe to rerun.
@@ -560,6 +575,48 @@ sponsor user `sponsor2` / `SponsorPass2!`, driver `driver3` / `DriverPass3!`)
 and more purchases for both sponsors. Run it after the points and purchases
 seeds. It skips anything that already exists.
 
+Charts (stories AD-30 and AD-31): both versions show the sales totals by sponsor,
+largest first, and sales dollars over time, by day for up to a month, by week for
+up to six months, then by month. They cover every filtered row, not the current
+page, and redraw with the filters. A sponsor with no sales in the range is left
+out of the first chart, and when only one sponsor has sales its total is shown as
+a figure, since a single bar compares nothing. Each chart has hover and keyboard
+tooltips and a **Show this chart as a table** link. They are inline SVG with no
+library; `src/reports/charts.js` does the arithmetic.
+
+## Sales by Driver report (stories AD-32 to AD-34)
+
+Admins open **Reports -> Sales by driver** (`/reports/sales-by-driver`). **Summary**
+has one row per driver with a purchase: the sponsors those purchases were with,
+number of sales, total dollars, points spent, and last purchase, plus a grand
+total row. **Detailed** has one row per purchase. Filter by **All Sponsors** or one,
+**All Drivers** or one, and a date range with quick ranges. The driver list narrows
+to the chosen sponsor after **Apply**, and a driver left selected from another
+sponsor is dropped with a message saying so. The rest matches Sales by Sponsor:
+the filter summary, sortable columns, 25-row pages, the loading indicator, the
+empty message, both charts (the top 10 drivers, with the rest folded into one
+bar), and a CSV of every filtered row in the on-screen version and sort.
+
+A driver can belong to several sponsors. The totals read the `purchases` table and
+never join `driver_sponsors`, so a driver with two sponsors is one row with each
+purchase counted once, and past purchases stay on the report after a sponsorship
+is removed. Choosing a sponsor counts only the purchases made with that sponsor.
+
+## Health check (story INF-10)
+
+`GET /health` is public and tells the team whether the web service is running and
+can reach the database. It runs `SELECT 1` and answers in JSON with no session:
+
+| Situation | Status | Body |
+|---|---|---|
+| Database answers | 200 | `{"status":"ok","app":"ok","database":"ok"}` |
+| Database is down, or silent for 3 seconds | 503 | `{"status":"unavailable","app":"ok","database":"unavailable"}` |
+
+The reason for a failure goes to the server log only, never into the response.
+Set `HEALTH_DB_TIMEOUT_MS` to change the wait. The deploy's smoke test requests
+this page. The Beanstalk health check URL is deliberately left blank: a database
+problem should not mark a working web server as unhealthy.
+
 ## Bulk upload (requirement change RC#1)
 
 Admins open **Users -> Bulk upload** (`/admin/bulk-upload`) and upload a
@@ -603,37 +660,120 @@ place. Removing a sponsorship deletes that balance; the point history stays in
 approval; its "one sponsor at a time" message now only applies to the same
 sponsor twice.
 
-## Deployment (GitHub Actions to AWS Elastic Beanstalk)
+## Deployment (GitHub Actions to AWS Elastic Beanstalk) (story INF-06)
 
-The app is hosted on AWS Elastic Beanstalk (application `gooddriver`,
-environment `team13-gooddriver`, Node.js 22, region `us-east-1`) and reads from
-the team's MySQL database on RDS.
+The app runs on AWS Elastic Beanstalk (application `gooddriver`, environment
+`team13-gooddriver`, Node.js 22, region `us-east-1`, one instance) and uses the
+team's MySQL database on RDS. Any teammate with write access to this repository
+can deploy by following these steps. Nobody needs to deploy from their own
+computer.
 
-Every push or merge to `master` runs `.github/workflows/deploy.yml`:
+### Deploying a change
 
-1. **Test** - `npm ci`, then the full suite with `npm run test-run`.
-2. **Deploy** - only if every test passed. The workflow zips the commit with
-   `git archive`, uploads it to Beanstalk's S3 bucket, registers it as a new
-   application version (`gh-<commit>-<run>`), updates the environment, and waits
-   until it is Ready on that version.
-3. **Smoke test** - requests the live `/about` page, which reads from the
-   database, and fails the run unless it returns 200.
+1. **Run any database change first** (see the next section), if the change has
+   one. A deploy never touches the database.
+2. **Open a pull request into `master`.** Pull requests do not deploy anything
+   and do not run the workflow, so run `npm run test-run` on your branch before
+   asking for a merge.
+3. **Merge it.** Every push or merge to `master` starts the deploy on its own.
+4. **Watch it in the Actions tab.** On GitHub, open **Actions**, then the newest
+   **Test and deploy** run. It has two jobs:
+   - **Test** runs `npm ci` and the full test suite. If a test fails, nothing
+     reaches AWS.
+   - **Deploy to Elastic Beanstalk** zips the commit with `git archive`, uploads
+     it, registers an application version named `gh-<commit>-<run>.<attempt>`,
+     updates the environment, waits for it to be Ready on that version, and then
+     smoke tests the live `/health` page. A 200 there means the new code is
+     serving requests and can reach the database.
+5. **Check the result.** A green run means the site is live on your commit. Open
+   `/health` on the live site and expect `{"status":"ok","app":"ok","database":"ok"}`.
+   With only one instance, the site can be briefly unavailable during an update.
 
-Things to know:
+Only one deploy runs at a time. A second merge waits for the running one instead
+of overlapping it, and if several pile up, GitHub keeps only the newest.
 
-- **No secrets are deployed or stored in the repo.** `.env` is gitignored, so it
-  is never in the bundle, and the workflow refuses to deploy if an env file is
-  ever committed. Database and session settings are set on the Beanstalk
-  environment (Configuration -> Updates, monitoring, and logging -> Environment
-  properties). Change them there, not in code.
+**Deploying without a new commit:** on GitHub, open **Actions**, choose
+**Test and deploy** in the list on the left, click **Run workflow**, choose
+branch `master`, and click the green **Run workflow** button. Use it to redeploy
+what is already on `master`, such as after changing an AWS secret. It runs the
+tests either way, but only `master` is ever deployed: starting it from another
+branch tests that branch and stops.
+
+### Database changes come first, and on RDS
+
+A deploy does not apply migrations, so new code that needs a new table, column,
+or procedure fails if it reaches the site before the database has it.
+
+1. Put the change in a new numbered file in `db/migrations/`, written so it is
+   safe to rerun, and make the same change in `db/schema.sql`.
+2. Get the team's OK. RDS is shared, so a change there affects everyone at once.
+3. With your `.env` pointing at RDS, run:
+   ```bash
+   npm run db:migrate
+   ```
+   It applies every migration file in order and prints each one. It is safe to
+   repeat, because each file checks before it acts. Migration 008, which filled
+   memberships from approved applications once, is skipped once the table exists
+   so that it cannot bring back sponsorships an admin has removed. It only runs
+   on a database that has no `driver_sponsors` table yet, so a very old local
+   database that runs `npm run db:setup` first, which creates that table empty,
+   needs the backfill run by hand from that file.
+4. Check the change is there, then merge the code.
+
+Keep the change additive while the old code is still live, because the running
+site must keep working until the deploy finishes. To remove or rename something,
+deploy the code that stops using it first, and change the database after.
+
+### Secrets and settings
+
+No secrets are stored in the repository or the bundle. `.env` is gitignored, and
+the workflow refuses to deploy if an env file is ever committed.
+
 - **AWS access** comes from the repository secrets `AWS_ACCESS_KEY_ID` and
-  `AWS_SECRET_ACCESS_KEY`. Pull requests do not trigger the workflow.
-- **One deploy at a time.** A second push waits for the running deploy to
-  finish instead of overlapping it.
-- **Redeploy without pushing:** GitHub -> Actions -> "Test and deploy" ->
-  Run workflow -> branch `master`.
-- **If a deploy fails**, Beanstalk keeps serving the previous version. Open the
-  failed run in the Actions tab to see which step failed; a failed test never
-  reaches AWS.
-- Database schema changes are not applied by a deploy. Run new migrations
-  against RDS separately, after the team agrees.
+  `AWS_SECRET_ACCESS_KEY`, under **Settings -> Secrets and variables -> Actions**
+  on GitHub. Changing them needs owner or admin access to the repository. They
+  are not available to pull requests, so code from a fork can never reach them. If they
+  are replaced, redeploy with **Run workflow** to confirm the new ones work.
+- **Database and session settings** live on the Beanstalk environment, not in
+  code: in the AWS console, open the environment, then **Configuration -> Updates,
+  monitoring, and logging -> Environment properties**. Changing one restarts the
+  app, which is the only step needed.
+- **Upload size:** `.platform/nginx/conf.d/upload-size.conf` lifts the proxy's
+  1 MB default for bulk uploads and ships with every deploy.
+
+### If a deploy fails
+
+Open the failed run in the Actions tab and find the first red step. Then check
+what the site is actually running, because a failure does not always mean the
+old version is still live:
+
+```bash
+aws elasticbeanstalk describe-environments --application-name gooddriver \
+  --environment-names team13-gooddriver --region us-east-1 \
+  --query 'Environments[0].[Status,Health,VersionLabel]' --output text
+```
+
+| Red step | What it means | What to do |
+|---|---|---|
+| **Run the full test suite** | A test failed. AWS was not touched and the site is unchanged. | Fix it on a branch and merge again. |
+| **Build the deploy bundle** | An env file was committed. Nothing was uploaded. | Remove the file from git and change every secret that was in it, since it is in the history. |
+| **Configure AWS credentials** | The AWS secrets are wrong or expired. The site is unchanged. | Replace them as described above, then use **Run workflow**. |
+| **Upload the bundle** or **Deploy the version** | AWS refused the version, the update failed, or it did not finish within about 20 minutes. | Read the events the step printed, or the environment's **Events** and **Logs -> Request logs** pages in the AWS console. If the problem was temporary, use **Re-run jobs** on the run. |
+| **Smoke test the live health check** | The new version is live, but `/health` did not answer 200. **The site may be down.** | Open `/health` yourself. A 503 means the app is up but cannot reach the database, so check RDS and the environment properties. No answer means the app did not start, so read the logs. Roll back if it will take a while. |
+
+**To roll back,** pick whichever is quicker:
+
+- **Redeploy the last good version.** In the AWS console open the application's
+  **Application versions** page, select the previous `gh-...` version, and click
+  **Deploy**. The same thing from the command line:
+  ```bash
+  aws elasticbeanstalk update-environment --environment-name team13-gooddriver \
+    --region us-east-1 --version-label <previous-version-label>
+  ```
+- **Revert the merge on GitHub.** Merging the revert into `master` runs the
+  normal tests and deploy, and it also keeps the code on `master` matching the
+  site. If you rolled back with the first option, do this as well, or the next
+  deploy brings the problem back.
+
+Rolling back does not undo a database change. That is another reason to keep
+changes additive, so the old code still runs against the new database.

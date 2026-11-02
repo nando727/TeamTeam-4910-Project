@@ -176,3 +176,20 @@ CREATE TABLE IF NOT EXISTS sponsor_removal_alerts (
   INDEX idx_removal_alert_driver (driver_id, acknowledged_at),
   FOREIGN KEY (driver_id) REFERENCES users(id)
 );
+
+-- The 1% monthly fee each sponsor owes (see migration 018). Keep this text the
+-- same as the migration; tests/sponsor-fees.test.js checks that it is.
+DROP PROCEDURE IF EXISTS sponsor_monthly_fees;
+CREATE PROCEDURE sponsor_monthly_fees(IN p_month_start DATE, IN p_sponsor_id INT)
+  READS SQL DATA
+  SELECT s.id, s.name, s.status,
+         COUNT(p.id) AS purchases,
+         COALESCE(SUM(p.amount_cents), 0) AS totalCents,
+         ROUND(COALESCE(SUM(p.amount_cents), 0) * 0.01) AS feeCents
+  FROM sponsors s
+  LEFT JOIN purchases p ON p.sponsor_id = s.id
+    AND p.purchased_at >= p_month_start
+    AND p.purchased_at < p_month_start + INTERVAL 1 MONTH
+  WHERE p_sponsor_id IS NULL OR s.id = p_sponsor_id
+  GROUP BY s.id, s.name, s.status
+  ORDER BY s.name, s.id;

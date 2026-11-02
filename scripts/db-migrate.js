@@ -1,9 +1,48 @@
 // Applies additive migrations in db/migrations/ on top of db/schema.sql.
 // Usage: npm run db:migrate
+// Every migration runs on every run, so each must be safe to rerun. Migration
+// 008 is the exception and is handled in applyMigrations below.
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
+
+async function tableExists(conn, table) {
+  const [rows] = await conn.query(
+    'SELECT COUNT(*) AS count FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+    [table]
+  );
+  return Number(rows[0].count) > 0;
+}
+
+async function applyMigrations(conn, migrationsDir = path.join(__dirname, '..', 'db', 'migrations')) {
+  const files = fs
+    .readdirSync(migrationsDir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+
+  for (const file of files) {
+    if (file === '008_driver_sponsors.sql') {
+      // 008 created the membership table and filled it from approved
+      // applications, once. Running that again would bring back sponsorships an
+      // admin has since removed, and drivers may now have several sponsors, so
+      // it only runs on a database that has no membership table yet.
+      if (await tableExists(conn, 'driver_sponsors')) {
+        console.log(`Skipped migration: ${file} (memberships already exist)`);
+        continue;
+      }
+      const [conflicts] = await conn.query(
+        "SELECT driver_id FROM sponsor_applications WHERE status = 'approved' GROUP BY driver_id HAVING COUNT(DISTINCT sponsor_id) > 1"
+      );
+      if (conflicts.length) {
+        throw new Error('Some drivers have multiple approved sponsors. Resolve those application decisions before running membership migration 008.');
+      }
+    }
+    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+    await conn.query(sql);
+    console.log(`Applied migration: ${file}`);
+  }
+}
 
 async function main() {
   const dbName = process.env.DB_NAME;
@@ -37,25 +76,7 @@ async function main() {
       email: 'VARCHAR(255) NULL',
     });
 
-    const migrationsDir = path.join(__dirname, '..', 'db', 'migrations');
-    const files = fs
-      .readdirSync(migrationsDir)
-      .filter((f) => f.endsWith('.sql'))
-      .sort();
-
-    for (const file of files) {
-      if (file === '008_driver_sponsors.sql') {
-        const [conflicts] = await conn.query(
-          "SELECT driver_id FROM sponsor_applications WHERE status = 'approved' GROUP BY driver_id HAVING COUNT(DISTINCT sponsor_id) > 1"
-        );
-        if (conflicts.length) {
-          throw new Error('Some drivers have multiple approved sponsors. Resolve those application decisions before running membership migration 008.');
-        }
-      }
-      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
-      await conn.query(sql);
-      console.log(`Applied migration: ${file}`);
-    }
+    await applyMigrations(conn);
 
     // Compatibility for the earlier local driver table only. Main's sponsor
     // definition is authoritative; existing contact values are never replaced.
@@ -89,7 +110,11 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { applyMigrations };

@@ -1,0 +1,87 @@
+<%# Stories AD-31 and AD-32: totals by sponsor or driver, and sales over time, as
+    inline SVG. Both cover every filtered row. /report.js adds hover and focus
+    tooltips; the values are also in the labels and the table under each chart. %>
+<% if (byEntity && byEntity.single) { %>
+  <h2 class="section-title">Total sales<%= rangeLabel %></h2>
+  <div class="totals totals--single">
+    <div class="total">
+      <span class="total__label"><%= byEntity.single.name %><br><span class="muted small"><%= byEntity.single.sales.toLocaleString('en-US') %> sale<%= byEntity.single.sales === 1 ? '' : 's' %>, <%= byEntity.single.points.toLocaleString('en-US') %> points</span></span>
+      <span class="total__value"><%= dollars(byEntity.single.totalCents) %></span>
+    </div>
+  </div>
+<% } else if (byEntity) { %>
+  <h2 class="section-title"><%= byEntity.folded ? `Top ${byEntity.shownCount} ${byEntity.noun}s by sales` : `Sales by ${byEntity.noun}` %><%= rangeLabel %></h2>
+  <figure class="chart">
+    <div class="chart__scroll">
+      <svg class="chart__svg chart__svg--fit" viewBox="0 0 <%= byEntity.W %> <%= byEntity.H %>" role="group" aria-label="<%= byEntity.summary %>">
+        <% byEntity.bars.forEach(bar => { %>
+          <g class="chart__mark" tabindex="0" role="img" aria-label="<%= bar.spoken %>" data-tip-value="<%= bar.value %>" data-tip-label="<%= bar.tipLabel %>">
+            <rect class="chart__hit" x="<%= bar.hit.x %>" y="<%= bar.hit.y %>" width="<%= bar.hit.w %>" height="<%= bar.hit.h %>"/>
+            <text class="chart__label" x="<%= byEntity.L - 10 %>" y="<%= bar.centerY %>" text-anchor="end" dominant-baseline="middle"><%= bar.label %></text>
+            <% if (bar.d) { %><path class="chart__bar chart__bar--sales<%= bar.other ? ' chart__bar--other' : '' %>" d="<%= bar.d %>"/><% } %>
+            <text class="chart__value" x="<%= bar.valueX %>" y="<%= bar.centerY %>" dominant-baseline="middle"><%= bar.value %></text>
+          </g>
+        <% }); %>
+        <line class="chart__zero" x1="<%= byEntity.L %>" x2="<%= byEntity.L %>" y1="<%= byEntity.T %>" y2="<%= byEntity.H - byEntity.B %>"/>
+      </svg>
+    </div>
+    <figcaption class="chart__legend">
+      <span>Total dollars per <%= byEntity.noun %>, largest first.<% if (byEntity.notShown) { %> <%= byEntity.notShown.toLocaleString('en-US') %> <%= byEntity.noun %><%= byEntity.notShown === 1 ? '' : 's' %> with no sales <%= byEntity.notShown === 1 ? 'is' : 'are' %> not shown.<% } %></span>
+    </figcaption>
+    <details class="chart__data">
+      <summary>Show this chart as a table</summary>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th scope="col"><%= byEntity.noun === 'driver' ? 'Driver' : 'Sponsor' %></th><th scope="col" class="num">Total</th><th scope="col" class="num">Sales</th><th scope="col" class="num">Points spent</th></tr></thead>
+          <tbody>
+            <% byEntity.bars.forEach(bar => { %>
+              <tr><th scope="row"><%= bar.name %></th><td class="num"><%= bar.value %></td><td class="num"><%= bar.sales.toLocaleString('en-US') %></td><td class="num"><%= bar.points.toLocaleString('en-US') %></td></tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </figure>
+<% } %>
+
+<% if (overTime) { %>
+  <h2 class="section-title">Sales over time<%= rangeLabel %></h2>
+  <figure class="chart">
+    <div class="chart__scroll">
+      <svg class="chart__svg chart__svg--fit" viewBox="0 0 <%= overTime.W %> <%= overTime.H %>" role="group" aria-label="<%= overTime.summary %>">
+        <% overTime.ticks.forEach(tick => { %>
+          <line class="chart__grid" x1="<%= overTime.L %>" x2="<%= overTime.W - overTime.R %>" y1="<%= tick.y %>" y2="<%= tick.y %>"/>
+          <text class="chart__tick" x="<%= overTime.L - 8 %>" y="<%= tick.y %>" text-anchor="end" dominant-baseline="middle"><%= tick.label %></text>
+        <% }); %>
+        <% overTime.bars.forEach(bar => { %>
+          <g class="chart__mark" tabindex="0" role="img" aria-label="<%= bar.spoken %>" data-tip-value="<%= bar.value %>" data-tip-label="<%= bar.tipLabel %>">
+            <rect class="chart__hit" x="<%= bar.hit.x %>" y="<%= bar.hit.y %>" width="<%= bar.hit.w %>" height="<%= bar.hit.h %>"/>
+            <% if (bar.d) { %><path class="chart__bar chart__bar--sales" d="<%= bar.d %>"/><% } %>
+          </g>
+        <% }); %>
+        <line class="chart__zero" x1="<%= overTime.L %>" x2="<%= overTime.W - overTime.R %>" y1="<%= overTime.baseY %>" y2="<%= overTime.baseY %>"/>
+        <text class="chart__value" x="<%= overTime.peak.x %>" y="<%= overTime.peak.y %>" text-anchor="middle"><%= overTime.peak.value %></text>
+        <% overTime.xLabels.forEach(label => { %>
+          <text class="chart__tick" x="<%= label.x %>" y="<%= overTime.H - 8 %>" text-anchor="middle"><%= label.label %></text>
+        <% }); %>
+      </svg>
+    </div>
+    <figcaption class="chart__legend">
+      <span>Total dollars per <%= overTime.unit %>. The highest is <%= overTime.peak.value %> <%= overTime.peak.when %>.</span>
+    </figcaption>
+    <details class="chart__data">
+      <summary>Show this chart as a table</summary>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th scope="col"><%= overTime.unit === 'day' ? 'Day' : overTime.unit === 'week' ? 'Week' : 'Month' %></th><th scope="col" class="num">Total</th><th scope="col" class="num">Sales</th></tr></thead>
+          <tbody>
+            <% overTime.bars.forEach(bar => { %>
+              <tr><th scope="row"><%= bar.name %></th><td class="num"><%= bar.value %></td><td class="num"><%= bar.sales.toLocaleString('en-US') %></td></tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">Only periods with sales are listed.</p>
+    </details>
+  </figure>
+<% } %>
