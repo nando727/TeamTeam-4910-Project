@@ -573,6 +573,7 @@ a.status-badge:hover { filter: brightness(0.97); }
 .swatch--line { background: var(--blue); height: 3px; vertical-align: 2px; }
 
 .report-status { display: flex; align-items: center; gap: 10px; margin: 12px 0 0; color: var(--blue); font-weight: 600; }
+.report-status[hidden] { display: none; }
 .spinner {
   width: 16px; height: 16px; border-radius: 50%; flex: none;
   border: 2.5px solid var(--blue-soft); border-top-color: var(--blue); animation: spin 0.8s linear infinite;
@@ -633,3 +634,27 @@ input[type="file"] { padding: 9px 12px; background: var(--surface-muted); }
 .confirm-box h2 { margin-top: 0; color: var(--red); }
 .confirm-box .button-row form { margin: 0; }
 .confirm-box .button-row button { width: 100%; margin-top: 0; }
+
+/* ---- Sales charts (stories AD-31, AD-32) ------------------------------------- */
+
+.totals--single { grid-template-columns: minmax(0, 440px); }
+.chart__scroll { overflow-x: auto; }
+.chart__svg--fit { aspect-ratio: auto; min-width: 640px; }
+.chart__hit { fill: transparent; }
+.chart__mark { cursor: default; outline: none; }
+.chart__mark:hover .chart__hit, .chart__mark:focus .chart__hit { fill: var(--blue-soft); }
+.chart__mark:focus-visible .chart__hit { stroke: var(--blue); stroke-width: 1.5; }
+.chart__bar--sales { fill: var(--blue); }
+.chart__bar--other { fill: var(--muted); opacity: 0.6; }
+.chart__label { fill: var(--text); font-size: 12px; }
+.chart__value { fill: var(--text); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chart__data { margin-top: 8px; font-size: 0.9rem; }
+.chart__data summary { cursor: pointer; color: var(--blue); font-weight: 600; }
+.chart__data .table { margin-top: 8px; }
+.chart__data tbody th { font-weight: 500; text-align: left; }
+.chart-tip {
+  position: fixed; z-index: 60; max-width: 280px; padding: 6px 10px; pointer-events: none;
+  border-radius: var(--radius-sm); background: var(--navy-deep); color: #c9d6e8; font-size: 0.82rem; box-shadow: var(--shadow);
+}
+.chart-tip[hidden] { display: none; }
+.chart-tip strong { display: block; color: #fff; font-size: 0.98rem; }

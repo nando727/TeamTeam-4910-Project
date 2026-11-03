@@ -36,8 +36,8 @@
       <div class="filters__field">
         <label for="version">Version</label>
         <select id="version" name="version">
-          <option value="summary" <%= isSummary ? 'selected' : '' %>>Summary: totals per sponsor</option>
-          <option value="detailed" <%= !isSummary ? 'selected' : '' %>>Detailed: every purchase</option>
+          <option value="summary" <%= isSummary ? 'selected' : '' %>>Summary</option>
+          <option value="detailed" <%= !isSummary ? 'selected' : '' %>>Detailed</option>
         </select>
       </div>
       <div class="filters__actions">
@@ -60,6 +60,8 @@
     <p class="report-status" id="report-status" role="status" aria-live="polite" hidden>
       <span class="spinner" aria-hidden="true"></span> <span class="report-status__text">Generating report…</span>
     </p>
+
+    <%- include('../partials/sales-charts', { byEntity, overTime, rangeLabel, dollars }) %>
 
     <div class="report-bar">
       <span class="muted small">

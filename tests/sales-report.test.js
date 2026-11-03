@@ -80,6 +80,15 @@ beforeEach(() => {
       return rows;
     };
 
+    if (sql.startsWith("SELECT DATE_FORMAT(p.purchased_at, '%Y-%m-%d') AS day")) {
+      const days = new Map();
+      for (const p of detailFiltered()) {
+        const d = days.get(p.day) || { day: p.day, sales: 0, cents: 0 };
+        d.sales += 1; d.cents += p.cents; days.set(p.day, d);
+      }
+      expect(sql).not.toContain('LIMIT');
+      return [...days.values()].sort((a, b) => a.day.localeCompare(b.day)).map(d => ({ day: d.day, sales: d.sales, totalCents: String(d.cents) }));
+    }
     if (sql.startsWith('SELECT s.id, s.name, s.status, COUNT(p.id) AS sales')) {
       // Summary: dates live in the JOIN (params first), sponsor in the WHERE (param last).
       let { rows, i } = inRange(purchases, 0);
@@ -119,7 +128,11 @@ async function login(username) {
   await agent.post('/login').type('form').send({ username, password: PASSWORD }).expect(302);
   return agent;
 }
-const bodyRows = page => (page.text.match(/<tbody>[\s\S]*?<\/tbody>/) || [''])[0].split('<tr').length - 1;
+// The report's own table; the charts have tables of their own above it.
+const reportTable = page => page.text.slice(page.text.indexOf('table table--sortable'));
+const bodyRows = page => (reportTable(page).match(/<tbody>[\s\S]*?<\/tbody>/) || [''])[0].split('<tr').length - 1;
+const firstRow = page => reportTable(page).match(/<tbody>[\s\S]*?<\/tr>/)[0];
+const chartLabels = page => [...page.text.matchAll(/class="chart__label"[^>]*>([^<]+)</g)].map(match => match[1]);
 const lastQuery = prefix => db.query.mock.calls.filter(([sql]) => sql.startsWith(prefix)).pop();
 const csvLines = res => res.text.replace(/^﻿/, '').trim().split('\r\n');
 
@@ -178,7 +191,7 @@ describe('AD-28 / AD-29: versions and their fields', () => {
     expect(bodyRows(page)).toBe(7);
     expect(page.text).toContain('Version</dt><dd>Detailed, one row per purchase</dd>');
     expect(page.text).toContain('Results</dt><dd>7 sales</dd>');
-    const first = page.text.match(/<tbody>[\s\S]*?<\/tr>/)[0];
+    const first = firstRow(page);
     expect(first).toContain('2026-10-22 15:00');
     expect(first).toContain('Northstar Freight');
     expect(first).toContain('Theo Trucker');
@@ -273,7 +286,7 @@ describe('sorting and paging', () => {
     const agent = await login('admin1');
     const page = await agent.get('/reports/sales?sort=dollars&dir=desc').expect(200);
     expect(lastQuery('SELECT s.id, s.name, s.status')[0]).toContain('ORDER BY totalCents DESC, s.name ASC, s.id ASC');
-    expect(page.text.match(/<tbody>[\s\S]*?<\/tr>/)[0]).toContain('Northstar Freight');
+    expect(firstRow(page)).toContain('Northstar Freight');
     expect(page.text).toContain('href="/reports/sales?version=summary&amp;sort=dollars&amp;dir=asc"');
     expect(page.text).toContain('Sorted by</dt><dd>total dollars, descending</dd>');
   });
@@ -282,7 +295,7 @@ describe('sorting and paging', () => {
     const agent = await login('admin1');
     const byAmount = await agent.get('/reports/sales?version=detailed&sort=amount&dir=asc').expect(200);
     expect(lastQuery('SELECT p.id')[0]).toContain('ORDER BY p.amount_cents ASC, p.id DESC');
-    expect(byAmount.text.match(/<tbody>[\s\S]*?<\/tr>/)[0]).toContain('$12.99');
+    expect(firstRow(byAmount)).toContain('$12.99');
     await agent.get('/reports/sales?version=detailed&sort=item&dir=desc').expect(200);
     expect(lastQuery('SELECT p.id')[0]).toContain('ORDER BY p.description DESC');
     await agent.get('/reports/sales?version=detailed&sort=driver').expect(200);
@@ -315,9 +328,65 @@ describe('sorting and paging', () => {
       const csv = await agent.get('/reports/sales.csv?version=detailed&sort=item&dir=asc').expect(200);
       expect(csvLines(csv)).toHaveLength(33);
       expect(lastQuery('SELECT p.id')[0]).not.toContain('LIMIT');
+      // The charts on page 1 count all 31 purchases, not the 25 in the table.
+      expect(first.text).toMatch(/<th scope="row">Demo Sponsor<\/th><td class="num">\$162\.40<\/td><td class="num">16<\/td>/);
+      expect(first.text).toMatch(/<th scope="row">Northstar Freight<\/th><td class="num">\$152\.25<\/td><td class="num">15<\/td>/);
     } finally {
       purchases.splice(0, purchases.length, ...saved);
     }
+  });
+});
+
+describe('AD-31: charts', () => {
+  test('both versions show totals by sponsor, largest first, and sales over time', async () => {
+    const agent = await login('admin1');
+    for (const version of ['summary', 'detailed']) {
+      const page = await agent.get(`/reports/sales?version=${version}`).expect(200);
+      expect(page.text).toContain('<h2 class="section-title">Sales by sponsor</h2>');
+      expect(chartLabels(page)).toEqual(['Northstar Freight', 'Demo Sponsor']);
+      expect(page.text).toContain('data-tip-value="$188.49" data-tip-label="Northstar Freight, 3 sales, 1,885 points"');
+      expect(page.text).toContain('1 sponsor with no sales is not shown.');
+      expect(page.text).toContain('<h2 class="section-title">Sales over time</h2>');
+      expect(page.text).toContain('Total dollars per week. The highest is $129.99 in the week of Oct 15, 2026.');
+      expect(page.text).toContain('Show this chart as a table');
+      expect(page.text).toContain('<script src="/report.js" defer></script>');
+    }
+  });
+
+  test('sorting and paging the table leave the charts alone', async () => {
+    const agent = await login('admin1');
+    const page = await agent.get('/reports/sales?sort=sponsor&dir=desc').expect(200);
+    expect(chartLabels(page)).toEqual(['Northstar Freight', 'Demo Sponsor']);
+    expect(page.text.indexOf('class="chart__svg')).toBeLessThan(page.text.indexOf('table table--sortable'));
+  });
+
+  test('the charts follow the date filter', async () => {
+    const agent = await login('admin1');
+    const page = await agent.get('/reports/sales?from=2026-10-11&to=2026-10-19').expect(200);
+    expect(page.text).toContain('<h2 class="section-title">Sales by sponsor from 2026-10-11 to 2026-10-19</h2>');
+    expect(page.text).toContain('data-tip-value="$129.99" data-tip-label="Northstar Freight, 1 sale, 1,300 points"');
+    expect(page.text).toContain('data-tip-value="$83.99" data-tip-label="Demo Sponsor, 2 sales, 840 points"');
+    expect(page.text).toContain('Total dollars per day. The highest is $129.99 on Oct 19, 2026.');
+  });
+
+  test('one sponsor is a figure instead of a one-bar chart, and sales over time narrows to it', async () => {
+    const agent = await login('admin1');
+    const page = await agent.get('/reports/sales?sponsor=1').expect(200);
+    expect(page.text).toContain('<h2 class="section-title">Total sales</h2>');
+    expect(page.text).toContain('<span class="total__value">$186.97</span>');
+    expect(page.text).toContain('4 sales, 1,870 points');
+    expect(chartLabels(page)).toEqual([]);
+    expect(page.text).toContain('<h2 class="section-title">Sales over time</h2>');
+    expect(page.text).not.toContain('$129.99');
+  });
+
+  test('no charts when there are no sales or the filters are invalid', async () => {
+    const agent = await login('admin1');
+    const empty = await agent.get('/reports/sales?from=2026-01-01&to=2026-01-31').expect(200);
+    expect(empty.text).not.toContain('class="chart__svg');
+    expect(empty.text).toContain('No sales from 2026-01-01 to 2026-01-31');
+    const bad = await agent.get('/reports/sales?from=2026-02-30').expect(400);
+    expect(bad.text).not.toContain('class="chart__svg');
   });
 });
 

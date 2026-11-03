@@ -1,5 +1,8 @@
 -- Driver memberships are separate from users.sponsor_id, which identifies
--- the organization a sponsor-role user manages. A driver can join one sponsor.
+-- the organization a sponsor-role user manages. A driver could join one sponsor
+-- when this was written; migration 014 lifts that. `npm run db:migrate` runs
+-- this file only when the table does not exist yet, because the backfill below
+-- would otherwise bring back sponsorships an admin has removed.
 CREATE TABLE IF NOT EXISTS driver_sponsors (
   driver_id INT NOT NULL,
   sponsor_id INT NOT NULL,

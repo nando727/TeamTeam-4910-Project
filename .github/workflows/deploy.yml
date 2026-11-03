@@ -125,13 +125,13 @@ jobs:
           fi
           echo "Environment is Ready on $VERSION (health: $HEALTH)"
 
-      # /about is public and reads from the database, so a 200 here means the
-      # new code is serving requests and can reach RDS.
-      - name: Smoke test the live About page
+      # /health is public and checks the database, so a 200 here means the new
+      # code is serving requests and can reach RDS. It answers 503 if it cannot.
+      - name: Smoke test the live health check
         run: |
           CNAME=$(aws elasticbeanstalk describe-environments \
             --application-name "$EB_APPLICATION" --environment-names "$EB_ENVIRONMENT" \
             --query 'Environments[0].CNAME' --output text)
           curl --fail --silent --show-error --retry 6 --retry-delay 10 --retry-all-errors \
-            --max-time 20 --output /dev/null --write-out "GET /about -> HTTP %{http_code}\n" \
-            "http://$CNAME/about"
+            --max-time 20 --output /dev/null --write-out "GET /health -> HTTP %{http_code}\n" \
+            "http://$CNAME/health"
