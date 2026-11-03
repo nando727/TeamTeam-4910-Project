@@ -446,6 +446,24 @@ undelivered message in the log rather than as an error for the visitor. Either
 verify each recipient or ask AWS for production access before relying on it in
 front of an audience.
 
+#### Checking it reaches a real inbox
+
+`npm run mail:test -- you@verified.example` sends the account notices (story
+22227) to an address you choose, through the SMTP settings in `.env`. Add
+`password` or `email` to send just one of them.
+
+It touches no database and changes nobody's password: the notice functions are
+handed a made-up account row whose address is the recipient, so the text that
+arrives is composed by the same code the app runs. It refuses up front when a
+`MAIL_*` setting is missing &mdash; naming only the settings, never the values
+&mdash; because `sendMail()` would otherwise fall back to the log and the
+script would report a success that delivered nothing. A send that SES rejects
+exits non-zero and says so.
+
+SES needs **SMTP credentials** for `MAIL_USER` / `MAIL_PASSWORD`, created in
+the SES console. They are not the same as `AWS_ACCESS_KEY_ID`, and the raw IAM
+key will not authenticate against the SMTP endpoint.
+
 #### The form cannot be used to fill an inbox
 
 Anyone can post a username to `/forgot-password` as often as they like, and

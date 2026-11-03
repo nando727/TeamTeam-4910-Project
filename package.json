@@ -12,6 +12,7 @@
     "dev": "node --watch-path=src --watch-path=scripts src/server.js",
     "test": "vitest",
     "test-run": "vitest run",
+    "mail:test": "node scripts/send-test-notice.js",
     "db:setup": "node scripts/db-setup.js",
     "db:migrate": "node scripts/db-migrate.js",
     "db:seed": "node scripts/seed.js",
