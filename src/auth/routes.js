@@ -6,7 +6,9 @@ const { takeReturnTo } = require('./return-to');
 const { requireFormToken } = require('./form-token');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./password-policy');
 const { updateUserPassword, revokeSessions } = require('../users/store');
-const { createResetToken, findValidReset, consumeReset, TOKEN_PATTERN, EXPIRY_MINUTES } = require('./password-reset');
+const {
+  createResetToken, findValidReset, consumeReset, requestsExhausted, TOKEN_PATTERN, EXPIRY_MINUTES,
+} = require('./password-reset');
 const { sendPasswordResetLink } = require('./mailer');
 const { checkLockout, lockoutMessage, lockoutGuidance } = require('./lockout');
 
@@ -258,12 +260,20 @@ router.post('/forgot-password', async (req, res, next) => {
     // Only active accounts get a link, but the page says the same thing either
     // way so it cannot be used to discover which usernames exist.
     if (user && user.status === 'active') {
-      const token = await createResetToken(user.id);
-      const base = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
-      await sendPasswordResetLink({
-        username: user.username, email: user.email,
-        link: `${base}/reset-password/${token}`, expiryMinutes: EXPIRY_MINUTES,
-      });
+      // Story AA-20: enough links for now. The visitor is told the same thing
+      // either way -- a "too many requests" message here would answer the
+      // question the rest of this page refuses to answer, which is whether
+      // the account exists. The server log is where this is visible.
+      if (await requestsExhausted(user.id)) {
+        console.log(`[password-reset] ${user.username} has reached the request limit; no link sent`);
+      } else {
+        const token = await createResetToken(user.id);
+        const base = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
+        await sendPasswordResetLink({
+          username: user.username, email: user.email,
+          link: `${base}/reset-password/${token}`, expiryMinutes: EXPIRY_MINUTES,
+        });
+      }
     }
     renderForgot(req, res, { sent: true });
   } catch (err) { next(err); }
@@ -305,7 +315,8 @@ router.post('/reset-password/:token', async (req, res, next) => {
 
     // Spend the token before writing, so a second submit with the same link fails.
     if (!(await consumeReset(reset.id))) return renderReset(req, res, null, { status: 404 });
-    await updateUserPassword(reset.userId, newPassword);
+    // Nobody is signed in: whoever opened the emailed link did this.
+    await updateUserPassword(reset.userId, newPassword, { method: 'reset-link' });
     // Backlog AA-14: whoever was signed in as this account is signed out.
     // That is the point of resetting a password you think someone else knows.
     await revokeSessions(reset.userId);

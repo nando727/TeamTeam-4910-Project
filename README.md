@@ -418,6 +418,196 @@ link, chooses their own password, and is sent to the login page.
 Links expire after 48 hours; set `SETUP_LINK_HOURS` in `.env` to change that.
 A link works once: reusing it shows a "no longer works" page.
 
+### Reset links are emailed (story 22222)
+
+**Forgot your password?** on the sign-in page takes a username, and a link to
+choose a new password is emailed to the address on the account. The link is
+random, stored only as a SHA-256 hash, expires after 30 minutes and works
+once; issuing one retires any earlier unused link, so at most one is live.
+
+Mail goes through `sendMail()` (`src/mail/mailer.js`), which has a real `smtp`
+transport using nodemailer. `MAIL_TRANSPORT` chooses: `console` stays the
+default so a fresh checkout needs no mail settings and still shows the link in
+the server log. With `smtp` selected but settings missing, the app **says which
+ones are missing and falls back to the log** &mdash; a link that reaches
+neither the inbox nor the log is the worst of both. Only the names of the
+settings are ever logged, never the values; one of them is the password.
+
+The connection has explicit timeouts (10s connect, 10s greeting, 15s socket).
+A visitor is waiting on this request, and an SMTP server that accepts the
+connection and then goes quiet would otherwise hold the page open for minutes.
+A send that fails is logged and recorded as undelivered, and the thing that
+triggered it still succeeds: an account is created whether or not its mail got
+out.
+
+**In SES's sandbox, mail only reaches verified addresses.** A reset to an
+unverified inbox is refused with `554 Message rejected`, which shows up as an
+undelivered message in the log rather than as an error for the visitor. Either
+verify each recipient or ask AWS for production access before relying on it in
+front of an audience.
+
+#### Checking it reaches a real inbox
+
+`npm run mail:test -- you@verified.example` sends the account notices (story
+22227) to an address you choose, through the SMTP settings in `.env`. Add
+`password` or `email` to send just one of them.
+
+It touches no database and changes nobody's password: the notice functions are
+handed a made-up account row whose address is the recipient, so the text that
+arrives is composed by the same code the app runs. It refuses up front when a
+`MAIL_*` setting is missing &mdash; naming only the settings, never the values
+&mdash; because `sendMail()` would otherwise fall back to the log and the
+script would report a success that delivered nothing. A send that SES rejects
+exits non-zero and says so.
+
+SES needs **SMTP credentials** for `MAIL_USER` / `MAIL_PASSWORD`, created in
+the SES console. They are not the same as `AWS_ACCESS_KEY_ID`, and the raw IAM
+key will not authenticate against the SMTP endpoint.
+
+#### The form cannot be used to fill an inbox
+
+Anyone can post a username to `/forgot-password` as often as they like, and
+every post used to be another email to somebody who never asked for one. An
+account can now be sent **3 links per 15 minutes** (`RESET_LINK_MAX_REQUESTS`,
+`RESET_LINK_WINDOW_MINUTES`); a few in a row are legitimate, since the first
+may have gone to spam.
+
+The count comes from the `password_resets` rows the requests already leave
+behind, so there is no new table and nothing to clean up, and the comparison
+stays in SQL against the database's own clock.
+
+**A refused request looks exactly like an accepted one.** "Too many requests"
+would answer the question the rest of this page works to refuse: whether that
+account exists. The refusal is visible in the server log instead, and
+`tests/forgot-password-limit.test.js` compares the two responses body for body,
+and against the response for a username that was never real.
+
+What this does not cover: someone cycling through *different* usernames. That
+needs the request's origin, which `password_resets` does not record &mdash; a
+column and a migration, worth its own story rather than being tacked on here.
+
+### Password changes are recorded (audit log requirement)
+
+Every password that gets set writes a row to `password_changes` (migration
+019): whose password it was, who changed it, how, and when. **Never the
+password and never its hash.**
+
+Nothing recorded this before. `password_resets` looks like it does, but it
+holds reset *tokens* &mdash; it says a link was requested, not that a password
+was ever changed, and it knows nothing about an administrator's reset or
+someone changing their own.
+
+`method` is one of `profile`, `admin-reset`, `reset-link` or `setup-link`.
+Anything else is written as `unknown` rather than dropped: a password change
+nobody can account for is precisely what the log exists to surface, so it must
+never be the quiet case. A caller that passes no method at all gets the same
+treatment, which is what makes this safe to rely on when a fifth path appears.
+
+`changed_by_user_id` is NULL where nobody was signed in &mdash; a reset link or
+a setup link, where the link itself is the credential. Where somebody was, it
+is **the person at the keyboard**: an administrator who is impersonating a
+driver and changes that driver's password is recorded as the administrator,
+not as the driver whose session it technically is. A log that names the wrong
+person is worse than no log.
+
+The row is written after the password, so the log only claims changes that
+happened. The two statements are not in one transaction: if the insert fails,
+the request errors with the password already changed and nothing recorded. A
+transaction is the honest fix and would need a helper in `src/db.js`, which
+every other feature would then want too &mdash; worth its own story rather than
+being smuggled in here.
+
+### The owner is told when a password changes (story 22227)
+
+Every password change emails the account: **what changed, when, and how**, with
+nothing a thief could use &mdash; never the password, never its hash, never a
+token. The wording differs per method, because "was that reset mine?" can only
+be answered if a change the owner made reads differently from one made for
+them: from your profile page, by an administrator, or using a reset link.
+
+Without this, a stolen reset is silent. An attacker with access to an inbox
+resets the password, and the real user's first clue is their own password
+failing &mdash; after the attacker has already been in.
+
+Like the audit row and the setup-link voiding, the notice hangs off
+`updateUserPassword()` rather than the four routes that set a password: a
+notice each route has to remember is one that goes missing the first time a
+fifth path appears, and the path that forgets would be the one worth using.
+The wording lives in `src/auth/password-notice.js`, which never touches the
+database &mdash; the store passes it the account row it has already loaded.
+
+A **setup link is the one quiet method**: whoever used it is the person
+choosing the password and is still in front of the form. Everything else is
+announced, including a method this code does not recognise, so silence is never
+the default. An account with no address on file logs a line and sends nothing,
+rather than mailing the `(no email on file)` placeholder at a real SMTP server.
+
+Sending cannot fail the change. `sendMail()` already turns a dead mail server
+into a logged error, so a password the owner asked to change stays changed even
+when the notice does not go out &mdash; `tests/password-change-notice.test.js`
+covers that with a transport that throws.
+
+The timestamp is this process's clock, formatted in UTC and labelled as such.
+Reading `changed_at` back out of the audit row would mean a MySQL `DATETIME`
+crossing into Node, which has already cost this app two fixes; the mail is
+composed within a second of the write, which is close enough for a human
+deciding whether they recognise the change.
+
+The "this was not you" link needs `APP_BASE_URL`, since there is no request
+here to borrow a host from. Without it the mail names the **Forgot password**
+link on the sign-in page instead of pointing at a `localhost` URL the reader
+cannot open.
+
+#### A changed address is announced to the old one
+
+The notice above is only worth something if the address it goes to cannot be
+swapped quietly first. It could: someone with a session points the account at
+their own inbox, uses **Forgot your password?**, and receives both the reset
+link and the warning about it. The owner hears nothing at any point.
+
+So changing the email on an account mails **the address being replaced**, which
+is the last one that still reaches the owner. It shows both addresses, says a
+signed-in session made the change, and says to tell an administrator &mdash;
+not to reset the password, which no longer helps once the links go elsewhere.
+
+`notifyEmailChanged()` (`src/auth/contact-notice.js`) hangs off
+`updateUserContact()`, the one function all three editing paths go through (the
+profile page, the JSON profile endpoint, and the member page). It needs no
+query of its own: that function already loads the account before and after the
+write, so the notice is handed both rows. Nothing is sent when only the name
+changed, when the address was resubmitted unchanged, when the account had no
+address to begin with, or when the write was refused as a duplicate &mdash;
+`tests/email-change-notice.test.js` covers each.
+
+### Setting a password voids the setup link (story 22225)
+
+An unused setup link dies the moment the account gets a password, however that
+happens: the admin's **Reset**, the user changing their own password, a reset
+by emailed link, or claiming the account through a different link.
+
+It used to survive. An account created with a link and then given a password
+another way &mdash; most likely the visitor ignoring the link and using "forgot
+password" instead &mdash; kept a working setup link until it expired, and
+anyone holding that link (a forwarded email, a shared inbox, the server log it
+is printed to) could set the password again and take the account over.
+
+The voiding lives in `updateUserPassword()` (`src/users/store.js`), not in the
+four routes that call it. Claiming an account used to write its own hash and
+its own `UPDATE`, so the first commit of this story routed that through the
+same function: there is now exactly one place in the codebase where a password
+is written, and anything that must happen whenever one is set has one home. A
+fifth path cannot forget it.
+
+**The link is spent before the new password is stored**, deliberately. If the
+write fails in between, the worst case is a spent link an administrator can
+resend. The other order fails the wrong way round: a failed void leaves a live
+link to an account whose password has just changed, which is the hole this
+closes. `tests/setup-link-voided.test.js` pins the order down, because it reads
+like an arbitrary choice and is not one.
+
+Voiding marks the row used; it never deletes it. The record that a link was
+issued is part of the account's history.
+
 ## Driver point history (DF-17, DF-20, DF-22)
 
 Drivers can open **View my point history** from their homepage or **My sponsor

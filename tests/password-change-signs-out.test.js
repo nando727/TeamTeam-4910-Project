@@ -45,6 +45,11 @@ beforeEach(() => {
 
     // --- passwords ---
     if (sql.startsWith('UPDATE users SET password_hash')) return { affectedRows: 1 };
+    // Story 22225: setting a password spends any unused setup link for the
+    // account. Nothing here was sent one.
+    if (sql.startsWith('UPDATE setup_tokens SET used_at')) return { affectedRows: 0 };
+    // Audit log requirement: every password change is recorded.
+    if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
     if (sql.startsWith('SELECT id, username, password_hash FROM users WHERE id')) {
       return params[0] === USER.id ? [{ id: USER.id, username: USER.username, password_hash: passwordHash }] : [];
     }
@@ -58,6 +63,9 @@ beforeEach(() => {
     }
 
     // --- reset links ---
+    // Story AA-20: the form checks how many links this account has asked
+    // for recently. One request per test here, so never near the limit.
+    if (sql.includes('COUNT(*) AS requests FROM password_resets')) return [{ requests: 0 }];
     if (sql.startsWith('INSERT INTO password_resets')) {
       const [user_id, token_hash, minutes] = params;
       resets.push({ id: resets.length + 1, user_id, token_hash, expires_at: new Date(Date.now() + minutes * 60000), used_at: null });

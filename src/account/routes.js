@@ -126,7 +126,12 @@ router.post('/profile/password', requireLogin, requireFormToken, async (req, res
       return renderChangePassword(req, res, { error: 'The new password and confirmation do not match.', status: 400 });
     }
 
-    await updateUserPassword(account.id, newPassword);
+    // While an admin is impersonating, the session belongs to the account but
+    // the person at the keyboard is the admin, and the log should say so.
+    await updateUserPassword(account.id, newPassword, {
+      method: 'profile',
+      changedBy: req.session.impersonator ? req.session.impersonator.id : account.id,
+    });
 
     // Backlog AA-14: a new password ends sessions elsewhere, so a password
     // changed because someone else had access actually locks them out. The

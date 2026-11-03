@@ -47,6 +47,11 @@ beforeEach(() => {
     if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];
     // Story 22255 follow-up: the list asks who still owes us a password.
     if (sql.startsWith('SELECT user_id FROM setup_tokens')) return [];
+    // Story 22225: setting a password spends any unused setup link for the
+    // account. Nothing here was sent one.
+    if (sql.startsWith('UPDATE setup_tokens SET used_at')) return { affectedRows: 0 };
+    // Audit log requirement: every password change is recorded.
+    if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
     throw new Error(`Unexpected query: ${sql}`);
   });
 });

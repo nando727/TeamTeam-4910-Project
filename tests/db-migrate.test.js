@@ -38,7 +38,8 @@ describe('rerunning on a database that has memberships', () => {
     const applied = log.mock.calls.flat().filter(line => line.startsWith('Applied migration: '));
     expect(applied[0]).toBe('Applied migration: 001_sponsors_about_user_contact.sql');
     expect(applied).toContain('Applied migration: 014_driver_sponsors_multiple.sql');
-    expect(applied.pop()).toBe('Applied migration: 018_sponsor_monthly_fees.sql');
+    expect(applied).toContain('Applied migration: 018_sponsor_monthly_fees.sql');
+    expect(applied.pop()).toBe('Applied migration: 019_password_changes.sql');
     expect(sqlRun(conn).some(sql => sql.includes('CREATE PROCEDURE sponsor_monthly_fees'))).toBe(true);
   });
 });

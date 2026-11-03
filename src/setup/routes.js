@@ -3,8 +3,7 @@
 // every handler re-checks it rather than trusting an earlier render.
 
 const express = require('express');
-const db = require('../db');
-const { hashPassword } = require('../auth/password');
+const { updateUserPassword } = require('../users/store');
 const { findValidToken, consumeToken } = require('../auth/setup-tokens');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
@@ -60,8 +59,12 @@ router.post('/setup/:token', requireFormToken, async (req, res, next) => {
     const consumed = await consumeToken(setupToken.id);
     if (!consumed) return renderExpired(res);
 
-    const passwordHash = await hashPassword(password);
-    await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, setupToken.user_id]);
+    // The same function every other password form uses. Claiming an account
+    // used to be the one password write with its own hashing and its own
+    // UPDATE, which meant anything that has to happen whenever a password is
+    // set had to be remembered in four places instead of one.
+    // Nobody is signed in here: the link is the credential.
+    await updateUserPassword(setupToken.user_id, password, { method: 'setup-link' });
 
     res.redirect('/login?setup=1');
   } catch (err) {

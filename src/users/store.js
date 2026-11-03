@@ -1,5 +1,12 @@
 const db = require('../db');
 const { hashPassword, NO_PASSWORD } = require('../auth/password');
+const { invalidateSetupTokens } = require('../auth/setup-tokens');
+const { notifyPasswordChanged, notifiesFor } = require('../auth/password-notice');
+const { notifyEmailChanged } = require('../auth/contact-notice');
+
+// How a password came to be set, for the audit log. Anything else is recorded
+// as 'unknown' rather than dropped.
+const PASSWORD_CHANGE_METHODS = ['profile', 'admin-reset', 'reset-link', 'setup-link'];
 
 const VALID_ROLES = ['driver', 'sponsor', 'admin'];
 const USER_STATUSES = ['active', 'disabled', 'revoked'];
@@ -56,10 +63,65 @@ async function findUserCredentials(id) {
 
 // Replaces the stored hash. Every caller must run passwordProblems() first;
 // this function only hashes and saves.
-async function updateUserPassword(id, password) {
+// Story 22225 (AA-23): whenever a password is set, any setup link for the
+// account that was never used is spent.
+//
+// Without this, an account created with a link and then given a password some
+// other way -- an administrator's reset, or the visitor using "forgot
+// password" instead of the link they were sent -- kept a working setup link
+// until it expired. Anyone holding that link (a forwarded email, a shared
+// inbox, the server log it is written to) could set the password again and
+// take the account over.
+//
+// Every password in the app is written here, which is the point: the four
+// paths that set one cannot each be relied on to remember this.
+//
+// The link is spent BEFORE the new password is stored, deliberately. If the
+// write fails after it, the worst case is a link an administrator has to
+// resend. The other order fails the wrong way round: a failed void leaves a
+// live link to an account whose password has just changed.
+//
+// Audit log requirement: the change is recorded in password_changes. `method`
+// says which route set it and `changedBy` who was signed in at the time, both
+// of which only the caller knows. An unrecognised or missing method is still
+// recorded, as 'unknown': a password change nobody can account for is exactly
+// the thing the log exists to show, so it must never be the quiet case.
+async function updateUserPassword(id, password, { method, changedBy = null } = {}) {
+  // Hashing first keeps the window between voiding and writing as short as it
+  // can be; it touches nothing, so a failure here changes nothing.
   const passwordHash = await hashPassword(password);
+  await invalidateSetupTokens(id);
   const result = await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
-  return result.affectedRows > 0;
+  if (!result.affectedRows) return false;
+
+  // Written after the password, so the log only claims changes that happened.
+  // The two statements are not in one transaction: if this insert fails the
+  // request errors out with the password already changed and no record of it.
+  // A transaction is the real answer and db.js would need a helper for one.
+  await recordPasswordChange(id, changedBy, method);
+
+  // Story AA-25 (22227): and the owner is told, after the change is both made
+  // and recorded, so the mail can never announce something that did not
+  // happen. The account is loaded here rather than in the notice module to
+  // keep that module clear of the database; the lookup is skipped for the
+  // methods that send nothing, so claiming a new account costs no extra query.
+  //
+  // Sending cannot fail this function: sendMail turns a dead mail server into
+  // a logged error. A password the owner asked to change stays changed even
+  // when the notice does not go out.
+  if (notifiesFor(method)) {
+    await notifyPasswordChanged(await findUserById(id), { method });
+  }
+  return true;
+}
+
+// Never the password and never the hash: whose password changed, who changed
+// it, how, and when (the column defaults to the database's clock).
+async function recordPasswordChange(userId, changedByUserId, method) {
+  await db.query(
+    'INSERT INTO password_changes (user_id, changed_by_user_id, method) VALUES (?, ?, ?)',
+    [userId, changedByUserId, PASSWORD_CHANGE_METHODS.includes(method) ? method : 'unknown']
+  );
 }
 
 // Failed sign-ins for a username in the last 24 hours. Read-only: the audit
@@ -112,7 +174,17 @@ async function updateUserContact(id, { name, email }) {
     throw err;
   }
 
-  return findUserById(id);
+  const updated = await findUserById(id);
+
+  // Story AA-25 (22227): a changed address is announced to the address being
+  // replaced, so the password notice cannot be routed away from the owner in
+  // silence first. See src/auth/contact-notice.js.
+  //
+  // Both rows were already loaded for this function's own work, so the notice
+  // costs no extra query. As with the password notice, a send that fails is
+  // logged by sendMail and does not undo the change.
+  await notifyEmailChanged(current, updated);
+  return updated;
 }
 
 // Backlog AA-13: end every session for an account at once.
@@ -157,6 +229,7 @@ async function sessionsRevokedSince(id, issuedAtMs) {
 module.exports = {
   VALID_ROLES, USER_STATUSES, DuplicateError,
   createUser, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
+  PASSWORD_CHANGE_METHODS,
   listUsers, updateUserStatus, countRecentFailedLogins,
   revokeSessions, sessionsRevokedSince,
 };
