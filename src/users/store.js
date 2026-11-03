@@ -2,6 +2,7 @@ const db = require('../db');
 const { hashPassword, NO_PASSWORD } = require('../auth/password');
 const { invalidateSetupTokens } = require('../auth/setup-tokens');
 const { notifyPasswordChanged, notifiesFor } = require('../auth/password-notice');
+const { notifyEmailChanged } = require('../auth/contact-notice');
 
 // How a password came to be set, for the audit log. Anything else is recorded
 // as 'unknown' rather than dropped.
@@ -173,7 +174,17 @@ async function updateUserContact(id, { name, email }) {
     throw err;
   }
 
-  return findUserById(id);
+  const updated = await findUserById(id);
+
+  // Story AA-25 (22227): a changed address is announced to the address being
+  // replaced, so the password notice cannot be routed away from the owner in
+  // silence first. See src/auth/contact-notice.js.
+  //
+  // Both rows were already loaded for this function's own work, so the notice
+  // costs no extra query. As with the password notice, a send that fails is
+  // logged by sendMail and does not undo the change.
+  await notifyEmailChanged(current, updated);
+  return updated;
 }
 
 // Backlog AA-13: end every session for an account at once.

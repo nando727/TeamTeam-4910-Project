@@ -540,10 +540,26 @@ here to borrow a host from. Without it the mail names the **Forgot password**
 link on the sign-in page instead of pointing at a `localhost` URL the reader
 cannot open.
 
-What this does not cover: the address the notice goes to can still be changed
-with nobody told, so an attacker in a session could swap it and then reset. The
-same treatment on `updateUserContact()` &mdash; mailing the *previous* address
-&mdash; is the fix, and is its own story.
+#### A changed address is announced to the old one
+
+The notice above is only worth something if the address it goes to cannot be
+swapped quietly first. It could: someone with a session points the account at
+their own inbox, uses **Forgot your password?**, and receives both the reset
+link and the warning about it. The owner hears nothing at any point.
+
+So changing the email on an account mails **the address being replaced**, which
+is the last one that still reaches the owner. It shows both addresses, says a
+signed-in session made the change, and says to tell an administrator &mdash;
+not to reset the password, which no longer helps once the links go elsewhere.
+
+`notifyEmailChanged()` (`src/auth/contact-notice.js`) hangs off
+`updateUserContact()`, the one function all three editing paths go through (the
+profile page, the JSON profile endpoint, and the member page). It needs no
+query of its own: that function already loads the account before and after the
+write, so the notice is handed both rows. Nothing is sent when only the name
+changed, when the address was resubmitted unchanged, when the account had no
+address to begin with, or when the write was refused as a duplicate &mdash;
+`tests/email-change-notice.test.js` covers each.
 
 ### Setting a password voids the setup link (story 22225)
 
