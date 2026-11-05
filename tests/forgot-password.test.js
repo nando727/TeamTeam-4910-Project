@@ -140,6 +140,48 @@ describe('forgot password', () => {
   });
 });
 
+describe('what the page says about delivery', () => {
+  // These run against an unknown username: the page is identical either way and
+  // nothing is sent, so the imaginary mail server below is never dialled.
+  const NAMES = ['MAIL_TRANSPORT', 'MAIL_HOST', 'MAIL_USER', 'MAIL_PASSWORD', 'MAIL_FROM'];
+  const CONFIGURED = {
+    MAIL_TRANSPORT: 'smtp', MAIL_HOST: 'smtp.example.invalid',
+    MAIL_USER: 'sender@example.invalid', MAIL_PASSWORD: 'not-a-real-password',
+    MAIL_FROM: 'sender@example.invalid',
+  };
+  let saved;
+
+  beforeEach(() => { saved = Object.fromEntries(NAMES.map(name => [name, process.env[name]])); });
+  afterEach(() => {
+    for (const name of NAMES) {
+      if (saved[name] === undefined) delete process.env[name];
+      else process.env[name] = saved[name];
+    }
+  });
+
+  const sentPage = () => request(app).post('/forgot-password').type('form').send({ username: 'nobody' }).expect(200);
+
+  test('with no mail service, it says the link is in the server console', async () => {
+    const res = await sentPage();
+    expect(res.text).toContain('printed in the server console');
+    expect(res.text).not.toMatch(/spam folder/i);
+  });
+
+  test('with mail configured, it says the link is on its way to the inbox', async () => {
+    Object.assign(process.env, CONFIGURED);
+    const res = await sentPage();
+    expect(res.text).toMatch(/spam folder/i);
+    expect(res.text).not.toContain('server console');
+  });
+
+  test('smtp with a setting missing keeps the console wording, because that is where the mail goes', async () => {
+    Object.assign(process.env, CONFIGURED);
+    delete process.env.MAIL_PASSWORD;
+    const res = await sentPage();
+    expect(res.text).toContain('printed in the server console');
+  });
+});
+
 describe('reset password with a token', () => {
   test('a valid link shows the form with the rules for the right user', async () => {
     const { token } = await requestReset('driver1');

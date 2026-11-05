@@ -10,6 +10,7 @@ const {
   createResetToken, findValidReset, consumeReset, requestsExhausted, TOKEN_PATTERN, EXPIRY_MINUTES,
 } = require('./password-reset');
 const { sendPasswordResetLink } = require('./mailer');
+const { mailIsConfigured } = require('../mail/mailer');
 const { checkLockout, lockoutMessage, lockoutGuidance } = require('./lockout');
 
 const router = express.Router();
@@ -240,7 +241,11 @@ router.post('/impersonate/stop', requireFormToken, (req, res) => {
 // ---- Forgot password -----------------------------------------------------------
 
 function renderForgot(req, res, { username = '', error = null, sent = false, status = 200 } = {}) {
-  return res.status(status).render('forgot-password', { username, error, sent, expiryMinutes: EXPIRY_MINUTES });
+  // Read per render, not at startup: the deployed environment can gain mail
+  // settings without the code changing, and the page has to keep up.
+  return res.status(status).render('forgot-password', {
+    username, error, sent, expiryMinutes: EXPIRY_MINUTES, mailConfigured: mailIsConfigured(),
+  });
 }
 
 router.get('/forgot-password', (req, res) => {
