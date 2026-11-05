@@ -28,6 +28,9 @@ const { sendMail } = require('./mail/mailer');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./auth/password-policy');
 const { randomBytes } = require('crypto');
 
+const { searchProducts, getProduct, listCategories, FakeStoreError } = require('./fakestore/client');
+const catalog = require('./catalog/store');
+
 const app = express();
 
 // Behind Elastic Beanstalk's reverse proxy the real client protocol and address
@@ -392,6 +395,65 @@ app.post('/organization/edit', requireLogin, requireSponsor, requireFormToken, a
     next(err);
   }
 });
+
+app.get('/catalog', requireLogin, requireSponsor, async (req, res, next) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+  const category = typeof req.query.category === 'string' ? req.query.category.trim().slice(0, 100) : '';
+  try {
+    const sponsorId = req.session.user.sponsorId;
+    const [items, savedIds] = await Promise.all([catalog.listCatalog(sponsorId), catalog.savedProductIds(sponsorId)]);
+    let products = [], categories = [], browseError = null;
+    try {
+      [products, categories] = await Promise.all([searchProducts({ q, category }), listCategories()]);
+    } catch (err) {
+      if (err instanceof FakeStoreError) browseError = err.message; else throw err;
+    }
+    const notice = req.session.accountNotice || null;
+    delete req.session.accountNotice;
+    res.render('sponsor/catalog', { items, savedIds, products, categories, q, category, browseError, notice, formToken: formToken(req) });
+  } catch (err) { next(err); }
+});
+
+app.post('/catalog/add', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const q = typeof req.body.q === 'string' ? req.body.q.trim().slice(0, 100) : '';
+  const category = typeof req.body.category === 'string' ? req.body.category.trim().slice(0, 100) : '';
+  const back = '/catalog?' + new URLSearchParams({ q, category }).toString();
+  const rawId = typeof req.body.productId === 'string' ? req.body.productId : '';
+  const pointsCost = Number(req.body.pointsCost);
+  if (!/^[1-9]\d{0,9}$/.test(rawId)) return res.status(400).send('Invalid product.');
+  if (!Number.isInteger(pointsCost) || pointsCost < 1 || pointsCost > 1000000) {
+    flash(req, 'error', 'Enter a whole number of points from 1 to 1,000,000.');
+    return res.redirect(303, back);
+  }
+  try {
+    // Title, price and image come from the product service, not from the form.
+    const product = await getProduct(Number(rawId));
+    await catalog.addCatalogItem(req.session.user.sponsorId, product, pointsCost);
+    flash(req, 'success', `Added "${product.title}" to your catalog.`);
+    res.redirect(303, back);
+  } catch (err) {
+    if (err instanceof FakeStoreError) { flash(req, 'error', err.message); return res.redirect(303, back); }
+    if (err.code === 'ER_DUP_ENTRY') { flash(req, 'error', 'That item is already in your catalog.'); return res.redirect(303, back); }
+    next(err);
+  }
+});
+
+app.post('/catalog/:id/remove', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  try {
+    const ok = await catalog.removeCatalogItem(req.session.user.sponsorId, req.params.id);
+    flash(req, ok ? 'success' : 'error', ok ? 'Item removed.' : 'Item not found.');
+    res.redirect(303, '/catalog');
+  } catch (err) { next(err); }
+});
+
+app.get('/my-catalog', requireLogin, async (req, res, next) => {
+  if (req.session.user.role !== 'driver') return denyAccess(req, res, { needs: 'driver' });
+  try {
+    res.render('driver/catalog', { items: await catalog.listCatalogForDriver(req.session.user.id) });
+  } catch (err) { next(err); }
+});
+
+
 
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

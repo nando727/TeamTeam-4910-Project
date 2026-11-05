@@ -1,0 +1,104 @@
+<%- include('../partials/head', { title: 'Item Catalog' }) %>
+  <section class="hero">
+    <%- include('../partials/logo') %>
+    <div>
+      <h1>Item Catalog</h1>
+      <p>Browse the product list and choose the items your drivers can see.</p>
+    </div>
+  </section>
+
+  <% if (notice) { %>
+    <p class="<%= notice.kind === 'error' ? 'error' : 'success' %>" role="status"><%= notice.text %></p>
+  <% } %>
+
+  <h2 class="section-title">Available products</h2>
+  <form method="GET" action="/catalog" class="filter-form">
+    <label for="q">Search:</label>
+    <input type="text" id="q" name="q" value="<%= q %>" maxlength="100" placeholder="Title or description...">
+
+    <label for="category">Category:</label>
+    <select id="category" name="category" onchange="this.form.submit()">
+      <option value="" <%= !category ? 'selected' : '' %>>All</option>
+      <% categories.forEach(c => { %>
+        <option value="<%= c %>" <%= category === c ? 'selected' : '' %>><%= c %></option>
+      <% }) %>
+    </select>
+
+    <button type="submit">Filter</button>
+    <a href="/catalog">Clear</a>
+  </form>
+
+  <% if (browseError) { %>
+    <p class="error" role="alert"><%= browseError %></p>
+  <% } else { %>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th>Item</th><th>Category</th><th>Price</th><th>Add to catalog</th></tr>
+        </thead>
+        <tbody>
+          <% products.forEach(p => { %>
+            <tr>
+              <td>
+                <% if (p.imageUrl) { %><img src="<%= p.imageUrl %>" alt="" width="64"><% } %>
+                <%= p.title %>
+              </td>
+              <td><%= p.category %></td>
+              <td>$<%= p.priceValue.toFixed(2) %></td>
+              <td>
+                <% if (savedIds.has(p.productId)) { %>
+                  <span>Already in your catalog</span>
+                <% } else { %>
+                  <form method="POST" action="/catalog/add" class="inline-form">
+                    <input type="hidden" name="token" value="<%= formToken %>">
+                    <input type="hidden" name="productId" value="<%= p.productId %>">
+                    <input type="hidden" name="q" value="<%= q %>">
+                    <input type="hidden" name="category" value="<%= category %>">
+                    <label>Points <input type="number" name="pointsCost" min="1" max="1000000" step="1" value="<%= Math.max(1, Math.ceil(p.priceValue * 100)) %>" required></label>
+                    <button type="submit">Add</button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+          <% if (products.length === 0) { %>
+            <tr><td colspan="4">No products match.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+
+  <h2 class="section-title">Your catalog</h2>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>Item</th><th>Category</th><th>Price</th><th>Points</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        <% items.forEach(item => { %>
+          <tr>
+            <td>
+              <% if (item.image_url) { %><img src="<%= item.image_url %>" alt="" width="64"><% } %>
+              <%= item.title %>
+            </td>
+            <td><%= item.category %></td>
+            <td>$<%= Number(item.price_value).toFixed(2) %></td>
+            <td><%= item.points_cost %></td>
+            <td>
+              <form method="POST" action="/catalog/<%= item.id %>/remove" class="inline-form">
+                <input type="hidden" name="token" value="<%= formToken %>">
+                <button type="submit">Remove</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+        <% if (items.length === 0) { %>
+          <tr><td colspan="5">No items yet. Add some from the list above.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+
+  <p><a href="/">&larr; Back to home</a></p>
+<%- include('../partials/foot') %>
