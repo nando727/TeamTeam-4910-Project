@@ -68,7 +68,7 @@ function normalize(raw) {
   };
 }
 
-async function listProducts() {
+async function listProducts({ allowStale = true } = {}) {
   if (cache.products && Date.now() < cache.expiresAt) return cache.products;
 
   let res;
@@ -78,10 +78,13 @@ async function listProducts() {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err) {
-    return fallbackOrThrow(new FakeStoreError('Could not reach the product service. Try again in a moment.'));
+    // A stale list is better than an error page when the service blips.
+    if (allowStale && cache.products) return cache.products;
+    throw new FakeStoreError('Could not reach the product service. Try again in a moment.');
   }
   if (!res.ok) {
-    return fallbackOrThrow(new FakeStoreError(`The product service returned an error (${res.status}).`));
+    if (allowStale && cache.products) return cache.products;
+    throw new FakeStoreError(`The product service returned an error (${res.status}).`);
   }
 
   let body;
@@ -108,8 +111,8 @@ async function searchProducts({ q = '', category = '' } = {}) {
   });
 }
 
-async function getProduct(productId) {
-  const product = (await listProducts()).find((p) => p.productId === productId);
+async function getProduct(productId, options) {
+  const product = (await listProducts(options)).find((p) => p.productId === productId);
   if (!product) throw new FakeStoreError('That product is no longer available.', 404);
   return product;
 }

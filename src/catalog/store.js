@@ -36,11 +36,13 @@ async function removeCatalogItem(sponsorId, id) {
 // A driver sees the catalogue of the organization they belong to.
 async function listCatalogForDriver(driverId) {
   return db.query(
-    `SELECT c.id, c.title, c.category, c.image_url, c.points_cost
+    `SELECT c.id, c.product_id, c.title, c.title AS name, c.category, c.image_url, c.price_value, c.points_cost,
+            c.sponsor_id AS sponsorId, s.name AS sponsorName
      FROM catalog_items c
      JOIN driver_sponsors ds ON ds.sponsor_id = c.sponsor_id
+     JOIN sponsors s ON s.id = c.sponsor_id
      WHERE ds.driver_id = ?
-     ORDER BY c.points_cost, c.title`,
+     ORDER BY s.name, c.title, c.id`,
     [driverId]
   );
 }

@@ -625,6 +625,36 @@ by this page. Awarding or deducting points is outside these viewing stories.
 Sponsor affiliation (DF-12) was already implemented on **My sponsor and points**
 and is unchanged.
 
+## Driver product catalog (DF-27 to DF-31)
+
+Drivers open **Product catalog** (`/driver/catalog`) to browse available selections
+from their current sponsors, grouped by sponsor. Product names open detail pages
+with the sponsor's saved title and the provider's description. Cards and details
+also show the saved product image (when present) and dollar price, matching the
+sponsor's saved catalog. This price is a saved value, not a live price quote or
+a point-redemption cost. Admin-added
+memberships also work. Ford's `/my-catalog` URL redirects to this same page.
+
+Both sponsor editing and driver browsing use Ford's `catalog_items` table. No
+copy into `products` or `sponsor_catalog` is needed. Migration 020 now creates
+`catalog_items` for new databases and does not change an existing table. The old
+empty tables from the earlier draft are unused and can be left alone.
+
+The driver pages reuse `src/fakestore/client.js`. Only saved selections still
+present in the provider's normalized product list are shown; missing products
+return 404 on the detail page. FakeStore does not provide an inventory/stock
+flag, so presence in its usable product list is the available signal. Its cache
+lasts five minutes; provider removals can take that long to appear. Once the cache
+expires, driver pages report provider failures instead of using stale products.
+Removing a sponsor selection or membership takes effect on the next request.
+
+To test: as a sponsor, open **Add to your catalog**, save a product, then log in
+as one of that sponsor's drivers and open **Product catalog**. Click its name to
+check the detail page. Remove the selection as the sponsor and refresh the driver
+page: the item disappears and its old detail URL returns 404. Other sponsors'
+selections are inaccessible unless the driver also belongs to those sponsors.
+Mocked tests cover provider removals and outages without changing the live API.
+
 ## Automated Testing
 
 Story 23794 uses Vitest and supertest for automated testing. Test files go in `tests/`
@@ -676,7 +706,7 @@ rounded to the cent, with a CSV download for billing.
 The figures come from the `purchases` table (migration 010): one row per
 completed purchase with `driver_id`, `sponsor_id`, `description`,
 `amount_cents` (dollar value in cents, so sums are exact), `points_spent`, and
-`purchased_at`. **No catalog or redemption page exists yet.** Whoever builds
+`purchased_at`. **Catalog browsing exists; redemption does not yet.** Whoever builds
 driver redemption must insert a `purchases` row for every completed purchase,
 in the same database transaction as the matching negative `point_transactions`
 row and the `driver_sponsors.point_balance` update, so the fee report, the point

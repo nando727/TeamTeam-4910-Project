@@ -30,6 +30,15 @@ function missingSmtpSettings() {
     .map(([name]) => name);
 }
 
+// Whether mail actually leaves the machine. The forgot-password page asks,
+// because what it should tell the visitor depends on the answer: a link on its
+// way to their inbox, or a link in the log for an administrator to pass on.
+// The same test activeTransport() makes below, so the page cannot promise a
+// delivery that would quietly fall back to the console.
+function mailIsConfigured() {
+  return (process.env.MAIL_TRANSPORT || 'console') === 'smtp' && missingSmtpSettings().length === 0;
+}
+
 // One transporter, rebuilt only when the settings it was built from change.
 let cached = { key: null, transporter: null };
 
@@ -147,4 +156,4 @@ function resetTransport() {
   cached = { key: null, transporter: null };
 }
 
-module.exports = { sendMail, sentMessages, clearOutbox, resetTransport, missingSmtpSettings };
+module.exports = { sendMail, sentMessages, clearOutbox, resetTransport, missingSmtpSettings, mailIsConfigured };
