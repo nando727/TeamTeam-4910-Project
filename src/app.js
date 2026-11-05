@@ -446,11 +446,9 @@ app.post('/catalog/:id/remove', requireLogin, requireSponsor, requireFormToken, 
   } catch (err) { next(err); }
 });
 
-app.get('/my-catalog', requireLogin, async (req, res, next) => {
+app.get('/my-catalog', requireLogin, (req, res) => {
   if (req.session.user.role !== 'driver') return denyAccess(req, res, { needs: 'driver' });
-  try {
-    res.render('driver/catalog', { items: await catalog.listCatalogForDriver(req.session.user.id) });
-  } catch (err) { next(err); }
+  res.redirect('/driver/catalog');
 });
 
 

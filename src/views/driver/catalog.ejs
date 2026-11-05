@@ -1,0 +1,27 @@
+<%- include('../partials/head', { title: 'Product catalog' }) %>
+  <div class="page-header">
+    <span class="eyebrow">Rewards</span>
+    <h1>Product catalog</h1>
+    <p class="lede">Browse available products offered by your sponsor programs.</p>
+  </div>
+  <% if (!catalogs.length) { %>
+    <p class="info">There are no available products in your sponsor catalogs yet.</p>
+    <a class="button-link" href="/driver/programs">View my sponsor programs</a>
+  <% } %>
+  <% catalogs.forEach(catalog => { %>
+    <section aria-labelledby="sponsor-<%= catalog.sponsorId %>" class="catalog-section">
+      <h2 id="sponsor-<%= catalog.sponsorId %>" class="section-title"><%= catalog.sponsorName %></h2>
+      <div class="actions">
+        <% catalog.products.forEach(product => { %>
+          <a class="action" href="/driver/catalog/<%= catalog.sponsorId %>/<%= product.id %>">
+            <% if (product.image_url) { %>
+              <img class="catalog-image" src="<%= product.image_url %>" alt="<%= product.name %>" loading="lazy">
+            <% } %>
+            <span class="action__title"><%= product.name %></span>
+            <span class="action__text">Price: $<%= Number(product.price_value).toFixed(2) %></span>
+          </a>
+        <% }); %>
+      </div>
+    </section>
+  <% }); %>
+<%- include('../partials/foot') %>

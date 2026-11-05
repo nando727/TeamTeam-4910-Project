@@ -1,0 +1,12 @@
+<%- include('../partials/head', { title: product.name }) %>
+  <section class="card card--form">
+    <a class="back" href="/driver/catalog">Back to product catalog</a>
+    <span class="eyebrow"><%= product.sponsorName %></span>
+    <h1><%= product.name %></h1>
+    <% if (product.image_url) { %>
+      <img class="catalog-image catalog-image--detail" src="<%= product.image_url %>" alt="<%= product.name %>">
+    <% } %>
+    <p><strong>Price:</strong> $<%= Number(product.price_value).toFixed(2) %></p>
+    <p><%= product.description %></p>
+  </section>
+<%- include('../partials/foot') %>
