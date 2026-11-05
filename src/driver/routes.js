@@ -3,6 +3,8 @@ const db = require('../db');
 const { rememberAndRedirect } = require('../auth/return-to');
 const { denyAccess } = require('../auth/deny');
 const { listPointChanges } = require('../reports/store');
+const catalogStore = require('../catalog/store');
+const provider = require('../fakestore/client');
 const router = express.Router();
 
 router.get('/programs', async (req, res, next) => {
@@ -18,6 +20,46 @@ router.get('/programs', async (req, res, next) => {
     );
     res.render('driver/programs', { programs });
   } catch (err) { next(err); }
+});
+
+router.get('/catalog', async (req, res, next) => {
+  if (!req.session.user) return rememberAndRedirect(req, res);
+  if (req.session.user.role !== 'driver') return denyAccess(req, res, { needs: 'driver' });
+  try {
+    const selections = await catalogStore.listCatalogForDriver(req.session.user.id);
+    const available = selections.length ? await provider.listProducts({ allowStale: false }) : [];
+    const availableIds = new Set(available.map(product => product.productId));
+    const products = selections.filter(product => availableIds.has(product.product_id));
+    const catalogs = [];
+    for (const product of products) {
+      let catalog = catalogs.find(item => item.sponsorId === product.sponsorId);
+      if (!catalog) {
+        catalog = { sponsorId: product.sponsorId, sponsorName: product.sponsorName, products: [] };
+        catalogs.push(catalog);
+      }
+      catalog.products.push(product);
+    }
+    res.render('driver/catalog', { catalogs });
+  } catch (err) {
+    if (err instanceof provider.FakeStoreError) return res.status(err.status).render('driver/catalog-error', { message: err.message });
+    next(err);
+  }
+});
+
+router.get('/catalog/:sponsorId/:productId', async (req, res, next) => {
+  if (!req.session.user) return rememberAndRedirect(req, res);
+  if (req.session.user.role !== 'driver') return denyAccess(req, res, { needs: 'driver' });
+  if (![req.params.sponsorId, req.params.productId].every(id => /^[1-9][0-9]*$/.test(id) && Number.isSafeInteger(Number(id)))) return res.sendStatus(404);
+  try {
+    const selections = await catalogStore.listCatalogForDriver(req.session.user.id);
+    const product = selections.find(item => String(item.sponsorId) === req.params.sponsorId && String(item.id) === req.params.productId);
+    if (!product) return res.sendStatus(404);
+    const current = await provider.getProduct(Number(product.product_id), { allowStale: false });
+    res.render('driver/product', { product: { ...product, description: current.description } });
+  } catch (err) {
+    if (err instanceof provider.FakeStoreError) return res.status(err.status).render('driver/catalog-error', { message: err.message });
+    next(err);
+  }
 });
 
 router.get('/points/history', async (req, res, next) => {
