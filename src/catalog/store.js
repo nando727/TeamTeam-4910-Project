@@ -27,6 +27,7 @@ async function addCatalogItem(sponsorId, product, pointsCost) {
   );
 }
 
+//deletes rows that are specifically for the item under said organization
 async function removeCatalogItem(sponsorId, id) {
   const result = await db.query('DELETE FROM catalog_items WHERE id = ? AND sponsor_id = ?', [id, sponsorId]);
   return result.affectedRows > 0;

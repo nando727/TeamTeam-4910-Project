@@ -3,7 +3,10 @@
 // The API has no text search, so the whole product list (about 20 items) is
 // fetched once, cached for a few minutes, and searched here in memory.
 
-const BASE_URL = (process.env.FAKESTORE_URL || 'https://fakestoreapi.com').replace(/\/+$/, '');
+const fs = require('fs');
+const path = require('path');
+
+const BASE_URL =(process.env.FAKESTORE_URL || 'https://fakestoreapi.com').replace(/\/+$/, '');
 const TIMEOUT_MS = 8000;
 const CACHE_MS = 5 * 60 * 1000;
 
@@ -17,6 +20,35 @@ class FakeStoreError extends Error {
 }
 
 let cache = { products: null, expiresAt: 0 };
+
+// Optional local copy of the product list (fakestore/products.json), used only
+// when the live service can't be reached or refuses the request. Save it from
+// a machine where the API works:  curl https://fakestoreapi.com/products -o fakestore/products.json
+const SNAPSHOT_PATH = path.join(__dirname, 'products.json');
+const SNAPSHOT_RETRY_MS = 60 * 1000; // while on the snapshot, try the live service again after a minute
+
+function readSnapshot() {
+  try {
+    const body = JSON.parse(fs.readFileSync(SNAPSHOT_PATH, 'utf8'));
+    const products = Array.isArray(body) ? body.map(normalize).filter(Boolean) : [];
+    return products.length ? products : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// Called when the live fetch fails: a still-held cache wins, then the local
+// snapshot, and only then does the caller see the error.
+function fallbackOrThrow(error) {
+  if (cache.products) return cache.products;
+  const snapshot = readSnapshot();
+  if (snapshot) {
+    console.warn(`[fakestore] live request failed (${error.message}); serving products.json`);
+    cache = { products: snapshot, expiresAt: Date.now() + SNAPSHOT_RETRY_MS };
+    return snapshot;
+  }
+  throw error;
+}
 
 const httpsOnly = (url) => (typeof url === 'string' && url.startsWith('https://') ? url : null);
 
@@ -42,7 +74,7 @@ async function listProducts({ allowStale = true } = {}) {
   let res;
   try {
     res = await fetch(`${BASE_URL}/products`, {
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; GoodDriverProgram/1.0)' },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err) {
@@ -57,7 +89,7 @@ async function listProducts({ allowStale = true } = {}) {
 
   let body;
   try { body = await res.json(); } catch (err) { body = null; }
-  if (!Array.isArray(body)) throw new FakeStoreError('The product service returned an unexpected response.');
+  if (!Array.isArray(body)) return fallbackOrThrow(new FakeStoreError('The product service returned an unexpected response.'));
 
   cache = { products: body.map(normalize).filter(Boolean), expiresAt: Date.now() + CACHE_MS };
   return cache.products;
