@@ -25,6 +25,7 @@ const { createUser,updateUserContact, updateUserStatus, DuplicateError } = requi
 const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('./auth/setup-tokens');
 const { listDriversForSponsor, listSponsorAccounts, findOrgMember, deleteOrgMember } = require('./sponsors/accounts');
 const { sendMail } = require('./mail/mailer');
+const { securityHeaders } = require('./security-headers');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./auth/password-policy');
 const { randomBytes } = require('crypto');
 
@@ -40,6 +41,10 @@ app.set('trust proxy', 1);
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+
+// Story AA-74: on every response, including /health and the files in public/,
+// so there is no page of ours that can be framed or asked to run a script.
+app.use(securityHeaders);
 
 // Story INF-10: public, and ahead of sessions so it needs no cookie.
 app.get('/health', healthCheck);

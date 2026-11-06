@@ -56,7 +56,7 @@
               </form>
             <% } %>
             <form method="POST" action="/accounts/<%= driver.id %>/delete" class="inline-form"
-                  onsubmit="return confirm('Permanently delete this account? This cannot be undone.');">
+                  data-confirm="Permanently delete this account? This cannot be undone.">
               <input type="hidden" name="token" value="<%= formToken %>">
               <button type="submit">Delete</button>
             </form>
@@ -92,7 +92,7 @@
               <span>This is you</span>
             <% } else { %>
               <form method="POST" action="/accounts/<%= account.id %>/delete" class="inline-form"
-                    onsubmit="return confirm('Permanently delete this account? This cannot be undone.');">
+                    data-confirm="Permanently delete this account? This cannot be undone.">
                 <input type="hidden" name="token" value="<%= formToken %>">
                 <button type="submit">Delete</button>
               </form>

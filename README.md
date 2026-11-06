@@ -655,6 +655,41 @@ page: the item disappears and its old detail URL returns 404. Other sponsors'
 selections are inaccessible unless the driver also belongs to those sponsors.
 Mocked tests cover provider removals and outages without changing the live API.
 
+## Framing and script injection (story 28199, AA-74)
+
+Every response carries four headers, set in `src/security-headers.js` and
+mounted ahead of every route in `src/app.js`:
+
+| Header | What it stops |
+| --- | --- |
+| `Content-Security-Policy` | Framing, and any script the app did not serve |
+| `X-Frame-Options: DENY` | Framing, for an older browser that ignores the policy |
+| `X-Content-Type-Options: nosniff` | A response being treated as a script because of how it looks |
+| `Referrer-Policy: no-referrer` | A reset or setup link leaking in a Referer header |
+
+The policy allows scripts only from this app (`script-src 'self'`), with no
+inline exception. That is what makes it worth having: a value that escapes
+escaping and lands in a page as `<script>` or `onclick=` has nothing that will
+run it. Keeping that true has one rule for everyone working on the views:
+
+**No `<script>` blocks and no `on...=` attributes in templates.** Put the
+behavior in a file under `public/` and reach it from the markup with a `data-`
+attribute. Two examples already in `public/site.js`: `data-autosubmit` on a
+filter dropdown, and `data-confirm="..."` on a form that asks before deleting.
+
+Inline `style="..."` attributes are still allowed (`style-src` keeps
+`'unsafe-inline'`), because several pages use them and the risk from a style is
+far smaller than from a script. Tightening that is a later story.
+
+To see it work: `curl -I http://localhost:3000/login` shows the headers, and an
+`<iframe src="http://localhost:3000/login">` on any page renders empty with a
+console message naming `frame-ancestors`.
+
+One known gap: Express answers an unmatched URL with its own 404 handler, which
+replaces the policy with its own stricter `default-src 'none'`. That one has no
+`frame-ancestors`, so a 404 page is protected by `X-Frame-Options` alone.
+`tests/security-headers.test.js` pins that behavior so a change to it is noticed.
+
 ## Automated Testing
 
 Story 23794 uses Vitest and supertest for automated testing. Test files go in `tests/`

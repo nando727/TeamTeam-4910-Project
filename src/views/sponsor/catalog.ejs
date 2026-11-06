@@ -17,7 +17,7 @@
     <input type="text" id="q" name="q" value="<%= q %>" maxlength="100" placeholder="Title or description...">
 
     <label for="category">Category:</label>
-    <select id="category" name="category" onchange="this.form.submit()">
+    <select id="category" name="category" data-autosubmit>
       <option value="" <%= !category ? 'selected' : '' %>>All</option>
       <% categories.forEach(c => { %>
         <option value="<%= c %>" <%= category === c ? 'selected' : '' %>><%= c %></option>
