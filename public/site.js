@@ -24,4 +24,27 @@
   document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape') closeAll();
   });
+
+  // Story AA-74: these two behaviors used to be onchange= and onsubmit=
+  // attributes in the templates. The content security policy refuses to run an
+  // attribute like that -- which is the point, since an injected value could
+  // carry one -- so they live here, in a file the policy trusts.
+  var list = function (selector) {
+    return Array.prototype.slice.call(document.querySelectorAll(selector));
+  };
+
+  // A filter dropdown that submits its form as soon as the choice changes.
+  list('select[data-autosubmit]').forEach(function (select) {
+    select.addEventListener('change', function () {
+      if (select.form) select.form.submit();
+    });
+  });
+
+  // A form that asks before it does something irreversible. Without scripting
+  // the form still submits, exactly as it did with the attribute.
+  list('form[data-confirm]').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+      if (!window.confirm(form.getAttribute('data-confirm'))) event.preventDefault();
+    });
+  });
 })();

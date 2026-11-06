@@ -60,7 +60,7 @@
   <div class="table-wrap">
     <form method="GET" action="/" class="filter-form">
       <label for="StatusFilter">Filter by status:</label>
-      <select id="StatusFilter" name="status" onchange="this.form.submit()">
+      <select id="StatusFilter" name="status" data-autosubmit>
         <option value="" <%= !StatusFilter ? 'selected' : '' %>>All</option>
         <option value="pending" <%= StatusFilter === 'pending' ? 'selected' : '' %>>Pending</option>
         <option value="approved" <%= StatusFilter === 'approved' ? 'selected' : '' %>>Approved</option>
