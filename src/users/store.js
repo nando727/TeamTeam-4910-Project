@@ -1,5 +1,5 @@
 const db = require('../db');
-const { hashPassword, NO_PASSWORD } = require('../auth/password');
+const { hashPassword, verifyPassword, NO_PASSWORD } = require('../auth/password');
 const { invalidateSetupTokens } = require('../auth/setup-tokens');
 const { invalidateResetTokens } = require('../auth/password-reset');
 const { notifyPasswordChanged, notifiesFor } = require('../auth/password-notice');
@@ -19,6 +19,15 @@ class DuplicateError extends Error {
     super(message);
     this.name = 'DuplicateError';
     this.status = 409;
+  }
+}
+
+// Story 22232 (AA-29): thrown when the new password is the one already on the
+// account. A 400 with a sentence the user can act on, not a 500.
+class SamePasswordError extends Error {
+  constructor(message = 'Choose a new password that is different from your current one.') {
+    super(message);
+    this.name = 'SamePasswordError';
   }
 }
 
@@ -62,6 +71,19 @@ async function findUserCredentials(id) {
   return rows[0] || null;
 }
 
+// Story 22232 (AA-29): is this already the account's password? Used by
+// updateUserPassword below, and by the routes that have something to undo if
+// the answer is yes and so cannot wait to be told by a thrown error.
+//
+// An account with no usable password yet holds NO_PASSWORD, which is not a
+// bcrypt hash and verifies against nothing, so claiming an account through a
+// setup link can never be refused by this.
+async function matchesCurrentPassword(id, password) {
+  const account = await findUserCredentials(id);
+  if (!account) return false;
+  return verifyPassword(password, account.password_hash);
+}
+
 // Replaces the stored hash. Every caller must run passwordProblems() first;
 // this function only hashes and saves.
 // Story 22225 (AA-23): whenever a password is set, any setup link for the
@@ -88,6 +110,12 @@ async function findUserCredentials(id) {
 // recorded, as 'unknown': a password change nobody can account for is exactly
 // the thing the log exists to show, so it must never be the quiet case.
 async function updateUserPassword(id, password, { method, changedBy = null } = {}) {
+  // Story 22232 (AA-29): a new password has to be a new password. First, before
+  // the links below are spent: a refused change must leave the account exactly
+  // as it was. Here rather than in the four routes for the same reason the link
+  // voiding is here -- a rule that each caller has to remember is a rule one of
+  // them eventually will not.
+  if (await matchesCurrentPassword(id, password)) throw new SamePasswordError();
   // Hashing first keeps the window between voiding and writing as short as it
   // can be; it touches nothing, so a failure here changes nothing.
   const passwordHash = await hashPassword(password);
@@ -234,8 +262,9 @@ async function sessionsRevokedSince(id, issuedAtMs) {
 }
 
 module.exports = {
-  VALID_ROLES, USER_STATUSES, DuplicateError,
+  VALID_ROLES, USER_STATUSES, DuplicateError, SamePasswordError,
   createUser, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
+  matchesCurrentPassword,
   PASSWORD_CHANGE_METHODS,
   listUsers, updateUserStatus, countRecentFailedLogins,
   revokeSessions, sessionsRevokedSince,

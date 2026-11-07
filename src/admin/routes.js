@@ -2,7 +2,7 @@ const express = require('express');
 const { randomBytes } = require('crypto');
 const {
   VALID_ROLES, USER_STATUSES, DuplicateError, createUser, findUserById, listUsers, updateUserStatus,
-  updateUserPassword, countRecentFailedLogins, revokeSessions,
+  updateUserPassword, countRecentFailedLogins, revokeSessions, SamePasswordError,
 } = require('../users/store');
 const { createSponsor, listSponsors } = require('../sponsors/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
@@ -428,10 +428,22 @@ router.post('/manage-users/:userId/password', async (req, res, next) => {
       const failedLogins = await countRecentFailedLogins(user.username);
       return renderResetPassword(req, res, { from, failedLogins, error: problems.join(' '), status: 400 });
     }
-    await updateUserPassword(user.id, newPassword, {
-      method: 'admin-reset',
-      changedBy: req.session.impersonator ? req.session.impersonator.id : req.session.user.id,
-    });
+    try {
+      await updateUserPassword(user.id, newPassword, {
+        method: 'admin-reset',
+        changedBy: req.session.impersonator ? req.session.impersonator.id : req.session.user.id,
+      });
+    } catch (err) {
+      // Story 22232 (AA-29): the store refuses a password the account already
+      // has, and refuses it before it touches anything, so there is nothing to
+      // undo here. The wording is the admin's: it is not their password.
+      if (!(err instanceof SamePasswordError)) throw err;
+      const failedLogins = await countRecentFailedLogins(user.username);
+      return renderResetPassword(req, res, {
+        from, failedLogins, status: 400,
+        error: `That is already ${user.username}'s password. Choose a different one.`,
+      });
+    }
 
     // Backlog AA-14: the account being reset is signed out everywhere. An
     // admin resetting their own password keeps the session they are using.

@@ -5,7 +5,7 @@ const { idleLimitLabel } = require('./session-timeout');
 const { takeReturnTo } = require('./return-to');
 const { requireFormToken } = require('./form-token');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./password-policy');
-const { updateUserPassword, revokeSessions } = require('../users/store');
+const { updateUserPassword, revokeSessions, matchesCurrentPassword } = require('../users/store');
 const {
   createResetToken, findValidReset, consumeReset, requestsExhausted, TOKEN_PATTERN, EXPIRY_MINUTES,
 } = require('./password-reset');
@@ -317,6 +317,15 @@ router.post('/reset-password/:token', async (req, res, next) => {
     const problems = passwordProblems(newPassword);
     if (!problems.length && newPassword !== confirmPassword) problems.push('The new password and confirmation do not match.');
     if (problems.length) return renderReset(req, res, reset, { error: problems.join(' '), status: 400 });
+
+    // Story 22232 (AA-29): refuse the password the account already has. Checked
+    // here, before the token is spent, because the link is the only way back
+    // into this page -- getting this wrong has to cost a retry and not the link.
+    if (await matchesCurrentPassword(reset.userId, newPassword)) {
+      return renderReset(req, res, reset, {
+        error: 'That is already the password on this account. Choose a different one.', status: 400,
+      });
+    }
 
     // Spend the token before writing, so a second submit with the same link fails.
     if (!(await consumeReset(reset.id))) return renderReset(req, res, null, { status: 404 });

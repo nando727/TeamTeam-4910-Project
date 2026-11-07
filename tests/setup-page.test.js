@@ -5,7 +5,7 @@ import request from 'supertest';
 
 const require = createRequire(import.meta.url);
 const db = require('../src/db');
-const { verifyPassword } = require('../src/auth/password');
+const { verifyPassword, NO_PASSWORD } = require('../src/auth/password');
 const { hashToken } = require('../src/auth/setup-tokens');
 const { app } = require('../src/app');
 
@@ -33,6 +33,12 @@ beforeEach(() => {
     // Story 22214: every sign-in now checks the lockout first. No failures here.
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
 
+    // Story AA-29: setting a password checks it is not the one already on the
+    // account. An account still waiting to be claimed holds no usable password,
+    // which is why that check never refuses anyone here.
+    if (sql.startsWith('SELECT id, username, password_hash FROM users WHERE id')) {
+      return [{ id: tokenRow.user_id, username: 'newuser', password_hash: NO_PASSWORD }];
+    }
     if (sql.startsWith('SELECT id, user_id, token_hash')) {
       const [tokenHash] = params;
       return tokenHash === tokenRow.token_hash ? [tokenRow] : [];

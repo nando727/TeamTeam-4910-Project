@@ -1,8 +1,8 @@
 const express = require('express');
 const { rememberAndRedirect } = require('../auth/return-to');
 const {
-  DuplicateError, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
-  revokeSessions,
+  DuplicateError, SamePasswordError, findUserById, findUserCredentials, updateUserContact,
+  updateUserPassword, revokeSessions,
 } = require('../users/store');
 const { getAbout } = require('../about/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
@@ -119,6 +119,12 @@ router.post('/profile/password', requireLogin, requireFormToken, async (req, res
     // Each failed rule gets its own sentence so the user knows exactly what to fix.
     const problems = passwordProblems(newPassword);
     if (problems.length) return renderChangePassword(req, res, { error: problems.join(' '), status: 400 });
+    // Story 22232 (AA-29): this form knows the current password, so comparing
+    // the two strings answers it without a hash. The store checks it again
+    // against the stored hash for the forms that cannot ask -- see the catch
+    // below, which is what catches the one case this compare misses: bcrypt
+    // reads only the first 72 bytes, so two different strings can be the same
+    // password to it.
     if (newPassword === currentPassword) {
       return renderChangePassword(req, res, { error: 'Choose a new password that is different from your current one.', status: 400 });
     }
@@ -143,7 +149,12 @@ router.post('/profile/password', requireLogin, requireFormToken, async (req, res
     renderProfile(req, res, profile, {
       success: 'Your password was changed. Any other devices were signed out.',
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err instanceof SamePasswordError) {
+      return renderChangePassword(req, res, { error: err.message, status: 400 });
+    }
+    next(err);
+  }
 });
 
 // Backlog AA-13: end every session for this account at once, including this
