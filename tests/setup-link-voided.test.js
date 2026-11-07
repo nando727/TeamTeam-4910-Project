@@ -81,6 +81,8 @@ beforeEach(() => {
       return { affectedRows: 1 };
     }
     // The statement this story is about.
+    // Story AA-27: setting a password also voids any pending reset link.
+    if (sql.startsWith('UPDATE password_resets SET used_at = NOW() WHERE user_id')) return { affectedRows: 0 };
     if (sql.startsWith('UPDATE setup_tokens SET used_at = NOW() WHERE user_id =')) {
       const spent = tokens.filter(t => t.user_id === params[0] && !t.used_at);
       spent.forEach(t => { t.used_at = new Date(); });

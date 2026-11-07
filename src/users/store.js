@@ -1,6 +1,7 @@
 const db = require('../db');
 const { hashPassword, NO_PASSWORD } = require('../auth/password');
 const { invalidateSetupTokens } = require('../auth/setup-tokens');
+const { invalidateResetTokens } = require('../auth/password-reset');
 const { notifyPasswordChanged, notifiesFor } = require('../auth/password-notice');
 const { notifyEmailChanged } = require('../auth/contact-notice');
 
@@ -91,6 +92,12 @@ async function updateUserPassword(id, password, { method, changedBy = null } = {
   // can be; it touches nothing, so a failure here changes nothing.
   const passwordHash = await hashPassword(password);
   await invalidateSetupTokens(id);
+  // Story AA-27 (22229): and any reset link waiting in an inbox. Someone who
+  // asked for a link, then got back in another way and changed the password,
+  // has left a live link behind in mail they may not control any more. The
+  // link that is being used right now is already spent by the time this runs,
+  // so a reset through a link voids only the others.
+  await invalidateResetTokens(id);
   const result = await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
   if (!result.affectedRows) return false;
 

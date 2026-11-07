@@ -45,6 +45,8 @@ beforeEach(() => {
     }
     // Story 22225: writing the password then spends any other unused link for
     // the same account. By the time it runs, the link above is already spent.
+    // Story AA-27: setting a password also voids any pending reset link.
+    if (sql.startsWith('UPDATE password_resets SET used_at = NOW() WHERE user_id')) return { affectedRows: 0 };
     if (sql.startsWith('UPDATE setup_tokens SET used_at = NOW() WHERE user_id =')) {
       const [userId] = params;
       if (tokenRow.used_at || tokenRow.user_id !== userId) return { affectedRows: 0 };
