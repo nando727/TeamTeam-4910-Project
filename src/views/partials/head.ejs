@@ -53,7 +53,7 @@
   <link rel="stylesheet" href="/styles.css">
   <% if (me) { %>
     <%# Header scripts only for signed-in pages, so the login form stays script-free. %>
-    <script>document.documentElement.classList.add('js');</script>
+    <script src="/js-flag.js"></script>
     <script src="/site.js" defer></script>
     <%# Story AA-12: warns with a countdown before an idle session expires. %>
     <script src="/session-warning.js" defer></script>
