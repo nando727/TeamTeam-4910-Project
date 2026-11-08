@@ -47,6 +47,11 @@ beforeEach(() => {
       return { insertId: changes.length };
     }
 
+    // Story AA-79: the hash now in force is remembered so it cannot be
+    // reused. No rows here, so there is never anything to prune.
+    if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };
+    if (sql.startsWith('SELECT id FROM password_history')) return [];
+
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
     if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];

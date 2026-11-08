@@ -55,6 +55,10 @@ beforeEach(() => {
     if (sql.startsWith('UPDATE users SET password_hash')) return { affectedRows: 1 };
     // Audit log requirement: every password change is recorded.
     if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
+    // Story AA-79: the hash now in force is remembered so it cannot be
+    // reused. No rows here, so there is never anything to prune.
+    if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };
+    if (sql.startsWith('SELECT id FROM password_history')) return [];
 
     if (sql.startsWith('SELECT id, username, password_hash FROM users WHERE id')) {
       return users.filter(u => u.id === params[0]).map(u => ({ ...u, password_hash: passwordHash }));

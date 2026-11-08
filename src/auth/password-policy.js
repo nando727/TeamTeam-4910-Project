@@ -36,6 +36,12 @@ const PASSWORD_RULES = [
   },
 ];
 
+// Story 28211 (AA-79): how many of an account's used passwords it may not go
+// back to. One number does both jobs on purpose -- the app compares against
+// this many and keeps only this many, so password_history cannot hold an old
+// hash that the rule would never look at.
+const PASSWORD_HISTORY_LIMIT = 5;
+
 // bcrypt only reads the first 72 bytes of a password, so anything longer would
 // silently be ignored. Refuse it instead.
 const MAX_PASSWORD_LENGTH = 72;
@@ -59,5 +65,6 @@ function passwordProblems(password) {
 const PUBLIC_RULES = PASSWORD_RULES.map(({ id, label, pattern }) => ({ id, label, pattern }));
 
 module.exports = {
-  PASSWORD_RULES, PUBLIC_RULES, MAX_PASSWORD_LENGTH, failedPasswordRules, passwordProblems,
+  PASSWORD_RULES, PUBLIC_RULES, MAX_PASSWORD_LENGTH, PASSWORD_HISTORY_LIMIT,
+  failedPasswordRules, passwordProblems,
 };

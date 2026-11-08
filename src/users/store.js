@@ -2,6 +2,7 @@ const db = require('../db');
 const { hashPassword, verifyPassword, NO_PASSWORD } = require('../auth/password');
 const { invalidateSetupTokens } = require('../auth/setup-tokens');
 const { invalidateResetTokens } = require('../auth/password-reset');
+const { recordPasswordUsed } = require('../auth/password-history');
 const { notifyPasswordChanged, notifiesFor } = require('../auth/password-notice');
 const { notifyEmailChanged } = require('../auth/contact-notice');
 
@@ -134,6 +135,11 @@ async function updateUserPassword(id, password, { method, changedBy = null } = {
   // request errors out with the password already changed and no record of it.
   // A transaction is the real answer and db.js would need a helper for one.
   await recordPasswordChange(id, changedBy, method);
+
+  // Story 28211 (AA-79): and the hash is remembered, so this password cannot
+  // come back round again later. After the audit row, deliberately: the log is
+  // a graded requirement and nothing added here should be able to cost it.
+  await recordPasswordUsed(id, passwordHash);
 
   // Story AA-25 (22227): and the owner is told, after the change is both made
   // and recorded, so the mail can never announce something that did not
