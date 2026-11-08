@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const db = require('../src/db');
 const { app } = require('../src/app');
 const { hashPassword, NO_PASSWORD } = require('../src/auth/password');
-const { updateUserPassword, matchesCurrentPassword, SamePasswordError } = require('../src/users/store');
+const { updateUserPassword, matchesRecentPassword, SamePasswordError } = require('../src/users/store');
 
 const PASSWORD = 'Password1!';
 const DIFFERENT = 'FreshStart9#';
@@ -89,6 +89,7 @@ beforeEach(() => {
     // reused. No rows here, so there is never anything to prune.
     if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };
     if (sql.startsWith('SELECT id FROM password_history')) return [];
+    if (sql.startsWith('SELECT password_hash FROM password_history')) return [];
 
     // --- sessions ---
     if (sql.startsWith('UPDATE users SET sessions_valid_from')) return { affectedRows: 1 };
@@ -144,7 +145,7 @@ describe('the emailed link refuses the password already on the account', () => {
     db.query.mockClear();
     const res = await useLink(token, PASSWORD).expect(400);
 
-    expect(res.text).toContain('already the password on this account');
+    expect(res.text).toContain('used that password before');
     expect(writes()).toEqual([]);
   });
 
@@ -170,9 +171,7 @@ describe('an admin reset refuses it too', () => {
     const res = await adminSets(await login('admin1'), 1, PASSWORD);
 
     expect(res.status).toBe(400);
-    // EJS escapes the apostrophe, so match either side of it.
-    expect(res.text).toContain('already driver1');
-    expect(res.text).toContain('Choose a different one.');
+    expect(res.text).toContain('driver1 has used that password before');
     expect(writes()).toEqual([]);
   });
 
@@ -195,16 +194,18 @@ describe('the rule lives in the store, so no route can forget it', () => {
   });
 
   test('it knows the current password from any other one', async () => {
-    expect(await matchesCurrentPassword(1, PASSWORD)).toBe(true);
-    expect(await matchesCurrentPassword(1, DIFFERENT)).toBe(false);
-    expect(await matchesCurrentPassword(999, PASSWORD)).toBe(false);
+    // With no history rows, the current hash in users is the whole answer.
+    // tests/password-reuse-refused.test.js covers it with history as well.
+    expect(await matchesRecentPassword(1, PASSWORD)).toBe(true);
+    expect(await matchesRecentPassword(1, DIFFERENT)).toBe(false);
+    expect(await matchesRecentPassword(999, PASSWORD)).toBe(false);
   });
 
   test('an unclaimed account matches nothing, so a setup link is never refused', async () => {
     // Its stored value is a placeholder, not a hash. Even handed the
     // placeholder itself, nothing verifies against it.
-    expect(await matchesCurrentPassword(7, NO_PASSWORD)).toBe(false);
-    expect(await matchesCurrentPassword(7, PASSWORD)).toBe(false);
+    expect(await matchesRecentPassword(7, NO_PASSWORD)).toBe(false);
+    expect(await matchesRecentPassword(7, PASSWORD)).toBe(false);
     await expect(updateUserPassword(7, PASSWORD, { method: 'setup-link' })).resolves.toBe(true);
   });
 });

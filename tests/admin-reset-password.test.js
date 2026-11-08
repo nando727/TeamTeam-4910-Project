@@ -58,6 +58,7 @@ beforeEach(() => {
     // reused. No rows here, so there is never anything to prune.
     if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };
     if (sql.startsWith('SELECT id FROM password_history')) return [];
+    if (sql.startsWith('SELECT password_hash FROM password_history')) return [];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });

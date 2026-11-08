@@ -57,6 +57,14 @@ beforeEach(() => {
       history.push({ id: ++nextId, user_id, password_hash });
       return { insertId: nextId };
     }
+    if (sql.startsWith('SELECT password_hash FROM password_history')) {
+      const [user_id, limit] = params;
+      return history
+        .filter(r => r.user_id === user_id)
+        .sort((a, b) => b.id - a.id)
+        .slice(0, limit)
+        .map(r => ({ password_hash: r.password_hash }));
+    }
     if (sql.startsWith('SELECT id FROM password_history')) {
       const [user_id, limit] = params;
       return history

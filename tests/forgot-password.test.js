@@ -74,6 +74,7 @@ beforeEach(() => {
     // reused. No rows here, so there is never anything to prune.
     if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };
     if (sql.startsWith('SELECT id FROM password_history')) return [];
+    if (sql.startsWith('SELECT password_hash FROM password_history')) return [];
     // Backlog AA-14: a password change signs the account out elsewhere.
     if (sql.startsWith('UPDATE users SET sessions_valid_from')) return { affectedRows: 1 };
     if (sql.startsWith('SELECT UNIX_TIMESTAMP(sessions_valid_from)')) return [{ cutoff_ms: Date.now() }];

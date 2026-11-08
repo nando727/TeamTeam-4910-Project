@@ -608,6 +608,96 @@ like an arbitrary choice and is not one.
 Voiding marks the row used; it never deletes it. The record that a link was
 issued is part of the account's history.
 
+### Setting a password voids a pending reset link (story AA-27, 22229)
+
+The same thing, for the other kind of link. Someone asks for a reset link, then
+gets back into the account another way &mdash; remembers the password, or an
+administrator resets it &mdash; and changes the password. The emailed link was
+still sitting in the inbox, and until this story it still worked.
+
+It lives in the same place and for the same reason:
+`invalidateResetTokens()` (`src/auth/password-reset.js`) is called from
+`updateUserPassword()`, so all four password paths get it without knowing about
+it. The link being used *right now* is already spent by the time that runs, so
+a reset through a link voids only the others.
+
+`tests/reset-link-voided.test.js` keeps real `password_resets` rows with a real
+`used_at`, so a voided link genuinely returns 404 rather than merely proving a
+statement ran. It also pins what a void must **not** break: a refused change
+(wrong current password, or one that fails the rules) leaves the link alive,
+and one account's change never touches another's link.
+
+### A password cannot be reused (stories AA-29 22232, AA-79 28211)
+
+A new password has to be a new password. The rule is **the password in force
+now, plus the last five that account has had**, and it is one question asked in
+one place: `matchesRecentPassword()` in `src/users/store.js`, called from
+`updateUserPassword()` before anything is written.
+
+The current password is read from `users` and the rest from `password_history`,
+even though the current hash is normally the newest history row too. `users` is
+the authority on what the password *is*, so the half of the rule that matters
+most does not depend on the newer table being complete: an account created with
+a password, or one whose rows predate migration 021, is still refused its
+current password.
+
+**Where the old hashes live.** `password_history` (migration 021) is the one
+table in the app that keeps hashes a password no longer in use.
+`password_changes` deliberately holds none &mdash; an audit log read by
+administrators should not double as a pile of material to crack. The cost of
+having such a table is worth being plain about: a stolen copy is a set of
+bcrypt hashes someone can work on offline. Three things keep it small.
+
+* Hashes only, written by the same helper as the live password, so bcrypt cost
+  12 protects them equally.
+* Bounded. `PASSWORD_HISTORY_LIMIT` (`src/auth/password-policy.js`) is five, and
+  it does both jobs: the app compares against five and keeps five, deleting
+  older rows as it goes, so the table cannot hold an old hash the rule would
+  never look at.
+* Migration 021 seeds each account's current hash once, so the password an
+  account had *before* the table existed cannot be set straight back after one
+  change. `NOT EXISTS` makes that fill safe to rerun, which matters because
+  `npm run db:migrate` applies every file on every run &mdash; see
+  [Database changes come first, and on RDS](#database-changes-come-first-and-on-rds).
+
+**Two forms check earlier than the store does.** The emailed-link form
+(`POST /reset-password/:token`) asks before it spends the token, because the
+link is the only way back onto that page: getting this wrong has to cost a
+retry, not the link. The profile form compares the two strings it was given,
+because it is the one form that knows the current password, and so can name
+that mistake precisely instead of reporting the general rule. Both are
+shortcuts to a friendlier message, not the rule itself &mdash; the store still
+refuses it if a route forgets.
+
+**What it costs.** Every accepted password change now runs up to six bcrypt
+comparisons before the hash itself, which is a second or two on a small
+instance. That is the main reason the limit is five and not fifty. A password
+change is rare enough to afford it; nothing else in the app pays it.
+
+**What the rule does not reach**, stated plainly because both are real:
+
+* The password an account was **created** with. `createUser()` writes a hash of
+  its own and does not record history, so an admin's initial password is
+  forgotten once the user changes away from it. The current-password half still
+  covers it until then.
+* Anything past the fifth. Those rows are deleted, so there is nothing left to
+  compare against and the password becomes usable again. The limit is a real
+  edge, and `tests/password-reuse-refused.test.js` tests it as one rather than
+  pretending otherwise.
+
+**It tells you that a password was used.** The admin reset page says so of the
+account it is resetting, and the emailed-link page says so of the account that
+link belongs to. That is a deliberate trade: the message has to be actionable,
+and both audiences can already take the account over by other means &mdash; an
+administrator through impersonation, a link holder through the link. It is
+still a way to confirm a guessed password, which matters if the person reuses
+that password elsewhere.
+
+Tests: `tests/password-history.test.js` for the recording and the pruning, with
+an in-memory table so pruning is real; `tests/password-reuse-refused.test.js`
+for the refusals on all three forms plus the two edges above;
+`tests/same-password-refused.test.js` for the current-password half on its own.
+
 ## Driver point history (DF-17, DF-20, DF-22)
 
 Drivers can open **View my point history** from their homepage or **My sponsor

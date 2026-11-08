@@ -50,6 +50,7 @@ beforeEach(() => {
     // reused. No rows here, so there is never anything to prune.
     if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };
     if (sql.startsWith('SELECT id FROM password_history')) return [];
+    if (sql.startsWith('SELECT password_hash FROM password_history')) return [];
     if (sql.startsWith('SELECT id FROM users WHERE email')) return [];
     if (sql.startsWith('INSERT INTO users')) { inserts.push(params); return { insertId: 9 }; }
     // Backlog AA-14: a password change signs the account out elsewhere.

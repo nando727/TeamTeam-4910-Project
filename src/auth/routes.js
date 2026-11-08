@@ -4,8 +4,10 @@ const { verifyPassword } = require('./password');
 const { idleLimitLabel } = require('./session-timeout');
 const { takeReturnTo } = require('./return-to');
 const { requireFormToken } = require('./form-token');
-const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./password-policy');
-const { updateUserPassword, revokeSessions, matchesCurrentPassword } = require('../users/store');
+const {
+  PUBLIC_RULES, MAX_PASSWORD_LENGTH, PASSWORD_HISTORY_LIMIT, passwordProblems,
+} = require('./password-policy');
+const { updateUserPassword, revokeSessions, matchesRecentPassword } = require('../users/store');
 const {
   createResetToken, findValidReset, consumeReset, requestsExhausted, TOKEN_PATTERN, EXPIRY_MINUTES,
 } = require('./password-reset');
@@ -289,6 +291,7 @@ router.post('/forgot-password', async (req, res, next) => {
 function renderReset(req, res, reset, { error = null, status = 200 } = {}) {
   return res.status(status).render('reset-password', {
     reset, token: req.params.token, error, rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH,
+    historyLimit: PASSWORD_HISTORY_LIMIT,
   });
 }
 
@@ -318,12 +321,14 @@ router.post('/reset-password/:token', async (req, res, next) => {
     if (!problems.length && newPassword !== confirmPassword) problems.push('The new password and confirmation do not match.');
     if (problems.length) return renderReset(req, res, reset, { error: problems.join(' '), status: 400 });
 
-    // Story 22232 (AA-29): refuse the password the account already has. Checked
-    // here, before the token is spent, because the link is the only way back
-    // into this page -- getting this wrong has to cost a retry and not the link.
-    if (await matchesCurrentPassword(reset.userId, newPassword)) {
+    // Stories 22232 (AA-29) and 28211 (AA-79): refuse a password this account
+    // has had recently. Checked here, before the token is spent, because the
+    // link is the only way back into this page -- getting this wrong has to
+    // cost a retry and not the link.
+    if (await matchesRecentPassword(reset.userId, newPassword)) {
       return renderReset(req, res, reset, {
-        error: 'That is already the password on this account. Choose a different one.', status: 400,
+        error: 'This account has used that password before. Choose one it has not had recently.',
+        status: 400,
       });
     }
 

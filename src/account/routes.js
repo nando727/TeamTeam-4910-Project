@@ -7,7 +7,9 @@ const {
 const { getAbout } = require('../about/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { verifyPassword } = require('../auth/password');
-const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
+const {
+  PUBLIC_RULES, MAX_PASSWORD_LENGTH, PASSWORD_HISTORY_LIMIT, passwordProblems,
+} = require('../auth/password-policy');
 const router = express.Router();
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -95,6 +97,7 @@ router.post('/profile', requireLogin, requireFormToken, loadProfile, async (req,
 function renderChangePassword(req, res, { error = null, status = 200 } = {}) {
   return res.status(status).render('change-password', {
     error, rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH, token: formToken(req),
+    historyLimit: PASSWORD_HISTORY_LIMIT,
   });
 }
 
@@ -120,11 +123,9 @@ router.post('/profile/password', requireLogin, requireFormToken, async (req, res
     const problems = passwordProblems(newPassword);
     if (problems.length) return renderChangePassword(req, res, { error: problems.join(' '), status: 400 });
     // Story 22232 (AA-29): this form knows the current password, so comparing
-    // the two strings answers it without a hash. The store checks it again
-    // against the stored hash for the forms that cannot ask -- see the catch
-    // below, which is what catches the one case this compare misses: bcrypt
-    // reads only the first 72 bytes, so two different strings can be the same
-    // password to it.
+    // the two strings answers the commonest mistake without a hash, and names
+    // it precisely. Everything wider than that -- the last few passwords, and
+    // the 72-byte case below -- comes back from the store as an error.
     if (newPassword === currentPassword) {
       return renderChangePassword(req, res, { error: 'Choose a new password that is different from your current one.', status: 400 });
     }

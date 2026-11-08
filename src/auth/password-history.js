@@ -5,8 +5,9 @@ const { PASSWORD_HISTORY_LIMIT } = require('./password-policy');
 // so none of them can be set again. See db/migrations/021_password_history.sql
 // for why old hashes are kept in one table and nowhere else.
 //
-// This module only remembers them. Comparing a new password against them is
-// the other half of the story and is not here yet.
+// This module remembers them and hands them back. Comparing a password against
+// them is in src/users/store.js, with the account's current hash, because that
+// is where the whole rule can be asked as one question.
 
 // Remembers the hash that is now in force, then forgets anything past the
 // limit. Called from updateUserPassword in src/users/store.js, which is the
@@ -47,4 +48,15 @@ async function forgetBeyondLimit(userId) {
   return result.affectedRows || 0;
 }
 
-module.exports = { recordPasswordUsed, forgetBeyondLimit };
+// The hashes this account has used lately, newest first. Capped by the same
+// number the pruning uses, so a hash that survived a prune by a moment cannot
+// be enforced against while the one next to it is not.
+async function recentPasswordHashes(userId) {
+  const rows = await db.query(
+    'SELECT password_hash FROM password_history WHERE user_id = ? ORDER BY id DESC LIMIT ?',
+    [userId, PASSWORD_HISTORY_LIMIT]
+  );
+  return rows.map(row => row.password_hash);
+}
+
+module.exports = { recordPasswordUsed, forgetBeyondLimit, recentPasswordHashes };
