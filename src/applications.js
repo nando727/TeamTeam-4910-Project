@@ -55,8 +55,13 @@ async function setApplicationStatus(applicationId, status, sponsorId, rejectionR
     );
     if (status === 'approved') {
       await conn.execute(
-        'INSERT INTO users (id, sponsor_id) VALUES (?, ?)',
+        'INSERT INTO driver_sponsors (driver_id, sponsor_id) VALUES (?, ?)',
         [applications[0].driver_id, sponsorId]
+      );
+      
+      await conn.execute(
+        "UPDATE users SET sponsor_id = ? WHERE id = ? AND role = 'driver'",
+        [sponsorId, applications[0].driver_id]
       );
     }
     // Approval and membership must either both save or both roll back.
