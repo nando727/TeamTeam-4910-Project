@@ -1,13 +1,15 @@
 const express = require('express');
 const { rememberAndRedirect } = require('../auth/return-to');
 const {
-  DuplicateError, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
-  revokeSessions,
+  DuplicateError, SamePasswordError, findUserById, findUserCredentials, updateUserContact,
+  updateUserPassword, revokeSessions,
 } = require('../users/store');
 const { getAbout } = require('../about/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { verifyPassword } = require('../auth/password');
-const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
+const {
+  PUBLIC_RULES, MAX_PASSWORD_LENGTH, PASSWORD_HISTORY_LIMIT, passwordProblems,
+} = require('../auth/password-policy');
 const router = express.Router();
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -95,6 +97,7 @@ router.post('/profile', requireLogin, requireFormToken, loadProfile, async (req,
 function renderChangePassword(req, res, { error = null, status = 200 } = {}) {
   return res.status(status).render('change-password', {
     error, rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH, token: formToken(req),
+    historyLimit: PASSWORD_HISTORY_LIMIT,
   });
 }
 
@@ -119,6 +122,10 @@ router.post('/profile/password', requireLogin, requireFormToken, async (req, res
     // Each failed rule gets its own sentence so the user knows exactly what to fix.
     const problems = passwordProblems(newPassword);
     if (problems.length) return renderChangePassword(req, res, { error: problems.join(' '), status: 400 });
+    // Story 22232 (AA-29): this form knows the current password, so comparing
+    // the two strings answers the commonest mistake without a hash, and names
+    // it precisely. Everything wider than that -- the last few passwords, and
+    // the 72-byte case below -- comes back from the store as an error.
     if (newPassword === currentPassword) {
       return renderChangePassword(req, res, { error: 'Choose a new password that is different from your current one.', status: 400 });
     }
@@ -143,7 +150,12 @@ router.post('/profile/password', requireLogin, requireFormToken, async (req, res
     renderProfile(req, res, profile, {
       success: 'Your password was changed. Any other devices were signed out.',
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err instanceof SamePasswordError) {
+      return renderChangePassword(req, res, { error: err.message, status: 400 });
+    }
+    next(err);
+  }
 });
 
 // Backlog AA-13: end every session for this account at once, including this

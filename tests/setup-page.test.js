@@ -5,7 +5,7 @@ import request from 'supertest';
 
 const require = createRequire(import.meta.url);
 const db = require('../src/db');
-const { verifyPassword } = require('../src/auth/password');
+const { verifyPassword, NO_PASSWORD } = require('../src/auth/password');
 const { hashToken } = require('../src/auth/setup-tokens');
 const { app } = require('../src/app');
 
@@ -33,6 +33,12 @@ beforeEach(() => {
     // Story 22214: every sign-in now checks the lockout first. No failures here.
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
 
+    // Story AA-29: setting a password checks it is not the one already on the
+    // account. An account still waiting to be claimed holds no usable password,
+    // which is why that check never refuses anyone here.
+    if (sql.startsWith('SELECT id, username, password_hash FROM users WHERE id')) {
+      return [{ id: tokenRow.user_id, username: 'newuser', password_hash: NO_PASSWORD }];
+    }
     if (sql.startsWith('SELECT id, user_id, token_hash')) {
       const [tokenHash] = params;
       return tokenHash === tokenRow.token_hash ? [tokenRow] : [];
@@ -45,6 +51,8 @@ beforeEach(() => {
     }
     // Story 22225: writing the password then spends any other unused link for
     // the same account. By the time it runs, the link above is already spent.
+    // Story AA-27: setting a password also voids any pending reset link.
+    if (sql.startsWith('UPDATE password_resets SET used_at = NOW() WHERE user_id')) return { affectedRows: 0 };
     if (sql.startsWith('UPDATE setup_tokens SET used_at = NOW() WHERE user_id =')) {
       const [userId] = params;
       if (tokenRow.used_at || tokenRow.user_id !== userId) return { affectedRows: 0 };
@@ -53,6 +61,11 @@ beforeEach(() => {
     }
     // Audit log requirement: every password change is recorded.
     if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
+    // Story AA-79: the hash now in force is remembered so it cannot be
+    // reused. No rows here, so there is never anything to prune.
+    if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };
+    if (sql.startsWith('SELECT id FROM password_history')) return [];
+    if (sql.startsWith('SELECT password_hash FROM password_history')) return [];
     if (sql.startsWith('UPDATE users SET password_hash')) {
       const [hash, userId] = params;
       passwordUpdates.push({ hash, userId });

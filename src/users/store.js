@@ -1,6 +1,8 @@
 const db = require('../db');
-const { hashPassword, NO_PASSWORD } = require('../auth/password');
+const { hashPassword, verifyPassword, NO_PASSWORD } = require('../auth/password');
 const { invalidateSetupTokens } = require('../auth/setup-tokens');
+const { invalidateResetTokens } = require('../auth/password-reset');
+const { recordPasswordUsed, recentPasswordHashes } = require('../auth/password-history');
 const { notifyPasswordChanged, notifiesFor } = require('../auth/password-notice');
 const { notifyEmailChanged } = require('../auth/contact-notice');
 
@@ -21,6 +23,16 @@ class DuplicateError extends Error {
   }
 }
 
+// Stories 22232 (AA-29) and 28211 (AA-79): thrown when the new password is one
+// the account has had recently -- the one in force, or one of the last few it
+// replaced. A 400 with a sentence the user can act on, not a 500.
+class SamePasswordError extends Error {
+  constructor(message = 'You have used that password before. Choose one this account has not had recently.') {
+    super(message);
+    this.name = 'SamePasswordError';
+  }
+}
+
 // Shared by POST /api/users and the admin "Create user" page. Hashes through
 // the single shared helper and enforces unique email + username.
 async function createUser({ name, email, username, password, role, sponsorId = null }) {
@@ -38,6 +50,21 @@ async function createUser({ name, email, username, password, role, sponsorId = n
       'INSERT INTO users (name, email, username, password_hash, role, sponsor_id) VALUES (?, ?, ?, ?, ?, ?)',
       [name, email, username, passwordHash, role, sponsorId || null]
     );
+    // Story 28211 (AA-79): an account created with a password remembers it, so
+    // that password is refused later like any other it has had. Without this,
+    // the password an administrator typed on the create-user page was forgotten
+    // the moment the user chose their own, and could be set straight back.
+    //
+    // This is the one hash the app writes outside updateUserPassword, and it
+    // has to be: there is no account to update yet. Recorded after the INSERT,
+    // which is what gives us an id to record it against.
+    //
+    // An account created without a password has nothing to remember.
+    // NO_PASSWORD is a placeholder and not a hash of anything, so storing it
+    // would be storing a row that can never match.
+    if (passwordHash !== NO_PASSWORD) {
+      await recordPasswordUsed(result.insertId, passwordHash);
+    }
     return { id: result.insertId, name, email, username, role, sponsorId: sponsorId || null };
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
@@ -59,6 +86,39 @@ async function findUserById(id) {
 async function findUserCredentials(id) {
   const rows = await db.query('SELECT id, username, password_hash FROM users WHERE id = ?', [id]);
   return rows[0] || null;
+}
+
+// Stories 22232 (AA-29) and 28211 (AA-79): has this account had this password
+// recently? Both halves of one rule, asked as one question: the hash in force
+// now, which users holds, and the last PASSWORD_HISTORY_LIMIT hashes it has
+// replaced, which password_history holds.
+//
+// The current password is read from users and not from history, even though it
+// is normally the newest history row too. users is the authority on what the
+// password is, so the half of this rule that matters most does not rest on the
+// newest table being complete -- an account created with a password, or one
+// whose rows predate migration 021, is still refused its current password.
+//
+// Used by updateUserPassword below, and directly by the routes that have
+// something to undo if the answer is yes and so cannot wait to be told by a
+// thrown error.
+//
+// An account with no usable password yet holds NO_PASSWORD, which is not a
+// bcrypt hash and verifies against nothing, so claiming an account through a
+// setup link can never be refused by this.
+async function matchesRecentPassword(id, password) {
+  const account = await findUserCredentials(id);
+  const hashes = account ? [account.password_hash] : [];
+  for (const hash of await recentPasswordHashes(id)) {
+    // Comparing the same hash twice would cost a second bcrypt pass for nothing.
+    if (!hashes.includes(hash)) hashes.push(hash);
+  }
+  // One comparison per hash, in order, newest first: the likeliest answer is
+  // the current password, and a match stops the rest.
+  for (const hash of hashes) {
+    if (await verifyPassword(password, hash)) return true;
+  }
+  return false;
 }
 
 // Replaces the stored hash. Every caller must run passwordProblems() first;
@@ -87,10 +147,23 @@ async function findUserCredentials(id) {
 // recorded, as 'unknown': a password change nobody can account for is exactly
 // the thing the log exists to show, so it must never be the quiet case.
 async function updateUserPassword(id, password, { method, changedBy = null } = {}) {
+  // Stories 22232 (AA-29) and 28211 (AA-79): a new password has to be a new
+  // password, and not one of the last few either. First, before the links below
+  // are spent: a refused change must leave the account exactly as it was. Here
+  // rather than in the four routes for the same reason the link voiding is here
+  // -- a rule that each caller has to remember is a rule one of them eventually
+  // will not.
+  if (await matchesRecentPassword(id, password)) throw new SamePasswordError();
   // Hashing first keeps the window between voiding and writing as short as it
   // can be; it touches nothing, so a failure here changes nothing.
   const passwordHash = await hashPassword(password);
   await invalidateSetupTokens(id);
+  // Story AA-27 (22229): and any reset link waiting in an inbox. Someone who
+  // asked for a link, then got back in another way and changed the password,
+  // has left a live link behind in mail they may not control any more. The
+  // link that is being used right now is already spent by the time this runs,
+  // so a reset through a link voids only the others.
+  await invalidateResetTokens(id);
   const result = await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
   if (!result.affectedRows) return false;
 
@@ -99,6 +172,11 @@ async function updateUserPassword(id, password, { method, changedBy = null } = {
   // request errors out with the password already changed and no record of it.
   // A transaction is the real answer and db.js would need a helper for one.
   await recordPasswordChange(id, changedBy, method);
+
+  // Story 28211 (AA-79): and the hash is remembered, so this password cannot
+  // come back round again later. After the audit row, deliberately: the log is
+  // a graded requirement and nothing added here should be able to cost it.
+  await recordPasswordUsed(id, passwordHash);
 
   // Story AA-25 (22227): and the owner is told, after the change is both made
   // and recorded, so the mail can never announce something that did not
@@ -227,8 +305,9 @@ async function sessionsRevokedSince(id, issuedAtMs) {
 }
 
 module.exports = {
-  VALID_ROLES, USER_STATUSES, DuplicateError,
+  VALID_ROLES, USER_STATUSES, DuplicateError, SamePasswordError,
   createUser, findUserById, findUserCredentials, updateUserContact, updateUserPassword,
+  matchesRecentPassword,
   PASSWORD_CHANGE_METHODS,
   listUsers, updateUserStatus, countRecentFailedLogins,
   revokeSessions, sessionsRevokedSince,

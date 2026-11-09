@@ -8,14 +8,7 @@ const TOKEN_BYTES = 32;
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 const EXPIRY_MINUTES = 30;
 
-// Story AA-20 (22222): now that these links are actually emailed, the form is
-// a way to send mail to somebody else's inbox. Anyone can post a username to
-// it, as many times as they like, and every post would be another message to
-// a person who never asked for any of them.
-//
-// A few in a row are legitimate -- the first went to spam, or arrived while
-// they were looking elsewhere -- so this allows a handful and then stops,
-// rather than one every so often.
+
 const DEFAULT_MAX_REQUESTS = 3;
 const DEFAULT_WINDOW_MINUTES = 15;
 
@@ -48,10 +41,18 @@ async function requestsExhausted(userId) {
 
 const hashToken = token => createHash('sha256').update(token).digest('hex');
 
+async function invalidateResetTokens(userId) {
+  const result = await db.query(
+    'UPDATE password_resets SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL',
+    [userId]
+  );
+  return result.affectedRows || 0;
+}
+
 // Issues a fresh token for a user and retires any earlier unused ones, so at
 // most one live link exists per account. Returns the raw token for the link.
 async function createResetToken(userId) {
-  await db.query('UPDATE password_resets SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [userId]);
+  await invalidateResetTokens(userId);
   const token = randomBytes(TOKEN_BYTES).toString('hex');
   await db.query(
     'INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?, ?, NOW() + INTERVAL ? MINUTE)',
@@ -85,7 +86,7 @@ async function consumeReset(id) {
 }
 
 module.exports = {
-  createResetToken, findValidReset, consumeReset, hashToken,
+  createResetToken, findValidReset, consumeReset, hashToken, invalidateResetTokens,
   requestsExhausted, recentRequestCount, requestPolicy,
   TOKEN_PATTERN, EXPIRY_MINUTES,
 };

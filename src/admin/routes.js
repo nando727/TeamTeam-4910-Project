@@ -2,13 +2,15 @@ const express = require('express');
 const { randomBytes } = require('crypto');
 const {
   VALID_ROLES, USER_STATUSES, DuplicateError, createUser, findUserById, listUsers, updateUserStatus,
-  updateUserPassword, countRecentFailedLogins, revokeSessions,
+  updateUserPassword, countRecentFailedLogins, revokeSessions, SamePasswordError,
 } = require('../users/store');
 const { createSponsor, listSponsors } = require('../sponsors/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { requireActiveAdmin } = require('./guard');
 const { listDriverSponsors, addDriverSponsor, removeDriverSponsor, MembershipError } = require('../memberships/store');
-const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('../auth/password-policy');
+const {
+  PUBLIC_RULES, MAX_PASSWORD_LENGTH, PASSWORD_HISTORY_LIMIT, passwordProblems,
+} = require('../auth/password-policy');
 const {
   issueSetupToken, setupLinkFor, linkLifetimeHours, invalidateSetupTokens, userIdsAwaitingSetup,
 } = require('../auth/setup-tokens');
@@ -397,6 +399,7 @@ router.post('/impersonate/:userId', (req, res) => {
 function renderResetPassword(req, res, { from, failedLogins, error = null, status = 200 }) {
   return res.status(status).render('admin-reset-password', {
     user: req.targetUser, rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH, token: formToken(req),
+    historyLimit: PASSWORD_HISTORY_LIMIT,
     from, returnTo: STATUS_PAGES[from], failedLogins, error,
   });
 }
@@ -428,10 +431,23 @@ router.post('/manage-users/:userId/password', async (req, res, next) => {
       const failedLogins = await countRecentFailedLogins(user.username);
       return renderResetPassword(req, res, { from, failedLogins, error: problems.join(' '), status: 400 });
     }
-    await updateUserPassword(user.id, newPassword, {
-      method: 'admin-reset',
-      changedBy: req.session.impersonator ? req.session.impersonator.id : req.session.user.id,
-    });
+    try {
+      await updateUserPassword(user.id, newPassword, {
+        method: 'admin-reset',
+        changedBy: req.session.impersonator ? req.session.impersonator.id : req.session.user.id,
+      });
+    } catch (err) {
+      // Stories 22232 (AA-29) and 28211 (AA-79): the store refuses a password
+      // the account has had recently, and refuses it before it touches
+      // anything, so there is nothing to undo here. The wording is the
+      // admin's: it is not their password.
+      if (!(err instanceof SamePasswordError)) throw err;
+      const failedLogins = await countRecentFailedLogins(user.username);
+      return renderResetPassword(req, res, {
+        from, failedLogins, status: 400,
+        error: `${user.username} has used that password before. Choose one they have not had recently.`,
+      });
+    }
 
     // Backlog AA-14: the account being reset is signed out everywhere. An
     // admin resetting their own password keeps the session they are using.

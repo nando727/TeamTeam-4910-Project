@@ -55,6 +55,11 @@ beforeEach(() => {
     if (sql.startsWith('UPDATE users SET password_hash')) return { affectedRows: 1 };
     // Audit log requirement: every password change is recorded.
     if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
+    // Story AA-79: the hash now in force is remembered so it cannot be
+    // reused. No rows here, so there is never anything to prune.
+    if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };
+    if (sql.startsWith('SELECT id FROM password_history')) return [];
+    if (sql.startsWith('SELECT password_hash FROM password_history')) return [];
 
     if (sql.startsWith('SELECT id, username, password_hash FROM users WHERE id')) {
       return users.filter(u => u.id === params[0]).map(u => ({ ...u, password_hash: passwordHash }));
@@ -81,6 +86,8 @@ beforeEach(() => {
       return { affectedRows: 1 };
     }
     // The statement this story is about.
+    // Story AA-27: setting a password also voids any pending reset link.
+    if (sql.startsWith('UPDATE password_resets SET used_at = NOW() WHERE user_id')) return { affectedRows: 0 };
     if (sql.startsWith('UPDATE setup_tokens SET used_at = NOW() WHERE user_id =')) {
       const spent = tokens.filter(t => t.user_id === params[0] && !t.used_at);
       spent.forEach(t => { t.used_at = new Date(); });

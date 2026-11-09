@@ -42,8 +42,15 @@ beforeEach(() => {
     // Story 22225: setting a password spends any unused setup link for the
     // account. Nothing here was sent one.
     if (sql.startsWith('UPDATE setup_tokens SET used_at')) return { affectedRows: 0 };
+    // Story AA-27: setting a password also voids any pending reset link.
+    if (sql.startsWith('UPDATE password_resets SET used_at = NOW() WHERE user_id')) return { affectedRows: 0 };
     // Audit log requirement: every password change is recorded.
     if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
+    // Story AA-79: the hash now in force is remembered so it cannot be
+    // reused. No rows here, so there is never anything to prune.
+    if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };
+    if (sql.startsWith('SELECT id FROM password_history')) return [];
+    if (sql.startsWith('SELECT password_hash FROM password_history')) return [];
     if (sql.startsWith('SELECT id FROM users WHERE email')) return [];
     if (sql.startsWith('INSERT INTO users')) { inserts.push(params); return { insertId: 9 }; }
     // Backlog AA-14: a password change signs the account out elsewhere.

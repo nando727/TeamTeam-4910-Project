@@ -206,6 +206,23 @@ CREATE TABLE IF NOT EXISTS password_changes (
   FOREIGN KEY (changed_by_user_id) REFERENCES users(id)
 );
 
+-- Passwords an account has already used (see migration 021), so none of them
+-- can be set again. Hashes only, and only the newest few per account: see the
+-- migration for why this table is the one place old hashes are kept.
+CREATE TABLE IF NOT EXISTS password_history (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  -- Whose password it was.
+  user_id INT NOT NULL,
+  -- A bcrypt hash, the same column type as users.password_hash. Never a
+  -- password: nothing here can be read back into one.
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- The only question asked of this table is "the newest few for this user",
+  -- which is exactly what this index answers.
+  INDEX idx_password_history_user (user_id, id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 -- The 1% monthly fee each sponsor owes (see migration 018). Keep this text the
 -- same as the migration; tests/sponsor-fees.test.js checks that it is.
 DROP PROCEDURE IF EXISTS sponsor_monthly_fees;
