@@ -223,6 +223,26 @@ CREATE TABLE IF NOT EXISTS password_history (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+-- Every audit record in the app (see migration 022): login attempts, password
+-- changes, point changes and application decisions, in one shape. The tables
+-- that do a job besides recording keep their own rows and append here as well;
+-- see the migration for why the audit log is not what the lockout counts.
+CREATE TABLE IF NOT EXISTS audit_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  event_type VARCHAR(48) NOT NULL,
+  actor_user_id INT NULL,
+  subject_user_id INT NULL,
+  sponsor_id INT NULL,
+  detail VARCHAR(255) NULL,
+  occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_audit_events_time (occurred_at),
+  INDEX idx_audit_events_subject (subject_user_id, occurred_at),
+  INDEX idx_audit_events_type (event_type, occurred_at),
+  FOREIGN KEY (actor_user_id) REFERENCES users(id),
+  FOREIGN KEY (subject_user_id) REFERENCES users(id),
+  FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
+);
+
 -- The 1% monthly fee each sponsor owes (see migration 018). Keep this text the
 -- same as the migration; tests/sponsor-fees.test.js checks that it is.
 DROP PROCEDURE IF EXISTS sponsor_monthly_fees;

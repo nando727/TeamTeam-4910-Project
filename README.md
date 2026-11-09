@@ -488,9 +488,16 @@ column and a migration, worth its own story rather than being tacked on here.
 
 ### Password changes are recorded (audit log requirement)
 
-Every password that gets set writes a row to `password_changes` (migration
-019): whose password it was, who changed it, how, and when. **Never the
-password and never its hash.**
+Every password that gets set writes a row to the audit log, `audit_events`
+(migration 022): whose password it was, who changed it, how, and when. **Never
+the password and never its hash.**
+
+These rows used to have a table of their own, `password_changes` (migration
+019). Story AA-55 moved them to the one table every audit record goes to;
+migration 022 copies the existing rows across, and the old table is left in
+place, no longer written. What is recorded did not change &mdash; the `method`
+below now rides in the event's `detail` as `method=profile` and the rest are
+columns of `audit_events`.
 
 Nothing recorded this before. `password_resets` looks like it does, but it
 holds reset *tokens* &mdash; it says a link was requested, not that a password
