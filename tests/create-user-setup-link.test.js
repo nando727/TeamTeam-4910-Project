@@ -42,6 +42,11 @@ beforeEach(() => {
       return params[0] === 3 ? [{ id: 3, username: 'admin1', role: 'admin', status: 'active', name: null, email: null }] : [];
     }
     if (sql.startsWith('SELECT id FROM users WHERE email')) return [];
+    // Story AA-79: an account created with a password remembers that hash, so
+    // it cannot be set again later. Nothing is ever pruned on a brand-new
+    // account, which is why the read below has nothing to return.
+    if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };
+    if (sql.startsWith('SELECT id FROM password_history')) return [];
     if (sql.startsWith('INSERT INTO users')) {
       const [name, email, username, passwordHash, role] = params;
       insertedUsers.push({ name, email, username, passwordHash, role });

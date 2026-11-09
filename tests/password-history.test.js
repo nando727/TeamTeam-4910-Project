@@ -13,7 +13,7 @@ const db = require('../src/db');
 const { app } = require('../src/app');
 const { hashPassword, verifyPassword } = require('../src/auth/password');
 const { PASSWORD_HISTORY_LIMIT } = require('../src/auth/password-policy');
-const { updateUserPassword } = require('../src/users/store');
+const { updateUserPassword, createUser } = require('../src/users/store');
 const { recordPasswordUsed, forgetBeyondLimit } = require('../src/auth/password-history');
 
 const PASSWORD = 'Password1!';
@@ -39,6 +39,9 @@ beforeEach(() => {
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
     if (sql.startsWith('SELECT COUNT(*) AS count FROM login_attempts')) return [{ count: 0 }];
+    // Creating an account: the uniqueness check, then the row itself.
+    if (sql.startsWith('SELECT id FROM users WHERE email')) return [];
+    if (sql.startsWith('INSERT INTO users')) return { insertId: 42 };
     if (sql.includes('FROM users WHERE username')) {
       const user = users.find(u => u.username === params[0]);
       return user ? [{ ...user, password_hash: stored[user.id] }] : [];
@@ -161,6 +164,32 @@ describe('a password that is set is remembered', () => {
   test('a write that changed no row records nothing', async () => {
     expect(await updateUserPassword(999, NEW_PASSWORD, { method: 'admin-reset' })).toBe(false);
     expect(history).toEqual([]);
+  });
+});
+
+describe('an account created with a password', () => {
+  test('remembers it, so it cannot be set again once the user moves off it', async () => {
+    const created = await createUser({
+      name: 'New Driver', email: 'new@example.com', username: 'newdriver',
+      password: 'Initial9$', role: 'driver',
+    });
+
+    expect(created.id).toBe(42);
+    expect(hashesFor(42)).toHaveLength(1);
+    expect(await verifyPassword('Initial9$', hashesFor(42)[0])).toBe(true);
+    expect(everyParam()).not.toContain('Initial9$');
+  }, 30_000);
+
+  test('created without one, there is nothing to remember', async () => {
+    // A bulk upload and the admin's "send a setup link instead" both land here.
+    // The placeholder stored for such an account is not a hash of anything.
+    await createUser({
+      name: 'Link Only', email: 'link@example.com', username: 'linkonly',
+      password: null, role: 'driver',
+    });
+
+    expect(history).toEqual([]);
+    expect(db.query.mock.calls.some(([sql]) => sql.startsWith('INSERT INTO password_history'))).toBe(false);
   });
 });
 

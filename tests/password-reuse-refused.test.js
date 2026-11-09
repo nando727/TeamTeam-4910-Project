@@ -16,7 +16,7 @@ const db = require('../src/db');
 const { app } = require('../src/app');
 const { hashPassword } = require('../src/auth/password');
 const { PASSWORD_HISTORY_LIMIT } = require('../src/auth/password-policy');
-const { updateUserPassword, SamePasswordError } = require('../src/users/store');
+const { updateUserPassword, createUser, SamePasswordError } = require('../src/users/store');
 
 const PASSWORD = 'Password1!';      // what every account is using now
 const OLD_PASSWORD = 'Retired7%';   // what driver1 used before that
@@ -25,6 +25,8 @@ const users = [
   { id: 3, username: 'admin1', role: 'admin', status: 'active', email: 'a@example.com' },
   { id: 1, username: 'driver1', role: 'driver', status: 'active', email: 'd@example.com' },
   { id: 5, username: 'driver2', role: 'driver', status: 'active', email: 'd2@example.com' },
+  // Created during a test rather than seeded: see "an admin's initial password".
+  { id: 42, username: 'newdriver', role: 'driver', status: 'active', email: 'n@example.com' },
 ];
 // Stands in for a hash of a password nothing in these tests ever types. bcrypt
 // reads it as "no match" rather than refusing it, which is what keeps a damaged
@@ -55,6 +57,8 @@ beforeEach(() => {
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
     if (sql.startsWith('SELECT COUNT(*) AS count FROM login_attempts')) return [{ count: 0 }];
+    if (sql.startsWith('SELECT id FROM users WHERE email')) return [];
+    if (sql.startsWith('INSERT INTO users')) return { insertId: 42 };
     if (sql.includes('FROM users WHERE username')) {
       const user = users.find(u => u.username === params[0]);
       return user ? [{ ...user, password_hash: stored[user.id] }] : [];
@@ -213,6 +217,23 @@ describe('a password the account used before is refused', () => {
     await expect(updateUserPassword(1, OLD_PASSWORD, { method: 'reset-link' }))
       .rejects.toThrow(SamePasswordError);
     expect(writes()).toEqual([]);
+  }, 30_000);
+});
+
+describe("an admin's initial password counts too", () => {
+  test('an account cannot go back to the password it was created with', async () => {
+    const INITIAL = 'Initial9$';
+    const created = await createUser({
+      name: 'New Driver', email: 'new@example.com', username: 'newdriver',
+      password: INITIAL, role: 'driver',
+    });
+    // The user does what they are meant to do and chooses their own.
+    expect(await updateUserPassword(created.id, UNUSED, { method: 'profile' })).toBe(true);
+
+    // The admin's password is no longer the current one, so only the history
+    // written at creation can refuse it. Before that was recorded, this worked.
+    await expect(updateUserPassword(created.id, INITIAL, { method: 'profile' }))
+      .rejects.toThrow(SamePasswordError);
   }, 30_000);
 });
 

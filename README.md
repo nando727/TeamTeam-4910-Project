@@ -674,16 +674,22 @@ comparisons before the hash itself, which is a second or two on a small
 instance. That is the main reason the limit is five and not fifty. A password
 change is rare enough to afford it; nothing else in the app pays it.
 
-**What the rule does not reach**, stated plainly because both are real:
+**An account also remembers the password it was created with.** `createUser()`
+is the one place other than `updateUserPassword()` that writes a hash, and it
+has to be: there is no account to update yet. So it records too, straight after
+the `INSERT` that gives it an id. Without that, the password an administrator
+typed on the create-user page was forgotten the moment the user chose their own
+and could be set straight back &mdash; the current-password half of the rule
+covered it only until the first change. An account created *without* a password
+(a bulk upload, or "send a setup link instead") records nothing: the
+`!no-password-set` placeholder it stores is not a hash of anything, so a row
+for it could never match.
 
-* The password an account was **created** with. `createUser()` writes a hash of
-  its own and does not record history, so an admin's initial password is
-  forgotten once the user changes away from it. The current-password half still
-  covers it until then.
-* Anything past the fifth. Those rows are deleted, so there is nothing left to
-  compare against and the password becomes usable again. The limit is a real
-  edge, and `tests/password-reuse-refused.test.js` tests it as one rather than
-  pretending otherwise.
+**What the rule does not reach** is anything past the fifth. Those rows are
+deleted, so there is nothing left to compare against and the password becomes
+usable again. The limit is a real edge, and
+`tests/password-reuse-refused.test.js` tests it as one rather than pretending
+otherwise.
 
 **It tells you that a password was used.** The admin reset page says so of the
 account it is resetting, and the emailed-link page says so of the account that

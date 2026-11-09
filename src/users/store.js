@@ -50,6 +50,21 @@ async function createUser({ name, email, username, password, role, sponsorId = n
       'INSERT INTO users (name, email, username, password_hash, role, sponsor_id) VALUES (?, ?, ?, ?, ?, ?)',
       [name, email, username, passwordHash, role, sponsorId || null]
     );
+    // Story 28211 (AA-79): an account created with a password remembers it, so
+    // that password is refused later like any other it has had. Without this,
+    // the password an administrator typed on the create-user page was forgotten
+    // the moment the user chose their own, and could be set straight back.
+    //
+    // This is the one hash the app writes outside updateUserPassword, and it
+    // has to be: there is no account to update yet. Recorded after the INSERT,
+    // which is what gives us an id to record it against.
+    //
+    // An account created without a password has nothing to remember.
+    // NO_PASSWORD is a placeholder and not a hash of anything, so storing it
+    // would be storing a row that can never match.
+    if (passwordHash !== NO_PASSWORD) {
+      await recordPasswordUsed(result.insertId, passwordHash);
+    }
     return { id: result.insertId, name, email, username, role, sponsorId: sponsorId || null };
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
