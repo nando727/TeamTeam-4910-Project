@@ -49,6 +49,7 @@
               <th scope="col" class="num">Purchases</th>
               <th scope="col" class="num">Purchase total</th>
               <th scope="col" class="num">Fee owed (<%= feePercent %>%)</th>
+              <th scope="col">Invoice</th>
             </tr>
           </thead>
           <tbody>
@@ -59,6 +60,7 @@
                 <td class="num"><%= row.purchases %></td>
                 <td class="num"><%= dollars(row.totalCents) %></td>
                 <td class="num cell-strong"><%= dollars(row.feeCents) %></td>
+                <td><a href="/reports/invoices/<%= row.id %>?month=<%= month %>">View</a></td>
               </tr>
             <% }); %>
           </tbody>
@@ -68,6 +70,7 @@
               <td class="num"><%= sum.purchases %></td>
               <td class="num"><%= dollars(sum.totalCents) %></td>
               <td class="num cell-strong"><%= dollars(sum.feeCents) %></td>
+              <td></td>
             </tr>
           </tfoot>
         </table>

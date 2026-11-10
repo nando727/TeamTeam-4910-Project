@@ -123,6 +123,8 @@ describe('the fee report', () => {
     expect(page.text).toContain('2 purchases in October 2026, $83.99 total, $0.84 in fees');
     expect(page.text).toContain('type="month"');
     expect(page.text).toContain('href="/reports/fees?month=2026-09"');
+    // Story AD-40: each sponsor links to its invoice for the same month.
+    expect(page.text).toContain('<a href="/reports/invoices/1?month=2026-10">View</a>');
   });
 
   test('September rounds a large total correctly and includes the inactive sponsor', async () => {

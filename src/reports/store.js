@@ -91,6 +91,36 @@ async function monthlySponsorFees(month) {
   return rows;
 }
 
+// Story AD-40: one sponsor's fee for one month, from the same procedure, or
+// null when there is no such sponsor.
+async function sponsorMonthlyFee(month, sponsorId) {
+  const [rows] = await db.query('CALL sponsor_monthly_fees(?, ?)', [`${month}-01`, sponsorId]);
+  return rows[0] || null;
+}
+
+// The invoice's line items: every purchase by this sponsor's drivers in the
+// month, oldest first, over the same dates the procedure counts.
+async function invoiceLineItems(month, sponsorId) {
+  const start = `${month}-01`;
+  return db.query(
+    'SELECT p.id, p.purchased_at AS purchasedAt, COALESCE(NULLIF(u.name, \'\'), u.username) AS driverName, ' +
+      'u.username AS driverUsername, p.description AS item, p.points_spent AS points, p.amount_cents AS amountCents ' +
+      'FROM purchases p JOIN users u ON u.id = p.driver_id ' +
+      'WHERE p.sponsor_id = ? AND p.purchased_at >= ? AND p.purchased_at < DATE_ADD(?, INTERVAL 1 MONTH) ' +
+      'ORDER BY p.purchased_at, p.id',
+    [sponsorId, start, start]
+  );
+}
+
+// Who the invoice is addressed to.
+async function invoiceSponsor(sponsorId) {
+  const rows = await db.query(
+    'SELECT id, name, contact_email AS contactEmail, contact_phone AS contactPhone, address, status FROM sponsors WHERE id = ?',
+    [sponsorId]
+  );
+  return rows[0] || null;
+}
+
 // Months that have at least one purchase, newest first, for the month picker.
 async function listPurchaseMonths() {
   const rows = await db.query(
@@ -245,7 +275,7 @@ async function listDriversForSales({ sponsorId = null } = {}) {
 module.exports = {
   SORT_COLUMNS, SORT_DIRECTIONS, SALES_SORT_COLUMNS, SALES_VERSIONS,
   listDriversInScope, listPointChanges, countPointChanges, dailyPointTotals,
-  monthlySponsorFees, listPurchaseMonths,
+  monthlySponsorFees, listPurchaseMonths, sponsorMonthlyFee, invoiceLineItems, invoiceSponsor,
   salesSummary, countSponsorsInScope, salesDetail, countSales, salesTotals, dailySalesTotals,
   salesByDriver, countDriversWithSales, listDriversForSales,
 };

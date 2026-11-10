@@ -1,0 +1,109 @@
+<%- include('../partials/head', { title: number ? `Invoice ${number}` : 'Invoice' }) %>
+  <% if (error) { %>
+    <section class="card">
+      <span class="eyebrow">Reports</span>
+      <h1>Invoice</h1>
+      <p class="error" role="alert"><%= error %></p>
+      <p><a href="<%= backHref %>">&larr; All invoices</a></p>
+    </section>
+  <% } else { %>
+  <div class="invoice-toolbar no-print">
+    <a href="<%= backHref %>">&larr; All invoices for <%= monthLabel %></a>
+    <span class="invoice-toolbar__actions">
+      <a class="button-link button--small" href="<%= csvHref %>" data-busy="Preparing the CSV download…" data-busy-reset="4000">Download CSV</a>
+      <button type="button" class="button--small" data-print>Print or save as PDF</button>
+    </span>
+  </div>
+  <p class="report-status no-print" id="report-status" role="status" aria-live="polite" hidden>
+    <span class="spinner" aria-hidden="true"></span> <span class="report-status__text">Preparing…</span>
+  </p>
+
+  <article class="card invoice" aria-labelledby="invoice-title">
+    <header class="invoice__head">
+      <div>
+        <span class="eyebrow">Good Driver Incentive Program</span>
+        <h1 id="invoice-title">Invoice <%= number %></h1>
+        <p class="muted">From <%= issuer %></p>
+      </div>
+      <dl class="invoice__meta">
+        <dt>Invoice</dt><dd><%= number %></dd>
+        <dt>Billing period</dt><dd><%= period.label %></dd>
+        <dt>Issued</dt><dd><%= period.issued %></dd>
+        <dt>Amount due</dt><dd class="invoice__due"><%= dollars(totals.feeCents) %></dd>
+      </dl>
+    </header>
+
+    <% if (!period.complete) { %>
+      <p class="info" role="status"><strong>Not final.</strong> <%= monthLabel %> is still in progress, so purchases made before it ends will be added to this invoice.</p>
+    <% } %>
+    <% if (!consistent) { %>
+      <p class="error" role="alert">A purchase was recorded while this invoice was being prepared, so the line items and the total do not match. Reload the page.</p>
+    <% } %>
+
+    <section class="invoice__parties">
+      <div>
+        <h2 class="section-title">Bill to</h2>
+        <p class="invoice__party">
+          <strong><%= sponsor.name %></strong><% if (sponsor.status !== 'active') { %> <span class="status-badge status-<%= sponsor.status %>"><%= sponsor.status %></span><% } %><br>
+          <%= sponsor.address %><br>
+          <%= sponsor.contactEmail %><% if (sponsor.contactPhone) { %><br><%= sponsor.contactPhone %><% } %>
+        </p>
+      </div>
+      <div>
+        <h2 class="section-title">What this covers</h2>
+        <p class="invoice__party">The program fee of <%= feePercent %>% on the points purchases <%= sponsor.name %>'s drivers made during <%= monthLabel %>, rounded to the cent.</p>
+      </div>
+    </section>
+
+    <h2 class="section-title">Purchases</h2>
+    <% if (items.length === 0) { %>
+      <div class="info" role="status">
+        <p><strong>No purchases in <%= monthLabel %>.</strong></p>
+        <p>The invoice ran successfully. <%= sponsor.name %>'s drivers bought nothing this month, so nothing is due.</p>
+      </div>
+    <% } %>
+    <div class="table-wrap">
+      <table class="table invoice__lines">
+        <thead>
+          <tr>
+            <th scope="col">Date (UTC)</th>
+            <th scope="col">Driver</th>
+            <th scope="col">Item</th>
+            <th scope="col" class="num">Points</th>
+            <th scope="col" class="num">Amount</th>
+          </tr>
+        </thead>
+        <% if (items.length) { %>
+          <tbody>
+            <% items.forEach(item => { %>
+              <tr>
+                <td class="nowrap"><%= formatStamp(item.purchasedAt) %></td>
+                <td><%= item.driverName %></td>
+                <td><%= item.item %></td>
+                <td class="num"><%= Number(item.points).toLocaleString('en-US') %></td>
+                <td class="num"><%= dollars(item.amountCents) %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        <% } %>
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="3">Purchases subtotal, <%= totals.purchases %> purchase<%= totals.purchases === 1 ? '' : 's' %></th>
+            <td class="num"><%= totals.points.toLocaleString('en-US') %></td>
+            <td class="num"><%= dollars(totals.totalCents) %></td>
+          </tr>
+          <tr>
+            <th scope="row" colspan="4">Program fee, <%= feePercent %>% of purchases</th>
+            <td class="num"><%= dollars(totals.feeCents) %></td>
+          </tr>
+          <tr class="invoice__total">
+            <th scope="row" colspan="4">Amount due</th>
+            <td class="num"><%= dollars(totals.feeCents) %></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </article>
+  <% } %>
+  <script src="/report.js" defer></script>
+<%- include('../partials/foot') %>

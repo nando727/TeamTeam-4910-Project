@@ -40,6 +40,23 @@
     });
   });
 
+  // A read-only setup link that selects itself, ready to copy. This was an
+  // inline onfocus attribute, which the policy refused to run.
+  list('input[data-select-on-focus]').forEach(function (input) {
+    input.addEventListener('focus', function () { input.select(); });
+  });
+
+  // A form that must not be sent twice, such as confirming a purchase: the
+  // button is disabled once it has been clicked. The server refuses a second
+  // confirmation anyway; this just saves the extra round trip.
+  list('form[data-submit-once]').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      Array.prototype.forEach.call(form.querySelectorAll('button[type="submit"]'), function (button) {
+        setTimeout(function () { button.disabled = true; }, 0);
+      });
+    });
+  });
+
   // A form that asks before it does something irreversible. Without scripting
   // the form still submits, exactly as it did with the attribute.
   list('form[data-confirm]').forEach(function (form) {

@@ -2,10 +2,11 @@ const express = require('express');
 const { rememberAndRedirect } = require('../auth/return-to');
 const { denyAccess } = require('../auth/deny');
 const { listSponsors } = require('../sponsors/store');
+const { getAbout } = require('../about/store');
 const {
   SORT_COLUMNS, SORT_DIRECTIONS, SALES_SORT_COLUMNS, SALES_VERSIONS,
   listDriversInScope, listPointChanges, countPointChanges, dailyPointTotals,
-  monthlySponsorFees, listPurchaseMonths,
+  monthlySponsorFees, listPurchaseMonths, sponsorMonthlyFee, invoiceLineItems, invoiceSponsor,
   salesSummary, countSponsorsInScope, salesDetail, countSales, salesTotals, dailySalesTotals,
   salesByDriver, countDriversWithSales, listDriversForSales,
 } = require('./store');
@@ -273,6 +274,141 @@ router.get('/fees.csv', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ---- Invoices (story AD-40, admin only) --------------------------------------
+// A printable bill per sponsor per month: every purchase as a line item, and
+// the 1% fee from the sponsor_monthly_fees procedure as the amount due, so the
+// invoice and the Sponsor fees page can never disagree.
+
+const longDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const previousMonth = () => {
+  const now = new Date();
+  return isoDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))).slice(0, 7);
+};
+const monthAfter = month => {
+  const [y, m] = month.split('-').map(Number);
+  return isoDate(new Date(Date.UTC(y, m, 1))).slice(0, 7);
+};
+const invoiceNumber = (month, sponsorId) => `INV-${month.replace('-', '')}-${String(sponsorId).padStart(4, '0')}`;
+
+// Invoices default to the last complete month, the one being billed.
+function resolveInvoiceMonth(req) {
+  const wanted = text(req.query.month);
+  if (!wanted) return { month: previousMonth(), problems: [] };
+  if (!MONTH_PATTERN.test(wanted)) return { month: previousMonth(), problems: ['Choose a month as YYYY-MM.'] };
+  return { month: wanted, problems: [] };
+}
+
+function invoicePeriod(month) {
+  const lastDay = isoDate(new Date(Date.parse(`${monthAfter(month)}-01T00:00:00Z`) - DAY_MS));
+  const complete = month < isoDate(new Date()).slice(0, 7);
+  return {
+    label: `${longDate(`${month}-01`)} to ${longDate(lastDay)}`,
+    complete,
+    issued: complete ? longDate(`${monthAfter(month)}-01`) : longDate(isoDate(new Date())),
+  };
+}
+
+async function invoiceMonths(month) {
+  const months = await listPurchaseMonths();
+  if (!months.includes(month)) months.push(month);
+  return months.sort().reverse().map(m => ({ value: m, label: monthLabel(m), active: m === month }));
+}
+
+router.get('/invoices', async (req, res, next) => {
+  try {
+    if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
+    const { month, problems } = resolveInvoiceMonth(req);
+    const rows = problems.length ? [] : (await monthlySponsorFees(month)).map(row => ({
+      ...row, purchases: Number(row.purchases), totalCents: Number(row.totalCents), feeCents: Number(row.feeCents),
+      number: invoiceNumber(month, row.id),
+    }));
+    const sum = rows.reduce((acc, r) => ({ purchases: acc.purchases + r.purchases, totalCents: acc.totalCents + r.totalCents, feeCents: acc.feeCents + r.feeCents }), { purchases: 0, totalCents: 0, feeCents: 0 });
+    const period = invoicePeriod(month);
+    res.status(problems.length ? 400 : 200).render('reports/invoices', {
+      month, rows, sum, period, error: problems.length ? problems.join(' ') : null,
+      monthLabel: monthLabel(month), months: await invoiceMonths(month), feePercent: FEE_PERCENT,
+      summary: [
+        { label: 'Month', value: monthLabel(month) },
+        { label: 'Status', value: period.complete ? 'Complete, ready to bill' : 'In progress, not final' },
+        { label: 'Sponsors', value: String(rows.length) },
+        { label: 'Total due', value: dollars(sum.feeCents) },
+      ],
+      csvHref: `/reports/invoices.csv?month=${month}`, dollars,
+    });
+  } catch (err) { next(err); }
+});
+
+router.get('/invoices.csv', async (req, res, next) => {
+  try {
+    if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
+    const { month, problems } = resolveInvoiceMonth(req);
+    if (problems.length) return res.status(400).type('text/plain').send(problems.join(' '));
+    const rows = await monthlySponsorFees(month);
+    const money = cents => +(Number(cents) / 100).toFixed(2);
+    const due = rows.reduce((acc, r) => acc + Number(r.feeCents), 0);
+    sendCsv(res, `invoices-${month}.csv`, [
+      ['Invoice', 'Month', 'Sponsor', 'Sponsor status', 'Purchases', 'Purchase total (USD)', `Amount due, ${FEE_PERCENT}% (USD)`],
+      ...rows.map(r => [invoiceNumber(month, r.id), month, r.name, r.status, Number(r.purchases), money(r.totalCents), money(r.feeCents)]),
+      ['', month, 'All sponsors', '', rows.reduce((a, r) => a + Number(r.purchases), 0), money(rows.reduce((a, r) => a + Number(r.totalCents), 0)), money(due)],
+    ]);
+  } catch (err) { next(err); }
+});
+
+// One invoice: the sponsor, the month, the line items, and the amount due.
+async function loadInvoice(req) {
+  const { month, problems } = resolveInvoiceMonth(req);
+  const sponsorId = positiveInt(req.params.sponsorId);
+  if (problems.length) return { month, problems, status: 400 };
+  const sponsor = sponsorId ? await invoiceSponsor(sponsorId) : null;
+  if (!sponsor) return { month, problems: ['There is no sponsor with that id.'], status: 404 };
+  const [fee, items] = await Promise.all([sponsorMonthlyFee(month, sponsor.id), invoiceLineItems(month, sponsor.id)]);
+  const totals = {
+    purchases: Number(fee ? fee.purchases : 0), totalCents: Number(fee ? fee.totalCents : 0), feeCents: Number(fee ? fee.feeCents : 0),
+    points: items.reduce((acc, item) => acc + Number(item.points), 0),
+  };
+  // The line items and the procedure read the same rows. If a purchase lands
+  // between the two reads they can differ, and the invoice says so.
+  const itemsCents = items.reduce((acc, item) => acc + Number(item.amountCents), 0);
+  const consistent = itemsCents === totals.totalCents && items.length === totals.purchases;
+  return { month, problems: [], sponsor, items, totals, consistent, status: 200 };
+}
+
+// Registered before the page route, which would otherwise take "2.csv" as an id.
+router.get('/invoices/:sponsorId.csv', async (req, res, next) => {
+  try {
+    if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
+    const invoice = await loadInvoice(req);
+    if (invoice.problems.length) return res.status(invoice.status).type('text/plain').send(invoice.problems.join(' '));
+    const money = cents => +(Number(cents) / 100).toFixed(2);
+    const { totals } = invoice;
+    sendCsv(res, `invoice-${invoiceNumber(invoice.month, invoice.sponsor.id)}.csv`, [
+      ['Date (UTC)', 'Driver', 'Username', 'Item', 'Points spent', 'Amount (USD)'],
+      ...invoice.items.map(item => [formatStamp(item.purchasedAt), item.driverName, item.driverUsername, item.item, Number(item.points), money(item.amountCents)]),
+      ['Purchases subtotal', '', '', `${totals.purchases} purchases`, totals.points, money(totals.totalCents)],
+      [`Program fee (${FEE_PERCENT}% of purchases)`, '', '', '', '', money(totals.feeCents)],
+      ['Amount due', '', '', '', '', money(totals.feeCents)],
+    ]);
+  } catch (err) { next(err); }
+});
+
+router.get('/invoices/:sponsorId', async (req, res, next) => {
+  try {
+    if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
+    const invoice = await loadInvoice(req);
+    const about = await getAbout().catch(() => null);
+    res.status(invoice.status).render('reports/invoice', {
+      ...invoice, error: invoice.problems.join(' ') || null,
+      number: invoice.sponsor ? invoiceNumber(invoice.month, invoice.sponsor.id) : null,
+      period: invoicePeriod(invoice.month), monthLabel: monthLabel(invoice.month),
+      issuer: (about && about.team_name) || 'Good Driver Incentive Program', feePercent: FEE_PERCENT,
+      csvHref: invoice.sponsor ? `/reports/invoices/${invoice.sponsor.id}.csv?month=${invoice.month}` : null,
+      backHref: `/reports/invoices?month=${invoice.month}`,
+      formatStamp, dollars,
+    });
+  } catch (err) { next(err); }
+});
+
+
 // ---- Sales by Sponsor (stories AD-25 to AD-29, admin only) -------------------
 
 const SALES_LABELS = {
@@ -464,9 +600,23 @@ router.get('/sales-by-driver', async (req, res, next) => {
         : `${grand.sales} sale${grand.sales === 1 ? '' : 's'}` },
     ];
 
+    // Story AD-39: when nothing matches, say so plainly, and name the driver
+    // when one was chosen. Names keep their own capitals.
+    const range = rangeLabel(filters);
+    const withSponsor = chosenSponsor ? ` with ${chosenSponsor.name}` : '';
+    const emptyMessage = chosenDriver
+      ? {
+        title: `${chosenDriver.displayName} has no sales${withSponsor}${range}.`,
+        detail: `The report ran successfully and found no purchases for ${chosenDriver.displayName}${withSponsor || ' with any sponsor'}${range || ' at any time'}.`,
+      }
+      : {
+        title: `No sales${range} for these filters.`,
+        detail: `The report ran successfully and found no purchases for all drivers${withSponsor || ' with any sponsor'}${range || ' at any time'}.`,
+      };
+
     res.status(invalid ? 400 : 200).render('reports/sales-by-driver', {
       filters, sponsors: filters.sponsors, drivers: filters.drivers, chosenSponsor, chosenDriver, isSummary,
-      error: invalid ? filters.problems.join(' ') : null, notice: filters.notice,
+      error: invalid ? filters.problems.join(' ') : null, notice: filters.notice, emptyMessage,
       rows, grand, total, today: isoDate(new Date()), quickRanges, sortLinks, summary, versionHref, byEntity, overTime,
       rangeLabel: rangeLabel(filters),
       page, pageCount,

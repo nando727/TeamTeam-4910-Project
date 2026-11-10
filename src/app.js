@@ -25,6 +25,8 @@ const { createUser,updateUserContact, updateUserStatus, DuplicateError } = requi
 const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('./auth/setup-tokens');
 const { listDriversForSponsor, listSponsorAccounts, findOrgMember, deleteOrgMember } = require('./sponsors/accounts');
 const { sendMail } = require('./mail/mailer');
+const { setupMailNotice } = require('./mail/outcome');
+const { adjustPoints } = require('./points/store');
 const { securityHeaders } = require('./security-headers');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./auth/password-policy');
 const { randomBytes } = require('crypto');
@@ -451,6 +453,95 @@ app.post('/catalog/:id/remove', requireLogin, requireSponsor, requireFormToken, 
   } catch (err) { next(err); }
 });
 
+// ---- Sponsor buys from the catalog for one of their drivers (sprint 8) -------
+// The sponsor picks a driver, reviews the cost against that driver's balance
+// with this sponsor, then confirms. The points are spent through adjustPoints,
+// which also writes the purchases row the reports read, all in one
+// transaction. The review is held in the session with a one-time id, so a
+// confirmation cannot be forged or replayed.
+
+const points = n => `${Number(n).toLocaleString('en-US')} point${Number(n) === 1 ? '' : 's'}`;
+
+function shortfallMessage(driver, organization, balance, cost) {
+  const short = cost - balance;
+  return `${driver.displayName} has ${points(balance)} with ${organization}. This item costs ${points(cost)}, ` +
+    `so they need ${short.toLocaleString('en-US')} more point${short === 1 ? '' : 's'}.`;
+}
+
+async function loadPurchase(req) {
+  const sponsorId = req.session.user.sponsorId;
+  if (!sponsorId || !/^[1-9]\d{0,9}$/.test(req.params.id)) return null;
+  const item = await catalog.findCatalogItem(sponsorId, Number(req.params.id));
+  if (!item) return null;
+  const [drivers, organization] = await Promise.all([catalog.listDriversForPurchase(sponsorId), catalog.sponsorName(sponsorId)]);
+  return { sponsorId, item, drivers, organization };
+}
+
+function renderPurchase(req, res, context, { driver = null, review = null, problem = null, status = 200 } = {}) {
+  res.status(status).render('sponsor/buy', {
+    ...context, driver, review, problem, points, formToken: formToken(req),
+  });
+}
+
+app.get('/catalog/:id/buy', requireLogin, requireSponsor, async (req, res, next) => {
+  try {
+    const context = await loadPurchase(req);
+    if (!context) { flash(req, 'error', 'That item is not in your catalog.'); return res.redirect('/catalog'); }
+    const wanted = typeof req.query.driver === 'string' ? req.query.driver.trim() : '';
+    if (!wanted) return renderPurchase(req, res, context);
+    const driver = context.drivers.find(d => String(d.id) === wanted);
+    if (!driver) return renderPurchase(req, res, context, { problem: 'Choose one of your drivers from the list.', status: 400 });
+    const balance = Number(driver.balance);
+    const cost = context.item.points_cost;
+    if (balance < cost) {
+      return renderPurchase(req, res, context, { driver, problem: shortfallMessage(driver, context.organization, balance, cost), status: 409 });
+    }
+    const confirmId = randomBytes(32).toString('hex');
+    req.session.purchaseDraft = { itemId: context.item.id, driverId: driver.id, pointsCost: cost, confirmId };
+    renderPurchase(req, res, context, { driver, review: { balance, after: balance - cost, confirmId } });
+  } catch (err) { next(err); }
+});
+
+app.post('/catalog/:id/buy', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const draft = req.session.purchaseDraft;
+  // Used once, whatever happens next: a second click finds nothing to confirm.
+  delete req.session.purchaseDraft;
+  try {
+    if (!draft || String(draft.itemId) !== req.params.id || String(draft.driverId) !== req.body.driver || draft.confirmId !== req.body.confirmId) {
+      flash(req, 'error', 'That purchase was not confirmed, or it has already been made. Review it again before buying.');
+      return res.redirect(303, '/catalog');
+    }
+    const context = await loadPurchase(req);
+    if (!context) { flash(req, 'error', 'That item is no longer in your catalog, so nothing was bought.'); return res.redirect(303, '/catalog'); }
+    const { item, organization } = context;
+    if (item.points_cost !== draft.pointsCost) {
+      flash(req, 'error', `The points cost of "${item.title}" changed, so nothing was bought. Review the purchase again.`);
+      return res.redirect(303, '/catalog');
+    }
+    const driver = context.drivers.find(d => d.id === draft.driverId);
+    if (!driver) { flash(req, 'error', 'That driver is no longer one of your active drivers, so nothing was bought.'); return res.redirect(303, '/catalog'); }
+
+    const title = item.title.trim().slice(0, 255);
+    let balance;
+    try {
+      balance = await adjustPoints({
+        driverId: driver.id, sponsorId: context.sponsorId, userId: req.session.user.id,
+        amount: -item.points_cost, reason: `Catalog purchase: ${title}`.slice(0, 255),
+        purchase: { description: title, amountCents: Math.round(Number(item.price_value) * 100) },
+      });
+    } catch (err) {
+      if (err.code === 'INSUFFICIENT_POINTS') {
+        return renderPurchase(req, res, context, { driver, problem: shortfallMessage(driver, organization, err.balance, err.cost), status: 409 });
+      }
+      if (err.status) { flash(req, 'error', err.message); return res.redirect(303, '/catalog'); }
+      throw err;
+    }
+    flash(req, 'success', `Bought "${title}" for ${driver.displayName} for ${points(item.points_cost)}. ` +
+      `Their balance with ${organization} is now ${points(balance)}.`);
+    res.redirect(303, '/catalog');
+  } catch (err) { next(err); }
+});
+
 app.get('/my-catalog', requireLogin, (req, res) => {
   if (req.session.user.role !== 'driver') return denyAccess(req, res, { needs: 'driver' });
   res.redirect('/driver/catalog');
@@ -462,9 +553,9 @@ app.get('/my-catalog', requireLogin, (req, res) => {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMPTY_SPONSOR_USER = { name: '', email: '', username: '' };
 
-function renderCreateSponsorUser(req, res, values, { error = null, created = null, setupLink = null, status = 200 } = {}) {
+function renderCreateSponsorUser(req, res, values, { error = null, created = null, setupLink = null, mailNotice = null, status = 200 } = {}) {
   return res.status(status).render('sponsor/create-user', {
-    values, error, created, setupLink, token: formToken(req),
+    values, error, created, setupLink, mailNotice, token: formToken(req),
     rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH,
   });
 }
@@ -495,10 +586,11 @@ app.post('/sponsor-users/create', requireLogin, requireSponsor, requireFormToken
     });
 
     let setupLink = null;
+    let mailNotice = null;
     if (usesSetupLink) {
       const rawToken = await issueSetupToken(created.id);
       setupLink = setupLinkFor(req, rawToken);
-      await sendMail({
+      const mail = await sendMail({
         to: created.email,
         subject: 'Set up your Good Driver Incentive Program account',
         text: [
@@ -512,9 +604,10 @@ app.post('/sponsor-users/create', requireLogin, requireSponsor, requireFormToken
           `The link works once and expires in ${linkLifetimeHours()} hours.`,
         ].join('\n'),
       });
+      mailNotice = setupMailNotice(mail);
     }
 
-    renderCreateSponsorUser(req, res, EMPTY_SPONSOR_USER, { created, setupLink });
+    renderCreateSponsorUser(req, res, EMPTY_SPONSOR_USER, { created, setupLink, mailNotice });
   } catch (err) {
     if (err instanceof DuplicateError) return renderCreateSponsorUser(req, res, values, { error: err.message, status: 409 });
     next(err);
