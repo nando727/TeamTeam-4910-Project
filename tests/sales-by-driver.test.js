@@ -387,13 +387,42 @@ describe('date range', () => {
 
   test('no purchases shows the empty message in both versions, with no table or chart', async () => {
     const agent = await login('admin1');
-    for (const url of [`${PAGE}?from=2026-01-01&to=2026-01-31`, `${PAGE}?version=detailed&from=2026-01-01&to=2026-01-31`, `${PAGE}?sponsor=3`, `${PAGE}?driver=9`]) {
+    for (const url of [`${PAGE}?from=2026-01-01&to=2026-01-31`, `${PAGE}?version=detailed&from=2026-01-01&to=2026-01-31`, `${PAGE}?sponsor=3`]) {
       const page = await agent.get(url).expect(200);
       expect(page.text).toContain('for these filters.');
       expect(page.text).toContain('The report ran successfully and found no purchases');
       expect(page.text).not.toContain('<tbody>');
       expect(page.text).not.toContain('class="chart__svg');
     }
+  });
+});
+
+describe('AD-39: the no-sales message', () => {
+  test('a chosen driver with no sales is named, with their own capitals, in both versions', async () => {
+    const agent = await login('admin1');
+    for (const version of ['summary', 'detailed']) {
+      const page = await agent.get(`${PAGE}?driver=7&version=${version}&from=2026-01-01&to=2026-01-31`).expect(200);
+      expect(page.text).toContain('<strong>Theo Trucker has no sales from 2026-01-01 to 2026-01-31.</strong>');
+      expect(page.text).toContain('The report ran successfully and found no purchases for Theo Trucker with any sponsor from 2026-01-01 to 2026-01-31.');
+      expect(page.text).not.toContain('theo trucker');
+      expect(page.text).not.toContain('<tbody>');
+    }
+  });
+
+  test('a driver who has never bought anything, and a driver at one sponsor', async () => {
+    const agent = await login('admin1');
+    const never = await agent.get(`${PAGE}?driver=9`).expect(200);
+    expect(never.text).toContain('<strong>Nia NoSales has no sales.</strong>');
+    expect(never.text).toContain('found no purchases for Nia NoSales with any sponsor at any time.');
+    const atSponsor = await agent.get(`${PAGE}?sponsor=1&driver=1&from=2026-01-01&to=2026-01-31`).expect(200);
+    expect(atSponsor.text).toContain('<strong>driver1 has no sales with Demo Sponsor from 2026-01-01 to 2026-01-31.</strong>');
+  });
+
+  test('with no driver chosen it speaks for all drivers', async () => {
+    const agent = await login('admin1');
+    const page = await agent.get(`${PAGE}?sponsor=2&from=2026-01-01&to=2026-01-31`).expect(200);
+    expect(page.text).toContain('<strong>No sales from 2026-01-01 to 2026-01-31 for these filters.</strong>');
+    expect(page.text).toContain('found no purchases for all drivers with Northstar Freight from 2026-01-01 to 2026-01-31.');
   });
 });
 

@@ -1,8 +1,13 @@
+// Product images in the catalog come from the product service's own host, so
+// that one host is allowed for images and nothing else. Every other outside
+// image is still refused.
+const PRODUCT_IMAGE_HOST = 'https://fakestoreapi.com';
+
 const POLICY = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
+  `img-src 'self' data: ${PRODUCT_IMAGE_HOST}`,
   "font-src 'self'",
   "connect-src 'self'",
   "form-action 'self'",
@@ -26,4 +31,4 @@ function securityHeaders(req, res, next) {
   next();
 }
 
-module.exports = { securityHeaders, POLICY };
+module.exports = { securityHeaders, POLICY, PRODUCT_IMAGE_HOST };

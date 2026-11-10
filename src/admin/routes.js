@@ -15,6 +15,7 @@ const {
   issueSetupToken, setupLinkFor, linkLifetimeHours, invalidateSetupTokens, userIdsAwaitingSetup,
 } = require('../auth/setup-tokens');
 const { sendMail } = require('../mail/mailer');
+const { setupMailNotice } = require('../mail/outcome');
 const { lockedUsernames, clearLockout } = require('../auth/lockout');
 const router = express.Router();
 
@@ -32,9 +33,9 @@ const read = (req, key) => (typeof req.body[key] === 'string' ? req.body[key].tr
 
 const EMPTY_USER = { name: '', email: '', username: '', role: '' };
 
-function renderCreateUser(req, res, values, { error = null, created = null, setupLink = null, status = 200 } = {}) {
+function renderCreateUser(req, res, values, { error = null, created = null, setupLink = null, mailNotice = null, status = 200 } = {}) {
   return res.status(status).render('create-user', {
-    values, roles: VALID_ROLES, error, created, setupLink, token: formToken(req),
+    values, roles: VALID_ROLES, error, created, setupLink, mailNotice, token: formToken(req),
     rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH,
   });
 }
@@ -72,10 +73,11 @@ router.post('/create-user', async (req, res, next) => {
     });
 
     let setupLink = null;
+    let mailNotice = null;
     if (usesSetupLink) {
       const rawToken = await issueSetupToken(created.id);
       setupLink = setupLinkFor(req, rawToken);
-      await sendMail({
+      const mail = await sendMail({
         to: created.email,
         subject: 'Set up your Good Driver Incentive Program account',
         text: [
@@ -89,9 +91,10 @@ router.post('/create-user', async (req, res, next) => {
           `The link works once and expires in ${linkLifetimeHours()} hours.`,
         ].join('\n'),
       });
+      mailNotice = setupMailNotice(mail);
     }
 
-    renderCreateUser(req, res, EMPTY_USER, { created, setupLink });
+    renderCreateUser(req, res, EMPTY_USER, { created, setupLink, mailNotice });
   } catch (err) {
     if (err instanceof DuplicateError) return renderCreateUser(req, res, values, { error: err.message, status: 409 });
     next(err);

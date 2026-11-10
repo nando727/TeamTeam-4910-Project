@@ -47,4 +47,34 @@ async function listCatalogForDriver(driverId) {
   );
 }
 
-module.exports = { listCatalog, savedProductIds, addCatalogItem, removeCatalogItem, listCatalogForDriver };
+// One item from this sponsor's catalogue, or null.
+async function findCatalogItem(sponsorId, id) {
+  const rows = await db.query(
+    `SELECT id, product_id, title, category, image_url, price_value, points_cost
+     FROM catalog_items WHERE id = ? AND sponsor_id = ?`,
+    [id, sponsorId]
+  );
+  return rows[0] || null;
+}
+
+// The drivers a sponsor may buy for: active driver accounts that belong to this
+// sponsor, each with the balance they hold with this sponsor.
+async function listDriversForPurchase(sponsorId) {
+  return db.query(
+    `SELECT u.id, u.username, COALESCE(NULLIF(u.name, ''), u.username) AS displayName, ds.point_balance AS balance
+     FROM driver_sponsors ds JOIN users u ON u.id = ds.driver_id
+     WHERE ds.sponsor_id = ? AND u.role = 'driver' AND u.status = 'active'
+     ORDER BY displayName, u.username`,
+    [sponsorId]
+  );
+}
+
+async function sponsorName(sponsorId) {
+  const rows = await db.query('SELECT name FROM sponsors WHERE id = ?', [sponsorId]);
+  return rows[0] ? rows[0].name : 'your organization';
+}
+
+module.exports = {
+  listCatalog, savedProductIds, addCatalogItem, removeCatalogItem, listCatalogForDriver,
+  findCatalogItem, listDriversForPurchase, sponsorName,
+};

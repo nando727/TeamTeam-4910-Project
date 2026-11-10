@@ -14,7 +14,10 @@
   <% if (created) { %>
     <p class="success">Account for <%= created.username %> was created.</p>
     <% if (setupLink) { %>
-      <p>A setup email was sent to <%= created.email %>. Setup link (for reference):<br>
+      <% if (locals.mailNotice) { %>
+        <p class="mail-outcome mail-outcome--<%= mailNotice.kind %>"><%= mailNotice.text %></p>
+      <% } %>
+      <p>Setup link, which works once:<br>
       <code><%= setupLink %></code></p>
     <% } %>
   <% } %>

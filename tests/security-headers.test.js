@@ -63,7 +63,12 @@ describe('what the policy says', () => {
   });
 
   test('the tab icon still loads, since it is a data URI', () => {
-    expect(directive('img-src')).toBe("img-src 'self' data:");
+    expect(directive('img-src')).toContain("'self' data:");
+  });
+
+  test('catalog images may come from the product service, and from nowhere else outside', () => {
+    expect(directive('img-src')).toBe("img-src 'self' data: https://fakestoreapi.com");
+    expect(directive('img-src')).not.toMatch(/(^|\s)(https:|\*)(\s|$)/);
   });
 });
 

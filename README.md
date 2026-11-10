@@ -440,15 +440,31 @@ A send that fails is logged and recorded as undelivered, and the thing that
 triggered it still succeeds: an account is created whether or not its mail got
 out.
 
-**In SES's sandbox, mail only reaches verified addresses.** A reset to an
-unverified inbox is refused with `554 Message rejected`, which shows up as an
-undelivered message in the log rather than as an error for the visitor. Either
-verify each recipient or ask AWS for production access before relying on it in
-front of an audience.
+Every successful send logs one line, `[mail] Sent "<subject>" to r***@example.com
+<message id>`, so the live log shows what went out. An account with no email
+address on file is not handed to the SMTP server, which could only refuse it:
+the log says `[mail] "<subject>" was not sent: no email address on file.` The
+create-user pages and bulk upload say whether each setup email was sent, and
+always show the setup link too, so a link can be passed on by hand.
+
+**The deployed site sends through Gmail.** The Elastic Beanstalk environment
+uses `MAIL_TRANSPORT=smtp`, `MAIL_HOST=smtp.gmail.com`, `MAIL_PORT=587`, and the
+team's Gmail account. Things that matter with Gmail:
+
+- `MAIL_PASSWORD` must be a **Google app password** for `MAIL_USER`, the 16
+  letters Google shows once, not the account's normal password. App passwords
+  need 2-Step Verification on the account, and changing the account's Google
+  password revokes them, so a new one is needed after that.
+- `MAIL_FROM` should be the same Gmail address. Gmail replaces any other From
+  address with the account's own unless it is set up as an alias.
+- A wrong password fails with `535 Username and Password not accepted`, logged
+  as `Could not send mail to ...`.
+- Personal Gmail accounts can send to roughly 500 recipients a day.
+- Mail to a university or work address may land in spam the first time.
 
 #### Checking it reaches a real inbox
 
-`npm run mail:test -- you@verified.example` sends the account notices (story
+`npm run mail:test -- you@example.com` sends the account notices (story
 22227) to an address you choose, through the SMTP settings in `.env`. Add
 `password` or `email` to send just one of them.
 
@@ -457,12 +473,9 @@ handed a made-up account row whose address is the recipient, so the text that
 arrives is composed by the same code the app runs. It refuses up front when a
 `MAIL_*` setting is missing &mdash; naming only the settings, never the values
 &mdash; because `sendMail()` would otherwise fall back to the log and the
-script would report a success that delivered nothing. A send that SES rejects
-exits non-zero and says so.
-
-SES needs **SMTP credentials** for `MAIL_USER` / `MAIL_PASSWORD`, created in
-the SES console. They are not the same as `AWS_ACCESS_KEY_ID`, and the raw IAM
-key will not authenticate against the SMTP endpoint.
+script would report a success that delivered nothing. A send that Gmail
+refuses exits non-zero and says so, with a hint when the cause is the app
+password.
 
 #### The form cannot be used to fill an inbox
 
@@ -751,6 +764,40 @@ page: the item disappears and its old detail URL returns 404. Other sponsors'
 selections are inaccessible unless the driver also belongs to those sponsors.
 Mocked tests cover provider removals and outages without changing the live API.
 
+**Product images (sprint 8).** Every saved image is a `https://fakestoreapi.com`
+URL. The content security policy used to allow images from this app only, so
+the browser blocked them all and showed broken-image icons. The policy now also
+allows that one host (`PRODUCT_IMAGE_HOST` in `src/security-headers.js`), and
+nothing else outside. Catalog images render through
+`src/views/partials/product-image.ejs`: a product with no image shows a "No image"
+placeholder, and `public/product-images.js` swaps the same placeholder in for
+an image that fails to load. If products ever come from another host, add it to
+that one constant.
+
+## Sponsor purchases for a driver (sprint 8)
+
+Sponsors spend a driver's points on an item from their own catalog: **Item
+catalog -> Your catalog -> Buy for a driver**. They pick one of their own active
+drivers, each listed with the balance they hold with this sponsor, then review
+the cost and the balance before and after, then **Confirm purchase**. If the
+driver is short, the page says by how much, for example "Dana Driver has 40
+points with Demo Sponsor. This item costs 250 points, so they need 210 more
+points." and offers no confirm button.
+
+The purchase goes through `adjustPoints()` with its `purchase` option, which in
+one transaction locks the driver's balance, refuses if it is short, writes the
+negative `point_transactions` row (reason `Catalog purchase: <item>`, made by the
+sponsor user), updates the balance, adds the driver's point alert, and inserts
+the `purchases` row with the item's saved price and points. So the purchase shows
+in the driver's point history and alerts, and in the Sales by Sponsor, Sales by
+Driver, Sponsor fees, and Invoices reports. The review is held in the session
+with a one-time id: a double click, a replayed form, or a confirmation for a
+different driver or item buys nothing. The item's saved price and points are
+used, not a live price.
+
+Drivers still cannot buy for themselves. Whoever builds that should call
+`adjustPoints()` with `purchase` the same way.
+
 ## Framing and script injection (story 28199, AA-74)
 
 Every response carries four headers, set in `src/security-headers.js` and
@@ -770,8 +817,13 @@ run it. Keeping that true has one rule for everyone working on the views:
 
 **No `<script>` blocks and no `on...=` attributes in templates.** Put the
 behavior in a file under `public/` and reach it from the markup with a `data-`
-attribute. Two examples already in `public/site.js`: `data-autosubmit` on a
-filter dropdown, and `data-confirm="..."` on a form that asks before deleting.
+attribute. Examples in `public/site.js`: `data-autosubmit` on a filter dropdown,
+`data-confirm="..."` on a form that asks before deleting, `data-select-on-focus`
+on a setup link, and `data-submit-once` on the purchase confirmation. The
+invoice's print button uses `data-print` in `public/report.js`.
+
+Images are allowed from this app, `data:` URIs, and the product service's image
+host only (see the catalog section).
 
 Inline `style="..."` attributes are still allowed (`style-src` keeps
 `'unsafe-inline'`), because several pages use them and the risk from a style is
@@ -837,11 +889,11 @@ rounded to the cent, with a CSV download for billing.
 The figures come from the `purchases` table (migration 010): one row per
 completed purchase with `driver_id`, `sponsor_id`, `description`,
 `amount_cents` (dollar value in cents, so sums are exact), `points_spent`, and
-`purchased_at`. **Catalog browsing exists; redemption does not yet.** Whoever builds
-driver redemption must insert a `purchases` row for every completed purchase,
-in the same database transaction as the matching negative `point_transactions`
-row and the `driver_sponsors.point_balance` update, so the fee report, the point
-report, and the driver's balance all agree.
+`purchased_at`. Sponsors buying for a driver write these rows through
+`adjustPoints()` with its `purchase` option (sprint 8), in the same transaction
+as the negative `point_transactions` row and the balance update, so the fee
+report, the point report, and the driver's balance all agree. Driver
+self-redemption is not built yet and must do the same.
 
 The fee itself is calculated in the database by the `sponsor_monthly_fees`
 procedure (story INF-33, migration 018), so billing logic stays in one place:
@@ -952,6 +1004,35 @@ A driver can belong to several sponsors. The totals read the `purchases` table a
 never join `driver_sponsors`, so a driver with two sponsors is one row with each
 purchase counted once, and past purchases stay on the report after a sponsorship
 is removed. Choosing a sponsor counts only the purchases made with that sponsor.
+
+When nothing matches (story AD-39), the message names the chosen driver with their
+own capitalization, for example "Theo Trucker has no sales with Demo Sponsor from
+2026-10-01 to 2026-10-31.", followed by a line saying the report ran successfully.
+With no driver chosen it says "No sales ... for these filters." Versions (AD-36),
+the date range (AD-35), the fields per version (AD-37), and the CSV (AD-38) are the
+features described above.
+
+## Invoices (story AD-40)
+
+Admins open **Reports -> Invoices** (`/reports/invoices`). It defaults to the last
+complete month, the one being billed, and lists every sponsor with an invoice
+number, purchases, purchase total, and amount due, plus a CSV. The current month
+is marked as not final. The Sponsor fees page links each row to its invoice.
+
+Each invoice (`/reports/invoices/<sponsor id>?month=YYYY-MM`) is a printable bill:
+invoice number `INV-YYYYMM-<sponsor id>`, billing period, issue date (the first
+day after the month, or today while the month is in progress), the sponsor's name,
+address, email, and phone, one line per purchase (date, driver, item, points,
+amount), the purchase subtotal, the 1% program fee, and the amount due.
+**Print or save as PDF** prints just the invoice, without the site's header and
+buttons. A CSV of the lines is offered too.
+
+The fee and totals come from `CALL sponsor_monthly_fees('<month>-01', <sponsor id>)`,
+so an invoice always matches the Sponsor fees page. The line items are read
+separately over the same dates. If a purchase lands between the two reads and
+they disagree, the invoice says so instead of printing a wrong bill. Invoices
+are not stored; each one is built from the purchases when it is opened. Admins
+only for now.
 
 ## Health check (story INF-10)
 

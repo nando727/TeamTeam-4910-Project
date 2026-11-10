@@ -5,8 +5,9 @@ const { sendMail } = require('../mail/mailer');
 
 async function sendPasswordResetLink({ username, email, link, expiryMinutes }) {
   return sendMail({
-    // Seeded accounts have no address yet; say so instead of failing, so the
-    // console transport still shows the link during development.
+    // Seeded accounts may have no address. The console transport still shows
+    // the link during development; with SMTP, sendMail() logs that nothing was
+    // sent instead of handing Gmail an address it can only refuse.
     to: email || '(no email on file)',
     subject: 'Good Driver Incentive Program: reset your password',
     text:

@@ -14,9 +14,7 @@
       <div class="actions">
         <% catalog.products.forEach(product => { %>
           <a class="action" href="/driver/catalog/<%= catalog.sponsorId %>/<%= product.id %>">
-            <% if (product.image_url) { %>
-              <img class="catalog-image" src="<%= product.image_url %>" alt="<%= product.name %>" loading="lazy">
-            <% } %>
+            <%- include('../partials/product-image', { url: product.image_url, alt: product.name, size: 'card' }) %>
             <span class="action__title"><%= product.name %></span>
             <span class="action__text">Price: $<%= Number(product.price_value).toFixed(2) %></span>
           </a>
@@ -24,4 +22,5 @@
       </div>
     </section>
   <% }); %>
+  <script src="/product-images.js" defer></script>
 <%- include('../partials/foot') %>

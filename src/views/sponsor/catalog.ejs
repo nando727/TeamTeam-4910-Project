@@ -3,7 +3,7 @@
     <%- include('../partials/logo') %>
     <div>
       <h1>Item Catalog</h1>
-      <p>Browse the product list and choose the items your drivers can see.</p>
+      <p>Browse the product list and choose the items your drivers can see. Use <strong>Buy for a driver</strong> to spend one of your drivers' points on an item.</p>
     </div>
   </section>
 
@@ -40,7 +40,7 @@
           <% products.forEach(p => { %>
             <tr>
               <td>
-                <% if (p.imageUrl) { %><img src="<%= p.imageUrl %>" alt="" width="64"><% } %>
+                <%- include('../partials/product-image', { url: p.imageUrl, alt: '', size: 'thumb' }) %>
                 <%= p.title %>
               </td>
               <td><%= p.category %></td>
@@ -79,13 +79,14 @@
         <% items.forEach(item => { %>
           <tr>
             <td>
-              <% if (item.image_url) { %><img src="<%= item.image_url %>" alt="" width="64"><% } %>
+              <%- include('../partials/product-image', { url: item.image_url, alt: '', size: 'thumb' }) %>
               <%= item.title %>
             </td>
             <td><%= item.category %></td>
             <td>$<%= Number(item.price_value).toFixed(2) %></td>
             <td><%= item.points_cost %></td>
             <td>
+              <a class="button-link button--small" href="/catalog/<%= item.id %>/buy">Buy for a driver</a>
               <form method="POST" action="/catalog/<%= item.id %>/remove" class="inline-form">
                 <input type="hidden" name="token" value="<%= formToken %>">
                 <button type="submit">Remove</button>
@@ -101,4 +102,5 @@
   </div>
 
   <p><a href="/">&larr; Back to home</a></p>
+  <script src="/product-images.js" defer></script>
 <%- include('../partials/foot') %>

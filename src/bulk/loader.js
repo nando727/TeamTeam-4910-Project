@@ -9,6 +9,7 @@ const { createUser, DuplicateError } = require('../users/store');
 const { listSponsors, createSponsor } = require('../sponsors/store');
 const { issueSetupToken, linkLifetimeHours } = require('../auth/setup-tokens');
 const { sendMail } = require('../mail/mailer');
+const { setupMailNotice } = require('../mail/outcome');
 const { adjustPoints } = require('../points/store');
 
 // An O row carries only a name, but the sponsors table requires a unique
@@ -96,7 +97,7 @@ class BulkLoader {
     });
     const rawToken = await issueSetupToken(created.id);
     const setupLink = this.linkFor(rawToken);
-    await sendMail({
+    const mail = await sendMail({
       to: created.email,
       subject: 'Set up your Good Driver Incentive Program account',
       text: [
@@ -106,14 +107,14 @@ class BulkLoader {
         `The link works once and expires in ${linkLifetimeHours()} hours.`,
       ].join('\n'),
     });
-    return { ...created, setupLink };
+    return { ...created, setupLink, mailKind: setupMailNotice(mail).kind };
   }
 
   async sponsorUser(item, organization) {
     try {
       const user = await this.account(item.row, 'sponsor', organization);
       this.summary.sponsorUsers += 1;
-      return this.record(item, 'created', `Created sponsor user ${user.username} for ${organization.name}.`, { username: user.username, setupLink: user.setupLink });
+      return this.record(item, 'created', `Created sponsor user ${user.username} for ${organization.name}.`, { username: user.username, setupLink: user.setupLink, mailKind: user.mailKind });
     } catch (err) {
       if (err instanceof DuplicateError) return this.record(item, 'error', err.message);
       throw err;
@@ -132,7 +133,7 @@ class BulkLoader {
     // Membership: the driver belongs to this organization from the start.
     await db.query('INSERT INTO driver_sponsors (driver_id, sponsor_id) VALUES (?, ?)', [user.id, organization.id]);
     this.summary.driverUsers += 1;
-    const extra = { username: user.username, setupLink: user.setupLink };
+    const extra = { username: user.username, setupLink: user.setupLink, mailKind: user.mailKind };
     if (row.points === null) return this.record(item, 'created', `Created driver ${user.username} in ${organization.name}.`, extra);
 
     // Points: through the shared adjustment, which writes the transaction row,

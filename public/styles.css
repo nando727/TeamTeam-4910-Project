@@ -353,6 +353,22 @@ a.status-badge:hover { filter: brightness(0.97); }
 .catalog-image { display: block; width: 100%; height: 180px; object-fit: contain; background: #fff; border-radius: 8px; margin-bottom: 16px; }
 .catalog-image--detail { height: 300px; }
 
+/* ---- Product images and the "No image" placeholder (sprint 8) ---------------- */
+
+.product-image { display: block; object-fit: contain; background: #fff; border-radius: 8px; }
+.product-image--card { width: 100%; height: 180px; margin-bottom: 16px; }
+.product-image--detail { width: 100%; height: 300px; margin: 8px 0 16px; }
+.product-image--thumb { display: inline-block; width: 64px; height: 64px; margin-right: 10px; vertical-align: middle; }
+.product-image--missing {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 12px;
+  border: 1px dashed var(--border-strong); background-color: var(--surface-muted);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235d6b7c' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Ccircle cx='9' cy='10' r='1.8'/%3E%3Cpath d='M21 16l-5-5-8 8'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: center 38%; background-size: 44px;
+}
+.product-image--thumb.product-image--missing { display: inline-flex; padding-bottom: 0; background-position: center; background-size: 30px; }
+.product-image--thumb .product-image__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.product-image__label { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+
 /* ---- Sponsor list (driver) --------------------------------------------------- */
 
 .sponsor-list { display: grid; gap: 14px; margin-top: 8px; }
@@ -660,3 +676,46 @@ input[type="file"] { padding: 9px 12px; background: var(--surface-muted); }
 }
 .chart-tip[hidden] { display: none; }
 .chart-tip strong { display: block; color: #fff; font-size: 0.98rem; }
+
+/* ---- Setup email outcome, sponsor purchases, invoices (sprint 8) ------------- */
+
+.mail-outcome { padding: 8px 12px; border-radius: var(--radius-sm); font-weight: 600; }
+.mail-outcome--sent { color: var(--green); }
+.mail-outcome--failed { color: var(--red); }
+.mail-outcome--logged { color: var(--gray); }
+p.mail-outcome--sent { background: var(--green-bg); }
+p.mail-outcome--failed { background: var(--red-bg); }
+p.mail-outcome--logged { background: var(--gray-bg); }
+
+.purchase-item { display: grid; grid-template-columns: minmax(0, 220px) 1fr; gap: 20px; align-items: center; margin: 4px 0 20px; }
+.purchase-item .product-image--card { margin-bottom: 0; }
+.purchase-item__title { margin: 0 0 6px; font-size: 1.15rem; color: var(--navy); }
+.purchase-item__cost { margin: 0; font-size: 1.05rem; }
+@media (max-width: 560px) { .purchase-item { grid-template-columns: 1fr; } }
+.confirm-box--purchase { border-color: #b5cdee; border-left-color: var(--blue); background: var(--blue-soft); margin-top: 20px; }
+.confirm-box--purchase h2 { color: var(--navy); }
+
+.invoice-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
+.invoice-toolbar__actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.invoice-toolbar__actions button { margin-top: 0; }
+.invoice__head { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 2px solid var(--border); }
+.invoice__head h1 { margin: 4px 0; }
+.invoice__meta { display: grid; grid-template-columns: auto auto; gap: 4px 16px; margin: 0; align-content: start; }
+.invoice__meta dt { color: var(--muted); font-weight: 600; font-size: 0.9rem; }
+.invoice__meta dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.invoice__due { font-size: 1.25rem; font-weight: 700; color: var(--navy); }
+.invoice__parties { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 32px; }
+.invoice__party { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.invoice__lines tfoot th { text-align: right; }
+.invoice__total th, .invoice__total td { font-size: 1.1rem; border-top: 2px solid var(--navy); }
+
+@media print {
+  .site-header, .site-footer, .skip-link, .session-warning, .no-print, .report-status { display: none !important; }
+  body { background: #fff; }
+  main, .card { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 0 !important; max-width: none !important; }
+  .invoice .table-wrap { overflow: visible; }
+  .invoice .table th, .invoice .table td { padding: 6px 8px; }
+  .invoice tr { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+@page { margin: 16mm; }
