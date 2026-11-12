@@ -10,6 +10,8 @@
     <p class="purchase-item__cost"><strong><%= points(product.points_cost) %></strong> <span class="muted">· $<%= Number(product.price_value).toFixed(2) %></span></p>
     <% if (product.category) { %><p class="muted small"><%= product.category %></p><% } %>
     <p><%= product.description %></p>
+    <p role="status"><strong>Availability:</strong> <%= product.availability === 'available' ? 'Available' : product.availability === 'unavailable' ? 'Currently unavailable' : 'Unable to confirm current availability' %></p>
+    <% if (product.availability !== 'available') { %><p class="info">This offer cannot be selected right now. Check again later.</p><% } %>
     <form class="filters" method="POST" action="/driver/cart/add" data-submit-group="cart-add">
       <input type="hidden" name="token" value="<%= token %>">
       <input type="hidden" name="itemId" value="<%= product.id %>">
@@ -17,9 +19,9 @@
       <input type="hidden" name="back" value="/driver/catalog/<%= product.sponsorId %>/<%= product.id %>">
       <div class="filters__field">
         <label for="quantity">Quantity</label>
-        <input id="quantity" name="quantity" type="number" min="1" max="<%= maxQuantity %>" step="1" value="1" required>
+        <input id="quantity" name="quantity" type="number" min="1" max="<%= maxQuantity %>" step="1" value="1" required <%= product.availability !== 'available' ? 'disabled' : '' %>>
       </div>
-      <div class="filters__actions"><button type="submit">Add to cart</button></div>
+      <div class="filters__actions"><button type="submit" <%= product.availability !== 'available' ? 'disabled' : '' %>>Add to cart</button></div>
     </form>
   </section>
   <script src="/product-images.js" defer></script>

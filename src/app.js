@@ -444,7 +444,7 @@ app.get('/catalog', requireLogin, requireSponsor, async (req, res, next) => {
     const notice = req.session.accountNotice || null;
     delete req.session.accountNotice;
     res.render('sponsor/catalog', {
-      items, savedIds, products, categories, q, category, browseError, notice, formToken: formToken(req),
+      rate: await catalog.conversionRate(sponsorId), items, savedIds, products, categories, q, category, browseError, notice, formToken: formToken(req),
       productCount, page, pageCount,
       pageStart: productCount ? (page - 1) * BROWSE_PAGE_SIZE + 1 : 0, pageEnd: Math.min(page * BROWSE_PAGE_SIZE, productCount),
       prevHref: page > 1 ? pageHref(page - 1) : null, nextHref: page < pageCount ? pageHref(page + 1) : null,
@@ -452,21 +452,26 @@ app.get('/catalog', requireLogin, requireSponsor, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+app.post('/catalog/rate', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const rate = Number(req.body.rate);
+  if (!req.session.user.sponsorId || !Number.isInteger(rate) || rate < 1 || rate > 10000) return res.status(400).send('Enter a whole number from 1 to 10,000 points per dollar.');
+  try {
+    await db.query('INSERT INTO sponsor_point_rates (sponsor_id, points_per_dollar) VALUES (?, ?) ON DUPLICATE KEY UPDATE points_per_dollar = ?', [req.session.user.sponsorId, rate, rate]);
+    flash(req, 'success', 'Conversion rate saved. Catalog point costs now use the new rate.');
+    res.redirect(303, '/catalog');
+  } catch (error) { next(error); }
+});
+
 app.post('/catalog/add', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
   const q = typeof req.body.q === 'string' ? req.body.q.trim().slice(0, 100) : '';
   const category = typeof req.body.category === 'string' ? req.body.category.trim().slice(0, 100) : '';
   const back = '/catalog?' + new URLSearchParams({ q, category }).toString();
   const rawId = typeof req.body.productId === 'string' ? req.body.productId : '';
-  const pointsCost = Number(req.body.pointsCost);
   if (!/^[1-9]\d{0,9}$/.test(rawId)) return res.status(400).send('Invalid product.');
-  if (!Number.isInteger(pointsCost) || pointsCost < 1 || pointsCost > 1000000) {
-    flash(req, 'error', 'Enter a whole number of points from 1 to 1,000,000.');
-    return res.redirect(303, back);
-  }
   try {
     // Title, price and image come from the product service, not from the form.
     const product = await getProduct(Number(rawId));
-    await catalog.addCatalogItem(req.session.user.sponsorId, product, pointsCost);
+    await catalog.addCatalogItem(req.session.user.sponsorId, product);
     flash(req, 'success', `Added "${product.title}" to your catalog.`);
     res.redirect(303, back);
   } catch (err) {

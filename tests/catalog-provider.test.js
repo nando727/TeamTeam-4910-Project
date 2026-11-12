@@ -73,6 +73,15 @@ test('provider removals are recognized after refreshing the cache', async () => 
   await expect(provider.getProduct(3, { allowStale: false })).rejects.toMatchObject({ status: 404 });
 });
 
+test('DummyJSON stock and availability are preserved and snapshots are not reported as current', async () => {
+  answers.dummyjson = () => ({ ok: true, json: async () => ({ products: [{ id: 3, title: 'Sold out', price: 5, stock: 0, availabilityStatus: 'Out of Stock' }] }) });
+  expect(await provider.getProduct(1003, { allowStale: false })).toMatchObject({ availability: 'unavailable' });
+  provider._resetCache();
+  answers.dummyjson = () => new Error('offline');
+  const fallback = await provider.getProduct(1003, { allowStale: false });
+  expect(fallback.availability).toBe('unknown');
+});
+
 test('one service down means its products are missing, not an error; both down is an error', async () => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   answers.fakestore = () => new Error('offline');

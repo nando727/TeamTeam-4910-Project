@@ -44,6 +44,7 @@ beforeEach(() => {
   vi.spyOn(provider, 'searchProducts').mockResolvedValue([]);
   vi.spyOn(provider, 'listCategories').mockResolvedValue([]);
   vi.spyOn(db, 'query').mockImplementation(async (sql, params = []) => {
+    if (sql.startsWith('SELECT points_per_dollar')) return [];
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
     if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];

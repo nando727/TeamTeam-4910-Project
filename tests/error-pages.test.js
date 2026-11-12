@@ -1,6 +1,7 @@
 // Sprint 9: a missing page and a failed request get real pages in the style
 // of the 403 page, while the JSON API keeps answering in JSON.
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { describe, test, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 
@@ -43,7 +44,7 @@ describe('404', () => {
     // An HTTP client percent-encodes the brackets before they reach the app,
     // so the view is rendered directly to check the escaping itself.
     const ejs = require('ejs');
-    const view = new URL('../src/views/404.ejs', import.meta.url).pathname;
+    const view = fileURLToPath(new URL('../src/views/404.ejs', import.meta.url));
     const html = await ejs.renderFile(view, { attemptedPath: '/x"><script>alert(1)</script>', currentUser: null, currentPath: '/x' });
     expect(html).not.toContain('<script>alert');
     expect(html).toContain('<code class="path">/x&#34;&gt;&lt;script&gt;');

@@ -12,6 +12,13 @@
   <% } %>
 
   <h2 class="section-title">Available products</h2>
+  <form method="POST" action="/catalog/rate">
+    <input type="hidden" name="token" value="<%= formToken %>">
+    <label for="rate">Points per $1</label>
+    <input id="rate" name="rate" type="number" min="1" max="10000" step="1" value="<%= rate %>" required>
+    <p>Point costs round up to whole points. Changing this rate updates costs for all items in your catalog.</p>
+    <button type="submit">Save conversion rate</button>
+  </form>
   <form method="GET" action="/catalog" class="filter-form">
     <label for="q">Search:</label>
     <input type="text" id="q" name="q" value="<%= q %>" maxlength="100" placeholder="Title or description...">
@@ -57,7 +64,7 @@
                     <input type="hidden" name="productId" value="<%= p.productId %>">
                     <input type="hidden" name="q" value="<%= q %>">
                     <input type="hidden" name="category" value="<%= category %>">
-                    <label>Points <input type="number" name="pointsCost" min="1" max="1000000" step="1" value="<%= Math.max(1, Math.ceil(p.priceValue * 100)) %>" required></label>
+                    <span><%= Math.max(1, Math.ceil(Math.round(p.priceValue * 100) * rate / 100)).toLocaleString('en-US') %> points</span>
                     <button type="submit">Add</button>
                   </form>
                 <% } %>

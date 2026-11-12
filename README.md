@@ -740,8 +740,8 @@ Drivers open **Product catalog** (`/driver/catalog`) to browse available selecti
 from their current sponsors, grouped by sponsor. Product names open detail pages
 with the sponsor's saved title and the provider's description. Cards and details
 also show the saved product image (when present) and dollar price, matching the
-sponsor's saved catalog. This price is a saved value, not a live price quote or
-a point-redemption cost. Admin-added
+sponsor's saved catalog. This price is a saved value, not a live price quote.
+Point costs use the sponsor conversion rate described below. Admin-added
 memberships also work. Ford's `/my-catalog` URL redirects to this same page.
 
 Both sponsor editing and driver browsing use Ford's `catalog_items` table. No
@@ -749,13 +749,35 @@ copy into `products` or `sponsor_catalog` is needed. Migration 020 now creates
 `catalog_items` for new databases and does not change an existing table. The old
 empty tables from the earlier draft are unused and can be left alone.
 
-The driver pages reuse `src/fakestore/client.js`. Only saved selections still
-present in the provider's normalized product list are shown; missing products
-return 404 on the detail page. FakeStore does not provide an inventory/stock
-flag, so presence in its usable product list is the available signal. Its cache
-lasts five minutes; provider removals can take that long to appear. Once the cache
-expires, driver pages report provider failures instead of using stale products.
+The driver pages use the shared product provider. Only saved selections still
+present in the provider's normalized product list and not marked unavailable
+are shown. A saved selection whose provider product disappeared shows
+"Currently unavailable" on its detail page. DummyJSON stock and availability
+status determine availability; FakeStore has no stock field, so presence in
+its usable list is the available signal. Live results are cached for five minutes.
+Snapshot fallback products show availability as unconfirmed and cannot be selected.
 Removing a sponsor selection or membership takes effect on the next request.
+
+### Driver product details and pricing (DF-32 through DF-37)
+
+Detail pages show descriptions, images when available, availability, and point
+costs. Catalog cards also show images and point costs. Unavailable or unconfirmed
+offers cannot be added to the cart; checkout checks availability again before
+spending points.
+
+Apply `db/migrations/023_sponsor_point_rates.sql` to the app's database before
+running this version (or use `npm run db:migrate` to apply pending migrations).
+Sponsors can set **Points per $1** on their catalog page. The default is **10**.
+Costs use the saved dollar price times that sponsor's rate, rounded up to whole
+points, with a minimum of one point. For example, $24.99 at 10 points per dollar
+costs 250 points. The same calculation is used for catalog, cart, and purchases;
+it replaces the previous manually assigned point cost. A rate change affects
+existing selections but does not change completed purchases. A changed checkout
+cost requires the driver to review the cart again.
+
+To verify: change a sponsor's rate, view its catalog as a driver, and confirm
+the card, detail, and checkout costs agree. Provider tests cover out-of-stock
+products and outages without editing the shared database.
 
 To test: as a sponsor, open **Add to your catalog**, save a product, then log in
 as one of that sponsor's drivers and open **Product catalog**. Click its name to

@@ -1,14 +1,26 @@
 const db = require('../db');
+const { pointCost } = require('./pricing');
+
+function priced(rows) {
+  return rows.map(row => ({ ...row, points_cost: pointCost(row.price_value, row.points_per_dollar ?? 10) }));
+}
+
+async function conversionRate(sponsorId) {
+  const rows = await db.query('SELECT points_per_dollar FROM sponsor_point_rates WHERE sponsor_id = ?', [sponsorId]);
+  return rows.length ? Number(rows[0].points_per_dollar) : 10;
+}
+
 
 // Every query takes the organization (or driver) from the session, never from
 // the request, so one sponsor can't read or change another's catalogue.
 
 async function listCatalog(sponsorId) {
-  return db.query(
-    `SELECT id, product_id, title, category, image_url, price_value, points_cost
+  return priced(await db.query(
+    `SELECT id, product_id, title, category, image_url, price_value, points_cost,
+       COALESCE((SELECT points_per_dollar FROM sponsor_point_rates r WHERE r.sponsor_id = catalog_items.sponsor_id), 10) AS points_per_dollar
      FROM catalog_items WHERE sponsor_id = ? ORDER BY id DESC`,
     [sponsorId]
-  );
+  ));
 }
 
 // Returns the set of product ids this sponsor already saved, so the browse
@@ -19,7 +31,8 @@ async function savedProductIds(sponsorId) {
 }
 
 // Throws the raw ER_DUP_ENTRY error when the sponsor already saved this product.
-async function addCatalogItem(sponsorId, product, pointsCost) {
+async function addCatalogItem(sponsorId, product) {
+  const pointsCost = pointCost(product.priceValue, await conversionRate(sponsorId));
   return db.query(
     `INSERT INTO catalog_items (sponsor_id, product_id, title, category, image_url, price_value, points_cost)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -35,26 +48,28 @@ async function removeCatalogItem(sponsorId, id) {
 
 // A driver sees the catalogue of the organization they belong to.
 async function listCatalogForDriver(driverId) {
-  return db.query(
+  return priced(await db.query(
     `SELECT c.id, c.product_id, c.title, c.title AS name, c.category, c.image_url, c.price_value, c.points_cost,
-            c.sponsor_id AS sponsorId, s.name AS sponsorName
+            c.sponsor_id AS sponsorId, s.name AS sponsorName,
+            COALESCE((SELECT points_per_dollar FROM sponsor_point_rates r WHERE r.sponsor_id = c.sponsor_id), 10) AS points_per_dollar
      FROM catalog_items c
      JOIN driver_sponsors ds ON ds.sponsor_id = c.sponsor_id
      JOIN sponsors s ON s.id = c.sponsor_id
      WHERE ds.driver_id = ?
      ORDER BY s.name, c.title, c.id`,
     [driverId]
-  );
+  ));
 }
 
 // One item from this sponsor's catalogue, or null.
 async function findCatalogItem(sponsorId, id) {
   const rows = await db.query(
-    `SELECT id, product_id, title, category, image_url, price_value, points_cost
+    `SELECT id, product_id, title, category, image_url, price_value, points_cost,
+       COALESCE((SELECT points_per_dollar FROM sponsor_point_rates r WHERE r.sponsor_id = catalog_items.sponsor_id), 10) AS points_per_dollar
      FROM catalog_items WHERE id = ? AND sponsor_id = ?`,
     [id, sponsorId]
   );
-  return rows[0] || null;
+  return rows.length ? priced(rows)[0] : null;
 }
 
 // The drivers a sponsor may buy for: active driver accounts that belong to this
@@ -83,16 +98,17 @@ async function sponsorName(sponsorId) {
 async function findDriverCatalogItems(driverId, sponsorId, ids) {
   const wanted = [...new Set(ids.filter(id => Number.isInteger(id) && id > 0))];
   if (!wanted.length) return [];
-  return db.query(
+  return priced(await db.query(
     `SELECT c.id, c.product_id, c.title, c.category, c.image_url, c.price_value, c.points_cost,
-            c.sponsor_id AS sponsorId, s.name AS sponsorName
+            c.sponsor_id AS sponsorId, s.name AS sponsorName,
+            COALESCE((SELECT points_per_dollar FROM sponsor_point_rates r WHERE r.sponsor_id = c.sponsor_id), 10) AS points_per_dollar
      FROM catalog_items c
      JOIN driver_sponsors ds ON ds.sponsor_id = c.sponsor_id AND ds.driver_id = ?
      JOIN sponsors s ON s.id = c.sponsor_id
      WHERE c.sponsor_id = ? AND c.id IN (${wanted.map(() => '?').join(', ')})
      ORDER BY c.title, c.id`,
     [driverId, sponsorId, ...wanted]
-  );
+  ));
 }
 
 // The driver's balance with one sponsor, or null when they are not a member.
@@ -118,7 +134,7 @@ async function listSponsorsForDriverOrders(driverId) {
 }
 
 module.exports = {
-  listCatalog, savedProductIds, addCatalogItem, removeCatalogItem, listCatalogForDriver,
+  conversionRate, listCatalog, savedProductIds, addCatalogItem, removeCatalogItem, listCatalogForDriver,
   findCatalogItem, listDriversForPurchase, sponsorName,
   findDriverCatalogItems, driverBalance, listSponsorsForDriverOrders,
 };

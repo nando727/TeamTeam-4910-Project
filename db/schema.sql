@@ -255,3 +255,11 @@ CREATE PROCEDURE sponsor_monthly_fees(IN p_month_start DATE, IN p_sponsor_id INT
   WHERE p_sponsor_id IS NULL OR s.id = p_sponsor_id
   GROUP BY s.id, s.name, s.status
   ORDER BY s.name, s.id;
+
+-- No row means the default: 10 points per dollar.
+CREATE TABLE IF NOT EXISTS sponsor_point_rates (
+  sponsor_id INT PRIMARY KEY,
+  points_per_dollar INT NOT NULL DEFAULT 10,
+  FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
+  CHECK (points_per_dollar BETWEEN 1 AND 10000)
+);

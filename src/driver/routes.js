@@ -10,6 +10,7 @@ const {
 } = require('../reports/helpers');
 const catalogStore = require('../catalog/store');
 const provider = require('../products/provider');
+const { availability, currentProduct } = require('../products/availability');
 const { purchaseCart } = require('../points/store');
 const { findUserById } = require('../users/store');
 const { sendPurchaseConfirmation } = require('../mail/purchase-notice');
@@ -37,8 +38,9 @@ router.get('/catalog', async (req, res, next) => {
   try {
     const selections = await catalogStore.listCatalogForDriver(req.session.user.id);
     const available = selections.length ? await provider.listProducts({ allowStale: false }) : [];
-    const availableIds = new Set(available.map(product => product.productId));
-    const products = selections.filter(product => availableIds.has(product.product_id));
+    const byId = new Map(available.map(product => [product.productId, product]));
+    const products = selections.filter(product => byId.has(product.product_id) && availability(byId.get(product.product_id)) !== 'unavailable')
+      .map(product => ({ ...product, availability: availability(byId.get(product.product_id)) }));
     const catalogs = [];
     for (const product of products) {
       let catalog = catalogs.find(item => item.sponsorId === product.sponsorId);
@@ -63,8 +65,8 @@ router.get('/catalog/:sponsorId/:productId', async (req, res, next) => {
     const selections = await catalogStore.listCatalogForDriver(req.session.user.id);
     const product = selections.find(item => String(item.sponsorId) === req.params.sponsorId && String(item.id) === req.params.productId);
     if (!product) return res.sendStatus(404);
-    const current = await provider.getProduct(Number(product.product_id), { allowStale: false });
-    res.render('driver/product', { product: { ...product, description: current.description }, token: formToken(req), notice: takeCartNotice(req), points, maxQuantity: CART_MAX_QUANTITY });
+    const current = await currentProduct(product.product_id);
+    res.render('driver/product', { product: { ...product, description: current.description, availability: availability(current) }, token: formToken(req), notice: takeCartNotice(req), points, maxQuantity: CART_MAX_QUANTITY });
   } catch (err) {
     if (err instanceof provider.FakeStoreError) return res.status(err.status).render('driver/catalog-error', { message: err.message });
     next(err);
@@ -176,6 +178,11 @@ router.post('/cart/add', requireDriver, requireFormToken, async (req, res, next)
     const [item] = await catalogStore.findDriverCatalogItems(req.session.user.id, sponsorId, [itemId]);
     if (!item) {
       flashCart(req, 'error', 'That item is not in a catalog you can buy from.');
+      return res.redirect(303, back);
+    }
+
+    if (availability(await currentProduct(item.product_id)) !== 'available') {
+      flashCart(req, 'error', 'This offer is unavailable or its availability could not be confirmed. It was not added to your cart.');
       return res.redirect(303, back);
     }
 
@@ -324,6 +331,11 @@ router.get('/cart/checkout', requireDriver, async (req, res, next) => {
       flashCart(req, 'info', 'Your cart is empty.');
       return res.redirect('/driver/cart');
     }
+    const offers = await Promise.all(loaded.lines.map(line => currentProduct(line.product_id)));
+    if (offers.some(offer => availability(offer) !== 'available')) {
+      flashCart(req, 'error', 'An offer is unavailable or its availability cannot be confirmed. Nothing was bought.');
+      return res.redirect('/driver/cart');
+    }
     if (loaded.balance < loaded.total) {
       flashCart(req, 'error', `You have ${points(loaded.balance)} with ${loaded.sponsorName} and this cart costs ${points(loaded.total)}. Remove something to check out.`);
       return res.redirect('/driver/cart');
@@ -360,6 +372,11 @@ router.post('/cart/checkout', requireDriver, requireFormToken, async (req, res, 
       return res.redirect(303, '/driver/cart');
     }
     let result;
+    const offers = await Promise.all(loaded.lines.map(line => currentProduct(line.product_id)));
+    if (offers.some(offer => availability(offer) !== 'available')) {
+      flashCart(req, 'error', 'An offer is unavailable or its availability cannot be confirmed. Nothing was bought.');
+      return res.redirect(303, '/driver/cart');
+    }
     try {
       result = await purchaseCart({
         driverId: req.session.user.id, sponsorId: loaded.cart.sponsorId, userId: req.session.user.id,

@@ -30,8 +30,9 @@
               <input type="hidden" name="itemId" value="<%= product.id %>">
               <input type="hidden" name="sponsorId" value="<%= catalog.sponsorId %>">
               <input type="hidden" name="back" value="/driver/catalog">
-              <button type="submit" class="button--small">Add to cart</button>
+              <button type="submit" class="button--small" <%= product.availability === 'unknown' ? 'disabled' : '' %>>Add to cart</button>
             </form>
+            <% if (product.availability === 'unknown') { %><p class="action__text">Availability could not be confirmed.</p><% } %>
           </article>
         <% }); %>
       </div>
