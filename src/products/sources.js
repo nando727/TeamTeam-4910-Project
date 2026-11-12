@@ -41,7 +41,7 @@ function allowedImage(url) {
 
 // Keeps only what the catalog needs; drops anything missing an id, title or a
 // usable price so the page never shows half a product.
-function normalizeProduct({ id, title, category, description, price, image }) {
+function normalizeProduct({ id, title, category, description, price, image, stock, availabilityStatus }) {
   if (!Number.isInteger(id) || id < 1) return null;
   const value = Number(price);
   if (typeof title !== 'string' || !title.trim() || !Number.isFinite(value) || value < 0) return null;
@@ -52,6 +52,7 @@ function normalizeProduct({ id, title, category, description, price, image }) {
     description: typeof description === 'string' ? description : '',
     imageUrl: allowedImage(image),
     priceValue: value,
+    availability: (typeof stock === 'number' && stock <= 0) || /out of stock|unavailable|removed/i.test(availabilityStatus || '') ? 'unavailable' : 'available',
   };
 }
 
@@ -95,12 +96,12 @@ function createSource({ name, url, pick, snapshotPath, owns, toLocalId = id => i
   }
 
   function fallbackOrThrow(error, allowStale) {
-    if (allowStale && cache.products) return cache.products;
+    if (allowStale && cache.products) return cache.products.map(product => ({ ...product, availability: 'unknown' }));
     const snapshot = readSnapshot();
     if (snapshot) {
       console.warn(`[products] ${name}: live request failed (${error.message}); serving the local snapshot`);
-      cache = { products: snapshot, expiresAt: Date.now() + SNAPSHOT_RETRY_MS };
-      return snapshot;
+      cache = { products: snapshot.map(product => ({ ...product, availability: 'unknown' })), expiresAt: Date.now() + SNAPSHOT_RETRY_MS };
+      return cache.products;
     }
     throw error;
   }
@@ -143,8 +144,8 @@ const fakestore = createSource({
 // never empty.
 const dummyjson = createSource({
   name: 'dummyjson',
-  url: `${(process.env.DUMMYJSON_URL || 'https://dummyjson.com').replace(/\/+$/, '')}/products?limit=0&select=id,title,description,category,price,thumbnail`,
-  pick: row => ({ id: row.id, title: row.title, category: row.category, description: row.description, price: row.price, image: row.thumbnail }),
+  url: `${(process.env.DUMMYJSON_URL || 'https://dummyjson.com').replace(/\/+$/, '')}/products?limit=0&select=id,title,description,category,price,thumbnail,stock,availabilityStatus`,
+  pick: row => ({ id: row.id, title: row.title, category: row.category, description: row.description, price: row.price, image: row.thumbnail, stock: row.stock, availabilityStatus: row.availabilityStatus }),
   snapshotPath: path.join(__dirname, 'dummyjson-products.json'),
   owns: productId => productId >= DUMMYJSON_ID_OFFSET,
   toProductId: id => id + DUMMYJSON_ID_OFFSET,

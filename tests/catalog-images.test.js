@@ -3,13 +3,14 @@
 // shows a "No image" placeholder instead of the browser's broken-image icon.
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, test, expect } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const ejs = require('ejs');
 const { POLICY, PRODUCT_IMAGE_HOSTS } = require('../src/security-headers');
 
-const partial = new URL('../src/views/partials/product-image.ejs', import.meta.url).pathname;
+const partial = fileURLToPath(new URL('../src/views/partials/product-image.ejs', import.meta.url));
 const render = locals => ejs.renderFile(partial, locals);
 const view = path => readFileSync(new URL(`../src/views/${path}`, import.meta.url), 'utf8');
 

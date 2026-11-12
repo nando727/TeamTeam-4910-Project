@@ -116,7 +116,7 @@ test('invalid product identifiers are rejected before querying the catalog', asy
   expect(db.query.mock.calls.some(([sql]) => sql.includes('FROM catalog_items'))).toBe(false);
 });
 
-test('provider removal hides saved products and blocks their detail pages', async () => {
+test('provider removal hides saved products and disables selection on their detail pages', async () => {
   catalog = [{ sponsorId: 7, sponsorName: 'Northstar', id: 20, product_id: 3, name: 'Saved reward' }];
   provider.listProducts.mockResolvedValue([]);
   provider.getProduct.mockRejectedValue(new provider.FakeStoreError('That product is no longer available.', 404));
@@ -124,8 +124,23 @@ test('provider removal hides saved products and blocks their detail pages', asyn
   const page = await driver.get('/driver/catalog').expect(200);
   expect(page.text).not.toContain('Saved reward');
   expect(page.text).toContain('There are no available products');
-  await driver.get('/driver/catalog/7/20').expect(404);
+  const unavailable = await driver.get('/driver/catalog/7/20').expect(200);
+  expect(unavailable.text).toContain('Currently unavailable');
+  expect(unavailable.text).toMatch(/<button[^>]+disabled/);
   expect(provider.getProduct).toHaveBeenCalledWith(3, { allowStale: false });
+});
+
+test('detail and cards label unknown availability and prevent selection', async () => {
+  catalog = [{ sponsorId: 7, sponsorName: 'Northstar', id: 3, name: 'Reward' }];
+  provider.listProducts.mockResolvedValue([{ productId: 3, availability: 'unknown' }]);
+  provider.getProduct.mockResolvedValue({ description: 'Saved description', availability: 'unknown' });
+  const driver = await login();
+  const list = await driver.get('/driver/catalog').expect(200);
+  expect(list.text).toContain('Availability could not be confirmed');
+  expect(list.text).toMatch(/<button[^>]+disabled/);
+  const page = await driver.get('/driver/catalog/7/3').expect(200);
+  expect(page.text).toContain('Unable to confirm current availability');
+  expect(page.text).toMatch(/<button[^>]+disabled/);
 });
 
 test('provider outage is shown as an error rather than an empty or stale catalog', async () => {

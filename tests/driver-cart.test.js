@@ -31,8 +31,8 @@ beforeEach(() => {
   memberships = { 7: 'Northstar Freight', 8: 'Southstar Haulage' };
   items = [
     { id: 31, sponsor_id: 7, product_id: 3, title: 'Insulated mug', category: 'kitchen', image_url: 'https://fakestoreapi.com/img/mug.png', price_value: '24.99', points_cost: 250 },
-    { id: 32, sponsor_id: 7, product_id: 1004, title: 'Headset', category: 'electronics', image_url: null, price_value: '129.99', points_cost: 400 },
-    { id: 41, sponsor_id: 8, product_id: 5, title: 'Gloves', category: '', image_url: null, price_value: '5.00', points_cost: 10 },
+    { id: 32, sponsor_id: 7, product_id: 1004, title: 'Headset', category: 'electronics', image_url: null, price_value: '39.99', points_cost: 400 },
+    { id: 41, sponsor_id: 8, product_id: 5, title: 'Gloves', category: '', image_url: null, price_value: '1.00', points_cost: 10 },
   ];
   conn = {
     beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn(), release: vi.fn(),
@@ -99,6 +99,16 @@ async function tokenOf(agent) {
   return page.text.match(/name="token" value="([a-f0-9]+)"/)[1];
 }
 const add = (agent, token, body) => agent.post('/driver/cart/add').type('form').send({ token, ...body });
+
+test('unavailable offers cannot be added even by posting the form directly', async () => {
+  const provider = require('../src/products/provider');
+  provider.getProduct.mockResolvedValue({ availability: 'unavailable' });
+  const { agent } = await driver();
+  const token = await tokenOf(agent);
+  await add(agent, token, { itemId: '31', sponsorId: '7' }).expect(303);
+  expect((await agent.get('/driver/cart')).text).toContain('Your cart is empty');
+  expect(executed).toHaveLength(0);
+});
 
 describe('the cart', () => {
   test('is for drivers only, and starts empty with a link to the catalog', async () => {
@@ -248,7 +258,7 @@ describe('checkout', () => {
     const purchases = executed.filter(([sql]) => sql.startsWith('INSERT INTO purchases'));
     expect(purchases.map(([, params]) => params)).toEqual([
       [21, 7, 'Insulated mug ×2', 4998, 500],
-      [21, 7, 'Headset', 12999, 400],
+      [21, 7, 'Headset', 3999, 400],
     ]);
     const transactions = executed.filter(([sql]) => sql.startsWith('INSERT INTO point_transactions'));
     expect(transactions.map(([, params]) => params)).toEqual([
@@ -300,12 +310,22 @@ describe('checkout', () => {
     // Review again, then the cart changes before the confirmation arrives.
     const review = await agent.get('/driver/cart/checkout').expect(200);
     const fresh = review.text.match(/name="confirmId" value="([a-f0-9]{64})"/)[1];
-    items.find(i => i.id === 32).points_cost = 450;
+    items.find(i => i.id === 32).points_per_dollar = 20;
     await agent.post('/driver/cart/checkout').type('form').send({ token, confirmId: fresh }).expect(303);
     expect(conn.beginTransaction).not.toHaveBeenCalled();
     const page = await agent.get('/driver/cart').expect(200);
     expect(page.text).toContain('Your cart changed since you reviewed it');
     expect(page.text).toContain('Headset');
+  });
+
+  test('an offer becoming unavailable after review prevents checkout without spending points', async () => {
+    const { agent, token, confirmId } = await filledCart();
+    const provider = require('../src/products/provider');
+    provider.getProduct.mockResolvedValue({ availability: 'unavailable' });
+    await agent.post('/driver/cart/checkout').type('form').send({ token, confirmId }).expect(303);
+    expect(conn.beginTransaction).not.toHaveBeenCalled();
+    expect(executed).toHaveLength(0);
+    expect((await agent.get('/driver/cart')).text).toContain('Nothing was bought.');
   });
 
   test('a balance that dropped under the lock rolls everything back', async () => {
