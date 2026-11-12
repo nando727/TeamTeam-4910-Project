@@ -52,7 +52,10 @@ beforeEach(() => {
     if (sql.startsWith('SELECT id, name, contact_email, contact_phone, address, status FROM sponsors')) {
       return [{ id: 7, name: ORG.name, contact_email: ORG.contactEmail, contact_phone: ORG.contactPhone, address: ORG.address, status: 'active' }];
     }
-    if (sql.startsWith('SELECT id, title, description FROM rules')) return [];
+    if (sql.includes('FROM rules WHERE sponsor_id = ?')) return [];
+    if (sql.includes('FROM sponsor_point_rates WHERE sponsor_id = ?')) {
+      return [{ points_per_dollar: 10 }];
+    }
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
