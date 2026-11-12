@@ -1,0 +1,47 @@
+<%- include('../partials/head', { title: 'Sponsor Rules' }) %>
+  <section class="hero">
+    <%- include('../partials/logo') %>
+    <div>
+      <h1>Sponsor Rules</h1>
+      <% if (sponsor) { %>
+        <p>How you earn points with <%= sponsor.name %>.</p>
+      <% } else { %>
+        <p>Join a sponsor to see their rules.</p>
+      <% } %>
+    </div>
+  </section>
+
+  <% if (!sponsor) { %>
+    <p>You aren't part of a sponsor organization yet. <a href="/sponsors">Apply to a sponsor</a> to get started.</p>
+  <% } else { %>
+    <p>
+      <% if (rate && valueLabel) { %>
+        <strong><%= rate %> points = $1.00</strong> (1 point is worth <%= valueLabel %>).
+      <% } else { %>
+        <%= sponsor.name %> hasn't set what a point is worth yet.
+      <% } %>
+    </p>
+
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th>Rule</th><th>Points</th><th>Details</th></tr>
+        </thead>
+        <tbody>
+          <% rules.forEach(rule => { %>
+            <tr>
+              <td><%= rule.title %></td>
+              <td><%= rule.points > 0 ? '+' + rule.points : rule.points %></td>
+              <td><%= rule.description %></td>
+            </tr>
+          <% }) %>
+          <% if (rules.length === 0) { %>
+            <tr><td colspan="3"><%= sponsor.name %> hasn't added any rules yet.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+
+  <p><a href="/">&larr; Back to home</a></p>
+<%- include('../partials/foot') %>

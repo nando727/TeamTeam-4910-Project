@@ -1,0 +1,74 @@
+<%# Rules and point value, included from sponsor/organization.ejs.
+    Needs: rules, rate, valueLabel, notice, formToken. %>
+<h2 class="section-title">Point value</h2>
+<% if (notice) { %>
+  <p class="<%= notice.kind === 'error' ? 'error' : 'success' %>" role="status"><%= notice.text %></p>
+<% } %>
+<p>
+  <% if (rate && valueLabel) { %>
+    Your drivers see that <strong><%= rate %> points = $1.00</strong> (1 point is worth <%= valueLabel %>).
+  <% } else { %>
+    You haven't set a point value yet.
+  <% } %>
+</p>
+<form method="POST" action="/catalog/rate" class="filter-form">
+  <input type="hidden" name="token" value="<%= formToken %>">
+  <input type="hidden" name="returnTo" value="/organization">
+  <label for="rate">Points per $1:</label>
+  <input type="number" id="rate" name="rate" min="1" max="10000" step="1" value="<%= rate || '' %>" required>
+  <button type="submit">Save point value</button>
+</form>
+
+<h2 class="section-title">Organization Rules</h2>
+<p>Your drivers can see these rules and what each one is worth.</p>
+<div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Points</th>
+        <th>Description</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% rules.forEach(rule => { %>
+        <tr>
+          <td><%= rule.title %></td>
+          <td><%= rule.points %></td>
+          <td><%= rule.description %></td>
+          <td>
+            <form method="POST" action="/organization/rules/<%= rule.id %>/points" class="inline-form">
+              <input type="hidden" name="token" value="<%= formToken %>">
+              <label>New points <input type="number" name="pointValue" step="1" value="<%= rule.points %>" required></label>
+              <button type="submit">Save</button>
+            </form>
+            <form method="POST" action="/organization/rules/<%= rule.id %>/delete" class="inline-form">
+              <input type="hidden" name="token" value="<%= formToken %>">
+              <button type="submit">Remove</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+      <% if (rules.length === 0) { %>
+        <tr><td colspan="4">No rules yet.</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+
+<h3>Add a rule</h3>
+<form method="POST" action="/organization/rules">
+  <input type="hidden" name="token" value="<%= formToken %>">
+
+  <label for="title">Title</label>
+  <input type="text" id="title" name="title" maxlength="255" required>
+
+  <label for="pointValue">Points (use a negative number to take points away)</label>
+  <input type="number" id="pointValue" name="pointValue" step="1" required>
+
+  <label for="description">Description</label>
+  <textarea id="description" name="description" maxlength="2000" required></textarea>
+
+  <button type="submit">Add rule</button>
+</form>
