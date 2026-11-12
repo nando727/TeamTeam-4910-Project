@@ -14,20 +14,10 @@ const {
 const { sendPasswordResetLink } = require('./mailer');
 const { mailIsConfigured } = require('../mail/mailer');
 const { checkLockout, lockoutMessage, lockoutGuidance } = require('./lockout');
+// Story AA-70: where the attempt came from. Shared with the sign-up throttle.
+const { requestSource } = require('./request-source');
 
 const router = express.Router();
-
-// Story AA-70: where the attempt came from, so failures can later be counted
-// per origin rather than only per username. Express is behind the load
-// balancer with `trust proxy` set, so req.ip is the client rather than the
-// proxy. An IPv4 address arrives mapped into IPv6 form (::ffff:1.2.3.4) on a
-// dual-stack listener; stripping the prefix keeps one address in one shape.
-function requestSource(req) {
-  const address = (req && req.ip) || '';
-  const plain = address.startsWith('::ffff:') ? address.slice('::ffff:'.length) : address;
-  // The column holds 45 characters, the longest an IPv6 address can be.
-  return plain ? plain.slice(0, 45) : null;
-}
 
 // Audit requirement: every login attempt is recorded (date, username, success).
 // A source that cannot be determined is stored as NULL rather than dropping
@@ -74,6 +64,9 @@ router.get('/login', (req, res) => {
   } else if (req.query.reset === 'done') {
     // Forgot-password flow: they just chose a new password from a reset link.
     notice = 'Your password was reset. Sign in with your new password.';
+  } else if (req.query.created) {
+    // Driver sign-up: the account exists and this is its first sign-in.
+    notice = 'Your driver account is ready. Sign in to get started.';
   }
   // Forced sign-out by the admin router's live status check.
   const reason = typeof req.query.reason === 'string' ? req.query.reason : '';

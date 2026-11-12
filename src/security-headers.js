@@ -1,13 +1,15 @@
-// Product images in the catalog come from the product service's own host, so
-// that one host is allowed for images and nothing else. Every other outside
-// image is still refused.
-const PRODUCT_IMAGE_HOST = 'https://fakestoreapi.com';
+// Product images in the catalog come from the product services' own hosts, so
+// those hosts are allowed for images and nothing else. Every other outside
+// image is still refused. The list lives with the product sources, which also
+// refuse to store an image URL from anywhere else.
+const { IMAGE_HOSTS } = require('./products/sources');
+const PRODUCT_IMAGE_HOSTS = IMAGE_HOSTS;
 
 const POLICY = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: ${PRODUCT_IMAGE_HOST}`,
+  `img-src 'self' data: ${PRODUCT_IMAGE_HOSTS.join(' ')}`,
   "font-src 'self'",
   "connect-src 'self'",
   "form-action 'self'",
@@ -31,4 +33,4 @@ function securityHeaders(req, res, next) {
   next();
 }
 
-module.exports = { securityHeaders, POLICY, PRODUCT_IMAGE_HOST };
+module.exports = { securityHeaders, POLICY, PRODUCT_IMAGE_HOSTS };

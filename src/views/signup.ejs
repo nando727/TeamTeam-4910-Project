@@ -1,0 +1,59 @@
+<%- include('partials/head', { title: 'Create a driver account' }) %>
+  <div class="auth">
+    <div class="auth__grid">
+      <section class="auth__panel">
+        <%- include('partials/logo') %>
+        <h2 class="auth__title">Join as a driver</h2>
+        <p class="auth__lede">Create your account, then apply to the sponsors whose programs you want to join. It takes a minute.</p>
+        <ul class="auth__points">
+          <li>
+            <%- include('partials/icon', { name: 'user-plus' }) %>
+            <span><strong>Sign up free</strong>No invitation needed. Drivers create their own accounts.</span>
+          </li>
+          <li>
+            <%- include('partials/icon', { name: 'clipboard-check' }) %>
+            <span><strong>Apply to sponsors</strong>Pick a program and tell them why you are a safe bet.</span>
+          </li>
+          <li>
+            <%- include('partials/icon', { name: 'cart' }) %>
+            <span><strong>Redeem points</strong>Spend what you earn in your sponsor's catalog.</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="auth__form">
+        <h1>Create your account</h1>
+        <p class="lede">All accounts created here are driver accounts.</p>
+        <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+        <form method="POST" action="/signup">
+          <input type="hidden" name="token" value="<%= token %>">
+
+          <label for="name">Your name</label>
+          <input id="name" name="name" type="text" autocomplete="name" maxlength="255" required value="<%= values.name %>">
+
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" maxlength="255" required value="<%= values.email %>">
+
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none"
+                 minlength="3" maxlength="64" pattern="[A-Za-z0-9._\-]{3,64}" required value="<%= values.username %>">
+          <p class="hint">3 to 64 letters, numbers, dots, underscores, or hyphens. You will sign in with this.</p>
+
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="new-password"
+                 minlength="8" maxlength="<%= maxLength %>" required data-toggle-visibility>
+          <%- include('partials/password-rules', { inputId: 'password', rules }) %>
+
+          <label for="confirmPassword">Confirm password</label>
+          <input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password"
+                 required data-confirm-for="password" data-toggle-visibility>
+
+          <button type="submit">Create my account</button>
+        </form>
+        <p class="auth__alt">Already have an account? <a href="/login">Log in</a></p>
+      </section>
+    </div>
+  </div>
+  <script src="/password-rules.js" defer></script>
+  <script src="/password-toggle.js" defer></script>
+<%- include('partials/foot') %>

@@ -42,14 +42,28 @@ function idleLimitLabel() {
   return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
 }
 
+// Requests a page makes on its own, with nobody clicking anything. These do
+// not count as activity, for two reasons that turned out to be the same one.
+//
+// Sliding the window for them would let a tab left open keep a session alive
+// through its own background fetches, which is the opposite of an idle limit.
+// And sliding the window is a write: express-session saves the whole session
+// whenever anything in it changes. A background fetch that writes the session
+// can finish *after* a request the user made a moment later, and put back the
+// copy it loaded first -- which is how an item added to the cart while the
+// alerts were still loading simply vanished. A request that changes nothing is
+// only touched (its expiry extended), never rewritten.
+const BACKGROUND_PATHS = ['/points/alerts'];
+const isBackgroundRequest = req => req.method === 'GET' && BACKGROUND_PATHS.includes(req.path);
+
 function sessionTimeout(req, res, next) {
   if (!req.session || !req.session.user) return next();
 
   const lastActivity = req.session.lastActivity || 0;
   if (Date.now() - lastActivity <= idleLimitMs()) {
     // Still active: slide the window forward so the limit measures inactivity,
-    // not time since login.
-    req.session.lastActivity = Date.now();
+    // not time since login. Not for the page's own background requests.
+    if (!isBackgroundRequest(req)) req.session.lastActivity = Date.now();
     return next();
   }
 
@@ -69,4 +83,4 @@ function sessionTimeout(req, res, next) {
   });
 }
 
-module.exports = { sessionTimeout, idleLimitMs, idleLimitLabel, warningLeadMs, remainingMs };
+module.exports = { sessionTimeout, idleLimitMs, idleLimitLabel, warningLeadMs, remainingMs, isBackgroundRequest, BACKGROUND_PATHS };

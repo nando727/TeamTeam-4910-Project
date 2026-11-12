@@ -12,6 +12,11 @@
     if (me.role === 'driver') navItems.push({ href: '/sponsors', label: 'Sponsors' });
     if (me.role === 'driver') navItems.push({ href: '/driver/programs', label: 'My points' });
     if (me.role === 'driver') navItems.push({ href: '/driver/catalog', label: 'Product catalog' });
+    if (me.role === 'driver') navItems.push({ href: '/driver/orders', label: 'My orders' });
+    if (me.role === 'driver') {
+      const count = (typeof cartCount !== 'undefined' && cartCount) || 0;
+      navItems.push({ href: '/driver/cart', label: count ? `Cart (${count})` : 'Cart' });
+    }
     if (me.role === 'sponsor') navItems.push({ href: '/reports/points', label: 'Reports' });
     if (me.role === 'sponsor') navItems.push({ href: '/points', label: 'Adjust points' });
     if (me.role === 'admin') {
@@ -27,6 +32,7 @@
         { href: '/admin/manage-users', label: 'Manage users' },
         { href: '/admin/locked-users', label: 'Locked users' },
         { href: '/admin/admin-accounts', label: 'Admin accounts' },
+        { href: '/admin/audit-log', label: 'Audit log' },
         { href: '/admin/bulk-upload', label: 'Bulk upload' },
       ] });
       navItems.push({ label: 'Sponsors', children: [
@@ -51,6 +57,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= title %> – Good Driver Incentive Program</title>
   <link rel="icon" type="image/svg+xml" href="<%= favicon %>">
+  <%# Not deferred, and before the stylesheet: it puts the visitor's saved
+      colour choice on <html> before the first paint, so there is no flash of
+      the wrong palette. Every page, signed in or not. %>
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/styles.css">
   <% if (me) { %>
     <%# Header scripts only for signed-in pages, so the login form stays script-free. %>
@@ -84,18 +94,32 @@
           <% } %>
         <% }); %>
       </nav>
-      <% if (me) { %>
-        <div class="site-account">
-          <a class="site-user" href="/profile" title="View your profile">
-            <span class="site-user__avatar" aria-hidden="true"><%= me.username.charAt(0).toUpperCase() %></span>
-            <span class="site-user__text">
-              <span class="site-user__name"><%= me.username %></span>
-              <span class="site-user__role"><%= me.role %></span>
-            </span>
-          </a>
-          <%- include('logout') %>
-        </div>
-      <% } %>
+      <div class="site-tools">
+        <%# Daylight or night. Hidden until /theme.js marks the page ready, so
+            it is never a button that cannot do anything. %>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-pressed="false" title="Switch colour theme">
+          <svg class="theme-toggle__sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true" focusable="false">
+            <circle cx="12" cy="12" r="4.2"/>
+            <path d="M12 2.5v2.2M12 19.3v2.2M4.2 12H2M22 12h-2.2M6.3 6.3 4.8 4.8M19.2 19.2l-1.5-1.5M17.7 6.3l1.5-1.5M4.8 19.2l1.5-1.5"/>
+          </svg>
+          <svg class="theme-toggle__moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a7.5 7.5 0 1 0 10.5 10.5z"/>
+          </svg>
+          <span class="sr-only" data-theme-label>Switch colour theme</span>
+        </button>
+        <% if (me) { %>
+          <div class="site-account">
+            <a class="site-user" href="/profile" title="View your profile">
+              <span class="site-user__avatar" aria-hidden="true"><%= me.username.charAt(0).toUpperCase() %></span>
+              <span class="site-user__text">
+                <span class="site-user__name"><%= me.username %></span>
+                <span class="site-user__role"><%= me.role %></span>
+              </span>
+            </a>
+            <%- include('logout') %>
+          </div>
+        <% } %>
+      </div>
       <button class="nav-toggle" type="button" aria-controls="site-nav" aria-expanded="false">
         <span class="nav-toggle__bars" aria-hidden="true"></span>
         Menu

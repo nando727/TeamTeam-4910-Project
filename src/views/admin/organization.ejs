@@ -1,0 +1,92 @@
+<%- include('../partials/head', { title: organization.name }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Sponsor organization</span>
+      <h1><%= organization.name %></h1>
+      <p class="lede">Everyone who belongs to this organization: the sponsor users who act for it, and the drivers in its program with the points they hold here.</p>
+      <dl class="report-summary" aria-label="Organization at a glance">
+        <div class="report-summary__item"><dt>Status</dt><dd><%= organization.status %></dd></div>
+        <div class="report-summary__item"><dt>Sponsor users</dt><dd><%= sponsorUsers.length %></dd></div>
+        <div class="report-summary__item"><dt>Drivers</dt><dd><%= drivers.length %><%= drivers.length !== activeDrivers ? ` (${activeDrivers} active)` : '' %></dd></div>
+        <div class="report-summary__item"><dt>Points held</dt><dd><%= totalPoints.toLocaleString('en-US') %></dd></div>
+      </dl>
+    </div>
+    <% if (notice) { %>
+      <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %></p>
+    <% } %>
+
+    <table class="table table--details">
+      <tbody>
+        <tr><th scope="row">Name</th><td><%= organization.name %></td></tr>
+        <tr><th scope="row">Contact email</th><td><a href="mailto:<%= organization.contactEmail %>"><%= organization.contactEmail %></a></td></tr>
+        <tr><th scope="row">Contact phone</th><td><%= organization.contactPhone || '—' %></td></tr>
+        <tr><th scope="row">Address</th><td><%= organization.address %></td></tr>
+        <tr><th scope="row">Status</th><td><span class="status-badge status-<%= organization.status %>"><%= organization.status %></span></td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="section-title">Sponsor users</h2>
+    <% if (sponsorUsers.length === 0) { %>
+      <p class="info" role="status">No sponsor user acts for this organization yet, so nobody can sign in for it.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th scope="col">Name</th><th scope="col">Username</th><th scope="col">Email</th><th scope="col">Status</th></tr>
+          </thead>
+          <tbody>
+            <% sponsorUsers.forEach(account => { %>
+              <tr>
+                <td class="cell-strong"><%= account.name || '—' %></td>
+                <td><%= account.username %></td>
+                <td class="cell-email"><% if (account.email) { %><a href="mailto:<%= account.email %>"><%= account.email %></a><% } else { %><span class="muted small">—</span><% } %></td>
+                <td><span class="status-badge status-<%= account.status %>"><%= account.status %></span></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+
+    <h2 class="section-title">Drivers</h2>
+    <% if (drivers.length === 0) { %>
+      <p class="info" role="status">No drivers belong to this organization yet. An approved application, or an administrator adding a sponsorship, puts a driver here.</p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Name</th><th scope="col">Username</th><th scope="col">Email</th>
+              <th scope="col" class="num">Points here</th><th scope="col">Status</th><th scope="col">Sponsorships</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% drivers.forEach(driver => { %>
+              <tr>
+                <td class="cell-strong"><%= driver.name || '—' %></td>
+                <td><%= driver.username %></td>
+                <td class="cell-email"><% if (driver.email) { %><a href="mailto:<%= driver.email %>"><%= driver.email %></a><% } else { %><span class="muted small">—</span><% } %></td>
+                <td class="num"><%= Number(driver.balance).toLocaleString('en-US') %></td>
+                <td><span class="status-badge status-<%= driver.status %>"><%= driver.status %></span></td>
+                <td><a class="button-link button--small" href="/admin/manage-users/<%= driver.id %>/sponsors">Sponsors</a></td>
+              </tr>
+            <% }); %>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row" colspan="3">Points held with <%= organization.name %></th>
+              <td class="num cell-strong"><%= totalPoints.toLocaleString('en-US') %></td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    <% } %>
+
+    <div class="button-row" style="margin-top: 24px;">
+      <a class="button-link" href="/admin/sponsor-status">&larr; All organizations</a>
+      <a class="button-link" href="/admin/manage-users?sponsor=<%= organization.id %>">Manage these accounts</a>
+      <a class="button-link" href="/reports/points?sponsor=<%= organization.id %>">Point report</a>
+    </div>
+  </section>
+<%- include('../partials/foot') %>

@@ -1,4 +1,22 @@
   </main>
+  <%
+    // A small floating cart in the corner, so "where did that go?" is
+    // answered on the page the driver is already reading. Only for drivers,
+    // only once something is in the cart, and not on the cart pages
+    // themselves, where it would point at the page it is on.
+    const miniMe = (typeof currentUser !== 'undefined') ? currentUser : null;
+    const miniCount = (typeof cartCount !== 'undefined' && cartCount) || 0;
+    const miniPath = (typeof currentPath !== 'undefined') ? currentPath : '';
+    const showMiniCart = miniMe && miniMe.role === 'driver' && miniCount > 0 && !miniPath.startsWith('/driver/cart');
+  %>
+  <% if (showMiniCart) { %>
+    <a class="mini-cart" href="/driver/cart" aria-label="View your cart, <%= miniCount %> item<%= miniCount === 1 ? '' : 's' %>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <path d="M3 4h2l2.4 11h10.2l1.9-7H6.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="16.5" cy="19" r="1.5"/>
+      </svg>
+      <span class="mini-cart__count" aria-hidden="true"><%= miniCount > 99 ? '99+' : miniCount %></span>
+    </a>
+  <% } %>
   <footer class="site-footer">
     <div class="site-footer__inner">
       <div class="site-footer__brand">

@@ -19,6 +19,16 @@ const MEMBER_OF_ORG = `(
 )`;
 
 // SF-21: name and balance range filters, combined with AND.
+//
+// Sprint 9: the balance is the driver's point balance *with this sponsor*,
+// from their membership row, rather than the users.balance column this query
+// used to read. That column is not in db/schema.sql or in any migration, so a
+// database built from this repository does not have it and this page could
+// only fail; where it does exist it is a single number per driver, which
+// cannot be right once a driver can belong to several sponsors. Points are
+// held per membership, and driver_sponsors.point_balance is the balance every
+// other part of the app reads and writes -- the point adjustment form, the
+// catalog purchase, and the reports.
 async function listDriversForSponsor(sponsorId, { name = null, minBalance = null, maxBalance = null } = {}) {
   const params = [sponsorId];
   const conditions = ['ds.sponsor_id = ?'];
@@ -28,20 +38,20 @@ async function listDriversForSponsor(sponsorId, { name = null, minBalance = null
     params.push(`%${escapeLike(name)}%`);
   }
   if (minBalance !== null) {
-    conditions.push('u.balance >= ?');
+    conditions.push('ds.point_balance >= ?');
     params.push(minBalance);
   }
   if (maxBalance !== null) {
-    conditions.push('u.balance <= ?');
+    conditions.push('ds.point_balance <= ?');
     params.push(maxBalance);
   }
 
   return db.query(
-    `SELECT u.id, u.name, u.email, u.username, u.status, u.balance
+    `SELECT u.id, u.name, u.email, u.username, u.status, ds.point_balance AS balance
      FROM users u
      JOIN driver_sponsors ds ON ds.driver_id = u.id
      WHERE ${conditions.join(' AND ')}
-     ORDER BY u.name`,
+     ORDER BY u.name, u.username, u.id`,
     params
   );
 }

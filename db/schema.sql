@@ -223,6 +223,22 @@ CREATE TABLE IF NOT EXISTS password_history (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+-- Administrator actions on accounts (see migration 022): role changes, status
+-- changes, password resets, unlocks, and sponsorship changes. Never holds a
+-- password, a hash, or a token.
+CREATE TABLE IF NOT EXISTS admin_actions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  admin_user_id INT NULL,
+  target_user_id INT NULL,
+  action VARCHAR(32) NOT NULL,
+  detail VARCHAR(500) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_admin_actions_created (created_at),
+  INDEX idx_admin_actions_target (target_user_id, created_at),
+  FOREIGN KEY (admin_user_id) REFERENCES users(id),
+  FOREIGN KEY (target_user_id) REFERENCES users(id)
+);
+
 -- The 1% monthly fee each sponsor owes (see migration 018). Keep this text the
 -- same as the migration; tests/sponsor-fees.test.js checks that it is.
 DROP PROCEDURE IF EXISTS sponsor_monthly_fees;

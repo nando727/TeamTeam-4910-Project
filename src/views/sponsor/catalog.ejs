@@ -31,6 +31,9 @@
   <% if (browseError) { %>
     <p class="error" role="alert"><%= browseError %></p>
   <% } else { %>
+    <p class="muted small report-bar" style="margin: 0 0 8px;">
+      <span><% if (productCount === 0) { %>No products match.<% } else { %>Showing <%= pageStart %> to <%= pageEnd %> of <%= productCount.toLocaleString('en-US') %> product<%= productCount === 1 ? '' : 's' %><%= q || category ? ' matching your filters' : '' %>.<% } %></span>
+    </p>
     <div class="table-wrap">
       <table class="table">
         <thead>
@@ -67,6 +70,13 @@
         </tbody>
       </table>
     </div>
+    <% if (pageCount > 1) { %>
+      <nav class="pager" aria-label="Product pages">
+        <% if (prevHref) { %><a class="button-link button--small" href="<%= prevHref %>">&larr; Previous</a><% } else { %><span class="button-link button--small is-disabled" aria-disabled="true">&larr; Previous</span><% } %>
+        <span class="pager__status">Page <%= page %> of <%= pageCount %></span>
+        <% if (nextHref) { %><a class="button-link button--small" href="<%= nextHref %>">Next &rarr;</a><% } else { %><span class="button-link button--small is-disabled" aria-disabled="true">Next &rarr;</span><% } %>
+      </nav>
+    <% } %>
   <% } %>
 
   <h2 class="section-title">Your catalog</h2>

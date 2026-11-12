@@ -19,6 +19,59 @@
 
   <p><a href="/organization/edit">Edit organization info</a></p>
 
+  <h2 class="section-title">People in <%= organization.name %></h2>
+  <dl class="report-summary" aria-label="People at a glance">
+    <div class="report-summary__item"><dt>Sponsor users</dt><dd><%= sponsorUsers.length %></dd></div>
+    <div class="report-summary__item"><dt>Drivers</dt><dd><%= drivers.length %></dd></div>
+    <div class="report-summary__item"><dt>Points held</dt><dd><%= totalPoints.toLocaleString('en-US') %></dd></div>
+  </dl>
+
+  <h3>Sponsor users</h3>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th scope="col">Name</th><th scope="col">Username</th><th scope="col">Email</th><th scope="col">Status</th></tr>
+      </thead>
+      <tbody>
+        <% sponsorUsers.forEach(account => { %>
+          <tr>
+            <td class="cell-strong"><%= account.name || '—' %></td>
+            <td><%= account.username %></td>
+            <td class="cell-email"><% if (account.email) { %><a href="mailto:<%= account.email %>"><%= account.email %></a><% } else { %><span class="muted small">—</span><% } %></td>
+            <td><span class="status-badge status-<%= account.status %>"><%= account.status %></span></td>
+          </tr>
+        <% }); %>
+        <% if (sponsorUsers.length === 0) { %>
+          <tr><td colspan="4">No sponsor users yet. <a href="/sponsor-users/create">Add a sponsor user</a>.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Drivers</h3>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th scope="col">Name</th><th scope="col">Username</th><th scope="col">Email</th><th scope="col" class="num">Points with us</th><th scope="col">Status</th></tr>
+      </thead>
+      <tbody>
+        <% drivers.forEach(driver => { %>
+          <tr>
+            <td class="cell-strong"><%= driver.name || '—' %></td>
+            <td><%= driver.username %></td>
+            <td class="cell-email"><% if (driver.email) { %><a href="mailto:<%= driver.email %>"><%= driver.email %></a><% } else { %><span class="muted small">—</span><% } %></td>
+            <td class="num"><%= Number(driver.balance).toLocaleString('en-US') %></td>
+            <td><span class="status-badge status-<%= driver.status %>"><%= driver.status %></span></td>
+          </tr>
+        <% }); %>
+        <% if (drivers.length === 0) { %>
+          <tr><td colspan="5">No drivers have joined your program yet.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+  <p><a class="button-link" href="/drivers">Manage your drivers</a></p>
+
   <h2 class="section-title">Organization Rules</h2>
 
     <table class="table">

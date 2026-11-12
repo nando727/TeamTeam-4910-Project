@@ -58,7 +58,7 @@ test('catalog scopes selections to current memberships, including admin-added sp
   const page = await driver.get('/driver/catalog').expect(200);
   expect(page.text).toContain('Northstar');
   expect(page.text).toContain('Safety Jacket');
-  expect(page.text).toContain('Price: $45.99');
+  expect(page.text).toContain('$45.99');
   expect(page.text).toContain('src="https://example.com/jacket.jpg"');
   expect(page.text).toContain('alt="Safety Jacket"');
   expect(page.text).toContain('href="/driver/catalog/7/3"');

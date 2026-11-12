@@ -3,8 +3,12 @@ const { randomBytes } = require('crypto');
 const {
   VALID_ROLES, USER_STATUSES, DuplicateError, createUser, findUserById, listUsers, updateUserStatus,
   updateUserPassword, countRecentFailedLogins, revokeSessions, SamePasswordError,
+  searchUsers, countUsers, countActiveAdmins, roleChangeImpact, changeUserRole,
 } = require('../users/store');
-const { createSponsor, listSponsors } = require('../sponsors/store');
+const { createSponsor, listSponsors, findSponsorById } = require('../sponsors/store');
+const { listDriversForSponsor, listSponsorAccounts } = require('../sponsors/accounts');
+const { ACTIONS, actionLabel, recordAdminAction, listAdminActions, countAdminActions } = require('./audit');
+const { positiveInt, text, queryString, formatStamp } = require('../reports/helpers');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { requireActiveAdmin } = require('./guard');
 const { listDriverSponsors, addDriverSponsor, removeDriverSponsor, MembershipError } = require('../memberships/store');
@@ -144,6 +148,63 @@ router.get('/sponsor-status', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ---- One sponsor organization (sprint 9) ----------------------------------
+//
+// Sponsor status answers "which organizations exist?". This answers "who
+// belongs to this one?", which until now could only be worked out by reading
+// the whole user list: its details, the sponsor users who act for it, and its
+// drivers with the points they hold there.
+
+router.get('/sponsors/:sponsorId', async (req, res, next) => {
+  const id = positiveInt(req.params.sponsorId);
+  if (!id) return res.status(400).send('Please select a valid sponsor organization.');
+  try {
+    const organization = await findSponsorById(id);
+    if (!organization) return res.status(404).send('That sponsor organization no longer exists.');
+    const [sponsorUsers, drivers] = await Promise.all([listSponsorAccounts(id), listDriversForSponsor(id)]);
+    const totalPoints = drivers.reduce((sum, driver) => sum + Number(driver.balance || 0), 0);
+    res.render('admin/organization', {
+      organization, sponsorUsers, drivers, totalPoints, notice: takeNotice(req),
+      activeDrivers: drivers.filter(driver => driver.status === 'active').length,
+    });
+  } catch (err) { next(err); }
+});
+
+// ---- Audit log (sprint 9) -------------------------------------------------
+//
+// What administrators have done to accounts, newest first. The sign-in log
+// (login_attempts) and the password log (password_changes) answer their own
+// questions; this one answers "who changed this account, and what went with
+// it?", which role changes made worth asking.
+
+const AUDIT_PAGE_SIZE = 25;
+
+router.get('/audit-log', async (req, res, next) => {
+  try {
+    const wanted = text(req.query.action);
+    const action = Object.prototype.hasOwnProperty.call(ACTIONS, wanted) && wanted !== 'other' ? wanted : '';
+    const userId = positiveInt(text(req.query.user));
+    const filters = { action: action || null, targetUserId: userId };
+
+    const total = await countAdminActions(filters);
+    const pageCount = Math.max(1, Math.ceil(total / AUDIT_PAGE_SIZE));
+    const page = Math.min(positiveInt(text(req.query.page)) || 1, pageCount);
+    const rows = await listAdminActions(filters, { limit: AUDIT_PAGE_SIZE, offset: (page - 1) * AUDIT_PAGE_SIZE });
+    const state = { action, user: userId ? String(userId) : '' };
+    const pageHref = n => '/admin/audit-log' + queryString({ ...state, page: n > 1 ? n : null });
+    const target = userId ? await findUserById(userId) : null;
+
+    res.render('admin/audit-log', {
+      rows, actions: Object.entries(ACTIONS).filter(([key]) => key !== 'other').map(([value, label]) => ({ value, label })),
+      state, target, actionLabel, formatStamp,
+      total, page, pageCount,
+      pageStart: total ? (page - 1) * AUDIT_PAGE_SIZE + 1 : 0, pageEnd: Math.min(page * AUDIT_PAGE_SIZE, total),
+      prevHref: page > 1 ? pageHref(page - 1) : null, nextHref: page < pageCount ? pageHref(page + 1) : null,
+      filtered: Boolean(action || userId),
+    });
+  } catch (err) { next(err); }
+});
+
 // ---- Manage users (change account status) ---------------------------------
 
 // Same flow as the sponsor application review: a disable/revoke is held in the
@@ -165,6 +226,11 @@ function statusDraftFor(req) {
   return draft && draft.userId === req.targetUser.id ? draft : null;
 }
 
+// Who the audit log credits. While an admin is acting as somebody else the
+// session user is that somebody, so the impersonator is the one who really
+// did it -- the same rule the password-change log already uses.
+const actingAdminId = req => (req.session.impersonator ? req.session.impersonator.id : req.session.user.id);
+
 // A status change can start from either list page. The form says which one
 // (hidden `from` field) and the admin is sent back there afterwards. Anything
 // not on this list falls back to the full user list.
@@ -174,7 +240,41 @@ const STATUS_PAGES = {
   'locked-users': '/admin/locked-users',
 };
 const pageKey = value => (Object.prototype.hasOwnProperty.call(STATUS_PAGES, value) ? value : 'manage-users');
-const returnPathFor = req => STATUS_PAGES[pageKey(read(req, 'from'))];
+
+// Sprint 9: the search and filters on Manage users have to survive paging and
+// every action taken from a row, or an administrator who filters, changes one
+// account, and is returned to the unfiltered first page has to find their way
+// back each time.
+//
+// Each row's form carries the current filters as hidden fields, and they are
+// read back through the same validation as the query string: the state in a
+// form is no more trusted than the state in a URL. `page` is dropped from an
+// action's return path on purpose when the filters are what matters -- the row
+// may well not be on that page any more.
+// The query string uses q/role/status/sponsor/page. A row's form cannot: its
+// own fields are already called `role` and `status` (the new role, the new
+// status), so in a form body the filters are prefixed with `f`. Both are read
+// through this one function, into the same state object either way.
+function manageFilterState(source = {}, prefix = '') {
+  const value = key => (typeof source[prefix + key] === 'string' ? source[prefix + key].trim() : '');
+  const role = value('role');
+  const status = value('status');
+  return {
+    q: value('q').slice(0, 128),
+    role: VALID_ROLES.includes(role) ? role : '',
+    status: USER_STATUSES.includes(status) ? status : '',
+    sponsor: positiveInt(value('sponsor')) ? value('sponsor') : '',
+    page: positiveInt(value('page')) ? value('page') : '',
+  };
+}
+const manageUsersPath = (state, { keepPage = true } = {}) =>
+  STATUS_PAGES['manage-users'] + queryString({ ...state, page: keepPage ? state.page : null });
+
+function returnPathFor(req) {
+  const key = pageKey(read(req, 'from'));
+  if (key !== 'manage-users') return STATUS_PAGES[key];
+  return manageUsersPath(manageFilterState(req.body, 'f'), { keepPage: false });
+}
 
 // One-shot notice shown on the next visit to a list page (success or no-op).
 function flashAndRedirect(req, res, notice, path = STATUS_PAGES['manage-users']) {
@@ -187,20 +287,50 @@ function takeNotice(req) {
   return notice;
 }
 
+const MANAGE_PAGE_SIZE = 25;
+
 router.get('/manage-users', async (req, res, next) => {
   try {
-    const users = await listUsers();
+    const state = manageFilterState(req.query);
+    const sponsors = await listSponsors();
+    // A sponsor id that is not a real organization filters on nothing and
+    // would quietly show an empty list, so it is dropped and said out loud.
+    const problems = [];
+    let sponsorId = positiveInt(state.sponsor);
+    if (sponsorId && !sponsors.some(s => s.id === sponsorId)) {
+      sponsorId = null;
+      state.sponsor = '';
+      problems.push('Choose a sponsor organization from the list.');
+    }
+    const filters = { search: state.q || null, role: state.role || null, status: state.status || null, sponsorId };
+
+    const total = await countUsers(filters);
+    const pageCount = Math.max(1, Math.ceil(total / MANAGE_PAGE_SIZE));
+    const page = Math.min(positiveInt(state.page) || 1, pageCount);
+    state.page = page > 1 ? String(page) : '';
+    const users = await searchUsers(filters, { limit: MANAGE_PAGE_SIZE, offset: (page - 1) * MANAGE_PAGE_SIZE });
+
     // Story 22255 follow-up: who still owes us a password, so the list can
     // offer them a fresh setup link.
     const awaitingSetup = new Set(await userIdsAwaitingSetup());
     // Story AA-72: who cannot sign in right now, so the list can let them
     // back in. One query for the page, not one per account.
     const locked = await lockedUsernames();
-    res.render('manage-users', {
+    const pageHref = n => manageUsersPath({ ...state, page: n > 1 ? String(n) : '' });
+    const filtered = Boolean(state.q || state.role || state.status || state.sponsor);
+    const chosenSponsor = sponsorId ? sponsors.find(s => s.id === sponsorId) : null;
+
+    res.status(problems.length ? 400 : 200).render('manage-users', {
       users: users.map(user => ({
         ...user, awaitingSetup: awaitingSetup.has(user.id), locked: locked.has(user.username),
       })),
-      statuses: USER_STATUSES, notice: takeNotice(req), currentUserId: req.session.user.id, token: formToken(req),
+      statuses: USER_STATUSES, roles: VALID_ROLES, sponsors, state, filters: state, filtered, chosenSponsor,
+      error: problems.length ? problems.join(' ') : null,
+      notice: takeNotice(req), currentUserId: req.session.user.id, token: formToken(req),
+      total, page, pageCount, pageSize: MANAGE_PAGE_SIZE,
+      pageStart: total ? (page - 1) * MANAGE_PAGE_SIZE + 1 : 0, pageEnd: Math.min(page * MANAGE_PAGE_SIZE, total),
+      prevHref: page > 1 ? pageHref(page - 1) : null, nextHref: page < pageCount ? pageHref(page + 1) : null,
+      clearHref: STATUS_PAGES['manage-users'],
     });
   } catch (err) { next(err); }
 });
@@ -244,6 +374,10 @@ router.post('/manage-users/:userId/status', async (req, res, next) => {
     if (status === 'active') {
       // Restoring access needs no confirmation.
       await updateUserStatus(user.id, status);
+      await recordAdminAction({
+        adminUserId: actingAdminId(req), targetUserId: user.id, action: 'status-change',
+        detail: `${user.username}: ${user.status} to active`,
+      });
       return flashAndRedirect(req, res, { kind: 'success', text: `Status for ${user.username} changed to ${status}.` }, returnTo);
     }
     req.session.statusChange = { userId: user.id, status, returnTo, confirmId: randomBytes(32).toString('hex') };
@@ -268,6 +402,10 @@ router.post('/manage-users/:userId/unlock', async (req, res, next) => {
     // Recorded against the administrator who did it; the failed attempts stay
     // in the audit log exactly as they were.
     await clearLockout(user.username, req.session.user.id);
+    await recordAdminAction({
+      adminUserId: actingAdminId(req), targetUserId: user.id, action: 'unlock',
+      detail: `${user.username} was let back in after failed sign-ins`,
+    });
     flashAndRedirect(req, res, { kind: 'success', text: `${user.username} can sign in again.` }, returnTo);
   } catch (err) { next(err); }
 });
@@ -291,7 +429,111 @@ router.post('/manage-users/:userId/confirm', async (req, res, next) => {
       return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, status is already ${user.status}.` }, draft.returnTo);
     }
     await updateUserStatus(user.id, draft.status);
+    await recordAdminAction({
+      adminUserId: actingAdminId(req), targetUserId: user.id, action: 'status-change',
+      detail: `${user.username}: ${user.status} to ${draft.status}`,
+    });
     flashAndRedirect(req, res, { kind: 'success', text: `Status for ${user.username} changed to ${draft.status}.` }, draft.returnTo);
+  } catch (err) { next(err); }
+});
+
+// ---- Changing a role (sprint 9) -------------------------------------------
+//
+// Same shape as the status change above: the intended change is held in the
+// session with a one-time id, a confirmation page lists exactly what it will
+// remove, and only a submit that echoes the id writes anything.
+//
+// Two changes are refused outright. An administrator cannot change their own
+// role, because the page that would change it back is behind the admin guard;
+// and the last active administrator cannot be demoted, because an
+// installation with no administrator has no way back in at all.
+
+function roleDraftFor(req) {
+  const draft = req.session.roleChange;
+  return draft && draft.userId === req.targetUser.id ? draft : null;
+}
+
+// Why this role change is refused, or null when it may go ahead.
+async function roleChangeRefusal(req, user, role) {
+  if (user.id === req.session.user.id) {
+    return 'You cannot change your own role. Ask another administrator to do it.';
+  }
+  if (user.role === 'admin' && role !== 'admin' && user.status === 'active' && (await countActiveAdmins()) <= 1) {
+    return `${user.username} is the only administrator who can sign in, so their role cannot be changed. Make another account an administrator first.`;
+  }
+  return null;
+}
+
+router.post('/manage-users/:userId/role', async (req, res, next) => {
+  const user = req.targetUser;
+  const role = read(req, 'role');
+  const returnTo = returnPathFor(req);
+  // A stale draft must never survive a new request for the same account.
+  delete req.session.roleChange;
+  if (!VALID_ROLES.includes(role)) return res.status(400).send('Choose a role: driver, sponsor, or admin.');
+  try {
+    const refusal = await roleChangeRefusal(req, user, role);
+    if (refusal) return flashAndRedirect(req, res, { kind: 'error', text: refusal }, returnTo);
+    if (role === user.role) {
+      return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, ${user.username} is already a ${role}.` }, returnTo);
+    }
+    req.session.roleChange = { userId: user.id, role, returnTo, confirmId: randomBytes(32).toString('hex') };
+    res.redirect(303, `/admin/manage-users/${user.id}/role/confirm`);
+  } catch (err) { next(err); }
+});
+
+router.get('/manage-users/:userId/role/confirm', async (req, res, next) => {
+  const draft = roleDraftFor(req);
+  if (!draft) return res.redirect('/admin/manage-users');
+  try {
+    // Counted now rather than when the draft was made, so the page lists what
+    // would go if it were confirmed at this moment.
+    const impact = await roleChangeImpact(req.targetUser.id, draft.role);
+    if (!impact) {
+      delete req.session.roleChange;
+      return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, ${req.targetUser.username} is already a ${draft.role}.` }, draft.returnTo);
+    }
+    res.render('user-role-confirm', { user: req.targetUser, draft, impact, token: formToken(req) });
+  } catch (err) { next(err); }
+});
+
+router.post('/manage-users/:userId/role/confirm', async (req, res, next) => {
+  const user = req.targetUser;
+  const draft = roleDraftFor(req);
+  if (!draft || req.body.confirmId !== draft.confirmId) {
+    return res.status(400).send('Confirm the role change before saving it.');
+  }
+  try {
+    delete req.session.roleChange;
+    // The account may have changed since the draft was made; both rules are
+    // checked again before anything is written.
+    const refusal = await roleChangeRefusal(req, user, draft.role);
+    if (refusal) return flashAndRedirect(req, res, { kind: 'error', text: refusal }, draft.returnTo);
+
+    const result = await changeUserRole(user.id, draft.role);
+    if (!result.changed) {
+      return flashAndRedirect(req, res, {
+        kind: 'info',
+        text: result.reason === 'missing' ? 'That account no longer exists.' : `No change needed, ${user.username} is already a ${draft.role}.`,
+      }, draft.returnTo);
+    }
+
+    // What actually went, in the same words the confirmation used.
+    const removed = Object.entries(result.removed).filter(([, count]) => count > 0)
+      .map(([key, count]) => `${count} ${key}`);
+    await recordAdminAction({
+      adminUserId: actingAdminId(req), targetUserId: user.id, action: 'role-change',
+      detail: `${user.username}: ${result.from} to ${result.to}` + (removed.length ? `; removed ${removed.join(', ')}` : '; nothing to remove'),
+    });
+
+    // The old role is in their session, and so is anything it let them see.
+    // Signing the account out everywhere is what makes the change take hold
+    // on whatever device they are already using.
+    await revokeSessions(user.id);
+    flashAndRedirect(req, res, {
+      kind: 'success',
+      text: `${user.username} is now a ${result.to}. They were signed out everywhere, so the new role applies the next time they sign in.`,
+    }, draft.returnTo);
   } catch (err) { next(err); }
 });
 
@@ -329,6 +571,10 @@ router.post('/manage-users/:userId/sponsors', requireDriver, async (req, res, ne
     const sponsor = (await listSponsors()).find(s => s.id === sponsorId);
     if (!sponsor) return flashAndRedirect(req, res, { kind: 'error', text: 'Choose a sponsor from the list.' }, back);
     await addDriverSponsor(user.id, sponsorId);
+    await recordAdminAction({
+      adminUserId: actingAdminId(req), targetUserId: user.id, action: 'sponsorship-added',
+      detail: `${user.username} was added to ${sponsor.name}`,
+    });
     flashAndRedirect(req, res, { kind: 'success', text: `${user.username} now belongs to ${sponsor.name}.` }, back);
   } catch (err) {
     if (err instanceof MembershipError) return flashAndRedirect(req, res, { kind: 'error', text: err.message }, back);
@@ -360,6 +606,12 @@ router.post('/manage-users/:userId/sponsors/:sponsorId/remove/confirm', requireD
   try {
     delete req.session.sponsorRemoval;
     const removed = await removeDriverSponsor(user.id, draft.sponsorId);
+    if (removed) {
+      await recordAdminAction({
+        adminUserId: actingAdminId(req), targetUserId: user.id, action: 'sponsorship-removed',
+        detail: `${user.username} was removed from ${draft.sponsorName}, losing ${Number(draft.balance).toLocaleString('en-US')} point${Number(draft.balance) === 1 ? '' : 's'} held there`,
+      });
+    }
     flashAndRedirect(req, res, removed
       ? { kind: 'success', text: `Removed ${user.username} from ${draft.sponsorName}. Other sponsorships were left in place.` }
       : { kind: 'info', text: 'That sponsorship was already gone.' }, back);
@@ -456,6 +708,13 @@ router.post('/manage-users/:userId/password', async (req, res, next) => {
     // admin resetting their own password keeps the session they are using.
     const cutoffMs = await revokeSessions(user.id);
     if (req.session.user.id === user.id) req.session.issuedAt = cutoffMs + 1;
+
+    // The password itself is already recorded in password_changes; this is the
+    // administrator-facing log, which holds no hash either.
+    await recordAdminAction({
+      adminUserId: actingAdminId(req), targetUserId: user.id, action: 'password-reset',
+      detail: `${user.username}'s password was reset and their other sessions were signed out`,
+    });
 
     flashAndRedirect(req, res, { kind: 'success', text: `Password for ${user.username} was reset. Their other sessions were signed out.` }, STATUS_PAGES[from]);
   } catch (err) { next(err); }
