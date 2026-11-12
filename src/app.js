@@ -22,6 +22,7 @@ const { formToken, requireFormToken } = require('./auth/form-token');
 const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES, escapeLike} = require('./applications');
 const db = require('./db');
 
+const ruleData = require('./sponsors/rules');
 const { createUser,updateUserContact, updateUserStatus, DuplicateError } = require('./users/store');
 const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('./auth/setup-tokens');
 const { listDriversForSponsor, listSponsorAccounts, findOrgMember, deleteOrgMember } = require('./sponsors/accounts');
@@ -193,10 +194,10 @@ app.get('/organization', requireLogin, requireSponsor, async (req, res, next) =>
     const organization = rows[0];
     if (!organization) return res.status(404).send('Organization not found.');
 
-    const rules = await db.query(
-      'SELECT id, title, description FROM rules WHERE sponsor_id = ? ORDER BY id DESC',
-      [req.session.user.sponsorId]
-    );
+    const sponsorId = req.session.user.sponsorId;
+    const [rules, rate] = await Promise.all([ruleData.listRules(sponsorId), catalog.conversionRate(sponsorId)]);
+    const notice = req.session.accountNotice || null;
+    
 
     // Sprint 9: who belongs to this organization, so a sponsor user can see
     // their own people on the page that describes the organization.
@@ -205,8 +206,10 @@ app.get('/organization', requireLogin, requireSponsor, async (req, res, next) =>
       listDriversForSponsor(req.session.user.sponsorId),
     ]);
 
+    delete req.session.accountNotice;
     res.render('sponsor/organization', {
-      organization, rules, sponsorUsers, drivers, formToken: formToken(req),
+      organization, rules, rate, valueLabel: ruleData.dollarsPerPoint(rate), notice,
+      sponsorUsers, drivers, formToken: formToken(req),
       totalPoints: drivers.reduce((sum, driver) => sum + Number(driver.balance || 0), 0),
     });
   } catch (err) { next(err); }
@@ -322,38 +325,43 @@ app.post('/accounts/:userId/delete', requireLogin, requireSponsor, requireFormTo
   }
 });
 
+function backToRules(req, res, kind, text) {
+  flash(req, kind, text);
+  return res.redirect(303, '/organization');
+}
+
 app.post('/organization/rules', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
-  const title = (req.body.title || '').trim();
-  const description = (req.body.description || '').trim();
-  const pointValue = (req.body.pointValue || '').trim();
-
-  if (!title || title.length > 255) {
-    return res.status(400).send('Enter a title (up to 255 characters).');
-  }
-  if (!pointValue || pointValue.length > 255){
-    return res.status(400).send('Enter a valid point amount.');
-  }
-  if (!description || description.length > 2000) {
-    return res.status(400).send('Enter a description (up to 2000 characters).');
-  }
-
+  const title = ruleData.parseRuleTitle(req.body.title);
+  const description = ruleData.parseRuleDescription(req.body.description);
+  const points = ruleData.parseRulePoints(req.body.pointValue);
+  if (!title) return backToRules(req, res, 'error', 'Enter a rule name (up to 255 characters).');
+  if (points === null) return backToRules(req, res, 'error', 'Enter the points as a whole number other than 0 (up to 1,000,000, negative to take points away).');
+  if (!description) return backToRules(req, res, 'error', 'Enter a description (up to 2000 characters).');
   try {
-    await db.query(
-      'INSERT INTO rules (sponsor_id, title, points, description) VALUES (?, ?, ?, ?)',
-      [req.session.user.sponsorId, title, pointValue, description]
-    );
-    res.redirect('/organization');
+    await ruleData.addRule(req.session.user.sponsorId, { title, points, description });
+    backToRules(req, res, 'success', `Added the rule "${title}".`);
+  } catch (err) {
+    if (err instanceof ruleData.DuplicateRuleError) return backToRules(req, res, 'error', err.message);
+    next(err);
+  }
+});
+
+app.post('/organization/rules/:id/points', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const points = ruleData.parseRulePoints(req.body.pointValue);
+  if (!/^[1-9]\d{0,9}$/.test(req.params.id)) return res.status(400).send('Invalid rule.');
+  if (points === null) return backToRules(req, res, 'error', 'Enter the points as a whole number other than 0 (up to 1,000,000, negative to take points away).');
+  try {
+    const rule = await ruleData.updateRulePoints(req.session.user.sponsorId, Number(req.params.id), points);
+    if (!rule) return backToRules(req, res, 'error', 'Rule not found.');
+    backToRules(req, res, 'success', `"${rule.title}" now awards ${points} points.`);
   } catch (err) { next(err); }
 });
 
 app.post('/organization/rules/:id/delete', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  if (!/^[1-9]\d{0,9}$/.test(req.params.id)) return res.status(400).send('Invalid rule.');
   try {
-    const result = await db.query(
-      'DELETE FROM rules WHERE id = ? AND sponsor_id = ?',
-      [req.params.id, req.session.user.sponsorId]
-    );
-    if (result.affectedRows === 0) return res.status(404).send('Rule not found.');
-    res.redirect('/organization');
+    const ok = await ruleData.removeRule(req.session.user.sponsorId, Number(req.params.id));
+    backToRules(req, res, ok ? 'success' : 'error', ok ? 'Rule removed.' : 'Rule not found.');
   } catch (err) { next(err); }
 });
 
@@ -454,11 +462,12 @@ app.get('/catalog', requireLogin, requireSponsor, async (req, res, next) => {
 
 app.post('/catalog/rate', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
   const rate = Number(req.body.rate);
+  const back = req.body.returnTo === '/organization' ? '/organization' : '/catalog';
   if (!req.session.user.sponsorId || !Number.isInteger(rate) || rate < 1 || rate > 10000) return res.status(400).send('Enter a whole number from 1 to 10,000 points per dollar.');
   try {
     await db.query('INSERT INTO sponsor_point_rates (sponsor_id, points_per_dollar) VALUES (?, ?) ON DUPLICATE KEY UPDATE points_per_dollar = ?', [req.session.user.sponsorId, rate, rate]);
     flash(req, 'success', 'Conversion rate saved. Catalog point costs now use the new rate.');
-    res.redirect(303, '/catalog');
+    res.redirect(303, back);
   } catch (error) { next(error); }
 });
 
@@ -648,6 +657,17 @@ app.post('/sponsor-users/create', requireLogin, requireSponsor, requireFormToken
     if (err instanceof DuplicateError) return renderCreateSponsorUser(req, res, values, { error: err.message, status: 409 });
     next(err);
   }
+});
+
+//Can't figure out where all of the driver pages are built so I'm putting it here for now
+app.get('/my-rules', requireLogin, async (req, res, next) => {
+  if (req.session.user.role !== 'driver') return denyAccess(req, res, { needs: 'driver' });
+  try {
+    const sponsor = await ruleData.findDriverSponsor(req.session.user.id);
+    if (!sponsor) return res.render('driver/rules', { sponsor: null, rules: [], rate: null, valueLabel: null });
+    const [rules, rate] = await Promise.all([ruleData.listRules(sponsor.id), catalog.conversionRate(sponsor.id)]);
+    res.render('driver/rules', { sponsor, rules, rate, valueLabel: ruleData.dollarsPerPoint(rate) });
+  } catch (err) { next(err); }
 });
 
 // Nothing above answered: a real page rather than Express's one-line "Cannot
