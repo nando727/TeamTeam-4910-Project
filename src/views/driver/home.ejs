@@ -1,15 +1,49 @@
 <%- include('../partials/head', { title: 'Driver Home' }) %>
-  <section class="hero">
+  <section class="dash">
     <%- include('../partials/logo') %>
-    <div>
+    <div class="dash__text">
       <h1>Welcome, <%= user.username %></h1>
-      <p>You are signed in as a driver.</p>
+      <p>You are signed in as a driver. <span class="dash__chip">driver</span></p>
     </div>
+    <dl class="dash__stats">
+      <div class="dash__stat"><dt>In your cart</dt><dd><%= locals.cartCount || 0 %></dd></div>
+    </dl>
   </section>
 
+  <h2 class="section-title">Your points</h2>
+  <div class="actions actions--2">
+    <a class="action" href="/driver/programs">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'chart' }) %></span>
+      <span class="action__title">My sponsor and points</span>
+      <span class="action__text">Your current balance with each sponsor program you belong to.</span>
+    </a>
+    <a class="action" href="/driver/points/history">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'receipt' }) %></span>
+      <span class="action__title">My point history</span>
+      <span class="action__text">Every award and deduction, newest first, with the reason given.</span>
+    </a>
+  </div>
+
+  <h2 class="section-title">Rewards</h2>
+  <div class="actions actions--3">
+    <a class="action" href="/driver/catalog">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'cart' }) %></span>
+      <span class="action__title">Product catalog</span>
+      <span class="action__text">Browse what your sponsors offer and add items to your cart.</span>
+    </a>
+    <a class="action" href="/driver/cart">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'cart' }) %></span>
+      <span class="action__title">Your cart<% if (locals.cartCount) { %> (<%= cartCount %>)<% } %></span>
+      <span class="action__text">Review the items you picked and check out with your points.</span>
+    </a>
+    <a class="action" href="/driver/orders">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'receipt' }) %></span>
+      <span class="action__title">My orders</span>
+      <span class="action__text">Everything you have bought, with the date, sponsor, and points spent.</span>
+    </a>
+  </div>
+
   <h2 class="section-title">Sponsors</h2>
-  <p><a class="button-link" href="/driver/programs">My sponsor and points</a></p>
-  <p><a class="button-link" href="/driver/points/history">View my point history</a></p>
   <div class="actions actions--2">
     <a class="action" href="/sponsors">
       <span class="action__icon"><%- include('../partials/icon', { name: 'clipboard-check' }) %></span>
@@ -35,10 +69,10 @@
       <span class="action__title">Change your password</span>
       <span class="action__text">Choose a new password that meets the complexity rules.</span>
     </a>
-    <a class="action" href="/about">
+    <a class="action" href="/points/settings">
       <span class="action__icon"><%- include('../partials/icon', { name: 'info' }) %></span>
-      <span class="action__title">About this app</span>
-      <span class="action__text">Team, version, and release information.</span>
+      <span class="action__title">Alert settings</span>
+      <span class="action__text">Choose whether point changes are announced to you.</span>
     </a>
   </div>
 <%- include('../partials/foot') %>

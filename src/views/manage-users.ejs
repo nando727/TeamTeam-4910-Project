@@ -3,8 +3,10 @@
     <div class="page-header">
       <span class="eyebrow">Administration</span>
       <h1>Manage users</h1>
-      <p class="lede">Every account and its current status. Disabling or revoking an account asks you to confirm first. "Sign in as" lets you see the app as an active driver or sponsor. Accounts blocked by failed sign-ins are marked, and <a href="/admin/locked-users">Locked users</a> can let them back in.</p>
+      <p class="lede">Search for an account, then change its role or status, reset its password, or sign in as it. Role and status changes ask you to confirm first. Accounts blocked by failed sign-ins are marked, and <a href="/admin/locked-users">Locked users</a> can let them back in.</p>
     </div>
+
+    <% if (locals.error) { %><p class="error" role="alert"><%= error %></p><% } %>
     <% if (notice) { %>
       <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %></p>
       <% if (notice.link) { %>
@@ -14,14 +16,80 @@
                   aria-label="Setup link" data-select-on-focus></p>
       <% } %>
     <% } %>
-    <% if (users.length === 0) { %>
-      <p class="info" role="status">No users have been created yet. <a href="/admin/create-user">Create a user</a>.</p>
+
+    <form class="filters" method="GET" action="/admin/manage-users">
+      <div class="filters__field">
+        <label for="q">Search</label>
+        <input id="q" name="q" type="search" maxlength="128" value="<%= state.q %>" placeholder="Name, username, or email">
+      </div>
+      <div class="filters__field">
+        <label for="role">Role</label>
+        <select id="role" name="role">
+          <option value="">All roles</option>
+          <% roles.forEach(role => { %>
+            <option value="<%= role %>" <%= state.role === role ? 'selected' : '' %>><%= role %></option>
+          <% }); %>
+        </select>
+      </div>
+      <div class="filters__field">
+        <label for="status">Status</label>
+        <select id="status" name="status">
+          <option value="">All statuses</option>
+          <% statuses.forEach(status => { %>
+            <option value="<%= status %>" <%= state.status === status ? 'selected' : '' %>><%= status %></option>
+          <% }); %>
+        </select>
+      </div>
+      <div class="filters__field">
+        <label for="sponsor">Sponsor</label>
+        <select id="sponsor" name="sponsor">
+          <option value="">All sponsors</option>
+          <% sponsors.forEach(sponsor => { %>
+            <option value="<%= sponsor.id %>" <%= state.sponsor === String(sponsor.id) ? 'selected' : '' %>><%= sponsor.name %></option>
+          <% }); %>
+        </select>
+      </div>
+      <div class="filters__actions">
+        <button type="submit">Search</button>
+        <a class="button-link" href="<%= clearHref %>">Clear</a>
+      </div>
+    </form>
+
+    <div class="report-bar">
+      <span class="muted small">
+        <% if (total === 0) { %>No accounts match<% } else { %>Showing <%= pageStart %> to <%= pageEnd %> of <%= total.toLocaleString('en-US') %> account<%= total === 1 ? '' : 's' %><% } %><%= filtered ? ' for these filters' : '' %>.
+      </span>
+      <a class="button-link button--small" href="/admin/audit-log">View the audit log</a>
+    </div>
+
+    <% if (total === 0) { %>
+      <div class="info" role="status">
+        <% if (filtered) { %>
+          <p><strong>No accounts match these filters.</strong></p>
+          <p>
+            Nothing matched
+            <% if (state.q) { %>a search for "<%= state.q %>"<% } %>
+            <%= state.q && (state.role || state.status || chosenSponsor) ? ' with ' : '' %>
+            <% if (state.role) { %>the <%= state.role %> role<% } %>
+            <%= state.role && (state.status || chosenSponsor) ? ', ' : '' %>
+            <% if (state.status) { %>the <%= state.status %> status<% } %>
+            <%= state.status && chosenSponsor ? ', ' : '' %>
+            <% if (chosenSponsor) { %><%= chosenSponsor.name %><% } %>.
+            Try a shorter search or <a href="<%= clearHref %>">clear the filters</a> to see every account.
+          </p>
+        <% } else { %>
+          <p>No users have been created yet. <a href="/admin/create-user">Create a user</a>.</p>
+        <% } %>
+      </div>
     <% } else { %>
       <div class="table-wrap">
-        <table class="table">
+        <table class="table table--users">
           <thead>
             <tr>
+              <th scope="col">Name</th>
               <th scope="col">Username</th>
+              <th scope="col">Email</th>
+              <th scope="col">Sponsor</th>
               <th scope="col">Role</th>
               <th scope="col">Status</th>
               <th scope="col">Password</th>
@@ -32,14 +100,33 @@
           <tbody>
             <% users.forEach(user => { %>
               <tr>
-                <td class="cell-strong"><%= user.username %><% if (user.id === currentUserId) { %> <span class="muted small">(you)</span><% } %></td>
-                <td><span class="role-chip"><%= user.role %></span></td>
+                <td class="cell-strong"><%= user.name || '—' %><% if (user.id === currentUserId) { %> <span class="muted small">(you)</span><% } %></td>
+                <td><%= user.username %></td>
+                <td class="cell-email"><% if (user.email) { %><a href="mailto:<%= user.email %>"><%= user.email %></a><% } else { %><span class="muted small">—</span><% } %></td>
+                <td><% if (user.sponsorNames) { %><%= user.sponsorNames %><% } else { %><span class="muted small">—</span><% } %></td>
                 <td>
-                  <%# The dropdown already shows the current status, so it is the
-                      badge as well: one cell instead of a badge beside a copy of it. %>
+                  <%# The dropdown shows the current role and is the way to change it. %>
+                  <% if (user.id === currentUserId) { %>
+                    <span class="role-chip"><%= user.role %></span>
+                    <p class="cell-note muted small">Your own role</p>
+                  <% } else { %>
+                    <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/role">
+                      <input type="hidden" name="token" value="<%= token %>">
+                      <%- include('partials/manage-filters', { state }) %>
+                      <label for="role-<%= user.id %>" class="sr-only">Role for <%= user.username %></label>
+                      <select class="status-select" id="role-<%= user.id %>" name="role">
+                        <% roles.forEach(role => { %>
+                          <option value="<%= role %>" <%= role === user.role ? 'selected' : '' %>><%= role %></option>
+                        <% }); %>
+                      </select>
+                      <button type="submit">Change</button>
+                    </form>
+                  <% } %>
+                </td>
+                <td>
                   <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/status">
                     <input type="hidden" name="token" value="<%= token %>">
-                    <input type="hidden" name="from" value="manage-users">
+                    <%- include('partials/manage-filters', { state }) %>
                     <label for="status-<%= user.id %>" class="sr-only">Status for <%= user.username %></label>
                     <select class="status-select status-<%= user.status %>" id="status-<%= user.id %>" name="status">
                       <% statuses.forEach(status => { %>
@@ -49,8 +136,7 @@
                     <button type="submit">Update</button>
                   </form>
                   <%# Story AA-72: being blocked by failed sign-ins is not an account
-                      status, so it sits beside the status rather than inside it. The
-                      chip links to the page that can clear it. %>
+                      status, so it sits beside the status rather than inside it. %>
                   <% if (user.locked) { %>
                     <p class="cell-note">
                       <a class="status-badge status-locked" href="/admin/locked-users"
@@ -59,12 +145,10 @@
                   <% } %>
                 </td>
                 <td>
-                  <%# A new account has no password yet, so it gets a setup link rather
-                      than a reset. These were two columns, each offering the other's
-                      action to accounts it could not apply to. %>
                   <% if (user.awaitingSetup) { %>
                     <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/setup-link">
                       <input type="hidden" name="token" value="<%= token %>">
+                      <%- include('partials/manage-filters', { state }) %>
                       <button type="submit" class="button--small">Send new link</button>
                     </form>
                   <% } else if (user.id === currentUserId) { %>
@@ -84,7 +168,7 @@
                   <% if (user.role !== 'admin') { %>
                     <form class="status-form" method="POST" action="/admin/impersonate/<%= user.id %>">
                       <input type="hidden" name="token" value="<%= token %>">
-                      <input type="hidden" name="from" value="manage-users">
+                      <%- include('partials/manage-filters', { state }) %>
                       <button type="submit" class="button--small">Sign in as</button>
                     </form>
                   <% } else { %>
@@ -96,6 +180,13 @@
           </tbody>
         </table>
       </div>
+      <% if (pageCount > 1) { %>
+        <nav class="pager" aria-label="User pages">
+          <% if (prevHref) { %><a class="button-link button--small" href="<%= prevHref %>">&larr; Previous</a><% } else { %><span class="button-link button--small is-disabled" aria-disabled="true">&larr; Previous</span><% } %>
+          <span class="pager__status">Page <%= page %> of <%= pageCount %></span>
+          <% if (nextHref) { %><a class="button-link button--small" href="<%= nextHref %>">Next &rarr;</a><% } else { %><span class="button-link button--small is-disabled" aria-disabled="true">Next &rarr;</span><% } %>
+        </nav>
+      <% } %>
     <% } %>
   </section>
 <%- include('partials/foot') %>

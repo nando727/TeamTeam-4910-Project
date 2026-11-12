@@ -1,38 +1,65 @@
 <%- include('partials/head', { title: 'Log In' }) %>
-  <div class="page--center">
-    <section class="card card--narrow login-card">
-      <%- include('partials/logo') %>
-      <h1>Good Driver Incentive Program</h1>
-      <p class="lede">Sign in to continue</p>
-      <% if (locals.notice) { %>
-        <p class="success" role="status"><%= locals.notice %></p>
-      <% } %>
-      <%# Story 22215: a locked sign-in explains the ways back in, so the
-          reset can be a link the visitor can actually follow. %>
-      <% if (locals.lockout) { %>
-        <div class="error" role="alert">
-          <p><%= lockout.summary %></p>
-          <ul class="recovery">
-            <li><%= lockout.waitText %> <span class="recovery__aside"><%= lockout.retryWarning %></span></li>
-            <li><a href="<%= lockout.resetPath %>"><%= lockout.resetText %></a></li>
-            <li><%= lockout.adminText %></li>
-          </ul>
-        </div>
-      <% } else if (error) { %>
-        <p class="error" role="alert"><%= error %></p>
-      <% } %>
-      <form method="POST" action="/login">
-        <label for="username">Username</label>
-        <input id="username" name="username" type="text" autocomplete="username" required>
+  <div class="auth">
+    <div class="auth__grid">
+      <%# The welcome panel sits beside the form on a wide screen and stacks
+          above it on a phone (see .auth__grid in styles.css). %>
+      <section class="auth__panel">
+        <%- include('partials/logo') %>
+        <h2 class="auth__title">Good Driver Incentive Program</h2>
+        <p class="auth__lede">Safe driving, rewarded. Earn points from the sponsors you drive for and spend them on what you actually want.</p>
+        <ul class="auth__points">
+          <li>
+            <%- include('partials/icon', { name: 'road' }) %>
+            <span><strong>Drive with a sponsor</strong>Apply to the programs you want to join.</span>
+          </li>
+          <li>
+            <%- include('partials/icon', { name: 'chart' }) %>
+            <span><strong>Earn points</strong>Watch your balance with each sponsor as it changes.</span>
+          </li>
+          <li>
+            <%- include('partials/icon', { name: 'cart' }) %>
+            <span><strong>Spend them</strong>Fill a cart from your sponsor's catalog and check out.</span>
+          </li>
+        </ul>
+      </section>
 
-        <label for="password">Password</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required
-               data-toggle-visibility>
+      <section class="auth__form">
+        <h1>Welcome back</h1>
+        <p class="lede">Sign in to continue.</p>
+        <% if (locals.notice) { %>
+          <p class="success" role="status"><%= locals.notice %></p>
+        <% } %>
+        <%# Story 22215: a locked sign-in explains the ways back in, so the
+            reset can be a link the visitor can actually follow. %>
+        <% if (locals.lockout) { %>
+          <div class="error" role="alert">
+            <p><%= lockout.summary %></p>
+            <ul class="recovery">
+              <li><%= lockout.waitText %> <span class="recovery__aside"><%= lockout.retryWarning %></span></li>
+              <li><a href="<%= lockout.resetPath %>"><%= lockout.resetText %></a></li>
+              <li><%= lockout.adminText %></li>
+            </ul>
+          </div>
+        <% } else if (error) { %>
+          <p class="error" role="alert"><%= error %></p>
+        <% } %>
+        <form method="POST" action="/login">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" required>
 
-        <button type="submit">Log In</button>
-      </form>
-      <p class="hint" style="margin-top: 16px; text-align: center;"><a href="/forgot-password">Forgot your password?</a></p>
-    </section>
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required
+                 data-toggle-visibility>
+
+          <button type="submit">Log In</button>
+        </form>
+        <p class="auth__links">
+          <a href="/forgot-password">Forgot your password?</a>
+          <a href="/about">About this app</a>
+        </p>
+        <p class="auth__alt">New driver? <a href="/signup">Create a driver account</a></p>
+      </section>
+    </div>
   </div>
   <%# Story 22217: adds a Show/Hide button to the password field. The page
      works without it; the script only enhances the field. %>

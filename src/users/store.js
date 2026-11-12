@@ -222,6 +222,184 @@ async function listUsers({ role } = {}) {
   return db.query('SELECT id, username, role, status FROM users WHERE role = ? ORDER BY username, id', [role]);
 }
 
+// ---- Manage users: search, filters, paging (sprint 9) ----------------------
+//
+// The admin list used to be every account in one page, with no way to find
+// one. These build the same list with a search box and three filters, and
+// count it for paging. The two share one WHERE clause so the count and the
+// page can never describe different sets of rows.
+//
+// LIKE treats % and _ as wildcards; escape them so typed text is literal.
+function escapeLike(value) {
+  return value.replace(/[\\%_]/g, ch => `\\${ch}`);
+}
+
+// A driver belongs to an organization through driver_sponsors; a sponsor user
+// belongs through users.sponsor_id. An account matches the sponsor filter if
+// either is true, so one filter answers "who belongs to this organization?"
+// for both kinds of account. Takes the sponsor id twice, in this order.
+const BELONGS_TO_SPONSOR = `(
+  u.sponsor_id = ? OR EXISTS (
+    SELECT 1 FROM driver_sponsors ds WHERE ds.driver_id = u.id AND ds.sponsor_id = ?
+  )
+)`;
+
+function userFilter({ search = null, role = null, status = null, sponsorId = null } = {}) {
+  const conditions = [];
+  const params = [];
+  if (search) {
+    // One box, three columns: whichever the administrator happens to know.
+    conditions.push('(u.name LIKE ? OR u.username LIKE ? OR u.email LIKE ?)');
+    const pattern = `%${escapeLike(search)}%`;
+    params.push(pattern, pattern, pattern);
+  }
+  if (role && VALID_ROLES.includes(role)) { conditions.push('u.role = ?'); params.push(role); }
+  if (status && USER_STATUSES.includes(status)) { conditions.push('u.status = ?'); params.push(status); }
+  if (sponsorId) { conditions.push(BELONGS_TO_SPONSOR); params.push(sponsorId, sponsorId); }
+  return { where: conditions.length ? `WHERE ${conditions.join(' AND ')} ` : '', params };
+}
+
+// One page of the filtered list. `limit` and `offset` are validated integers
+// from the route, never user text, so they are inlined.
+//
+// The organization column is a subquery per row rather than a join, because a
+// driver may belong to several and a join would repeat the account once per
+// membership -- which would also make the count disagree with the page.
+async function searchUsers(filters = {}, { limit = 25, offset = 0 } = {}) {
+  const { where, params } = userFilter(filters);
+  const paging = ` LIMIT ${Number.isInteger(limit) && limit > 0 ? limit : 25} OFFSET ${Number.isInteger(offset) && offset > 0 ? offset : 0}`;
+  return db.query(
+    'SELECT u.id, u.name, u.email, u.username, u.role, u.status, u.sponsor_id AS sponsorId, ' +
+      'CASE WHEN u.role = \'sponsor\' THEN (SELECT s.name FROM sponsors s WHERE s.id = u.sponsor_id) ' +
+      'ELSE (SELECT GROUP_CONCAT(s.name ORDER BY s.name SEPARATOR \', \') FROM driver_sponsors ds ' +
+      'JOIN sponsors s ON s.id = ds.sponsor_id WHERE ds.driver_id = u.id) END AS sponsorNames ' +
+      'FROM users u ' + where + 'ORDER BY u.username, u.id' + paging,
+    params
+  );
+}
+
+async function countUsers(filters = {}) {
+  const { where, params } = userFilter(filters);
+  const rows = await db.query('SELECT COUNT(*) AS total FROM users u ' + where, params);
+  return Number((rows[0] && rows[0].total) || 0);
+}
+
+// ---- Changing a role (sprint 9) -------------------------------------------
+
+// How many administrators could sign in right now. The last one cannot be
+// demoted: an installation with no active admin has no way back in, because
+// every page that could fix it is behind the admin guard.
+async function countActiveAdmins() {
+  const rows = await db.query("SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND status = 'active'");
+  return Number((rows[0] && rows[0].total) || 0);
+}
+
+// What changing this account's role would remove, counted before anything is
+// written, so the confirmation page can list it exactly rather than warn
+// vaguely. Also counts what is kept, because "your purchases stay on record"
+// is the half of this people most want to hear.
+//
+// Everything here is tied to the role the account is leaving: memberships and
+// applications belong to a driver, the organization link belongs to a sponsor
+// user. An admin has no role-specific rows of its own.
+async function roleChangeImpact(id, newRole) {
+  const user = await findUserById(id);
+  if (!user || user.role === newRole) return null;
+
+  const impact = { from: user.role, to: newRole, removes: [], keeps: [] };
+  if (user.role === 'driver') {
+    const [memberships] = await db.query(
+      'SELECT COUNT(*) AS total, COALESCE(SUM(point_balance), 0) AS points FROM driver_sponsors WHERE driver_id = ?',
+      [id]
+    );
+    const [applications] = await db.query('SELECT COUNT(*) AS total FROM sponsor_applications WHERE driver_id = ?', [id]);
+    const [preferences] = await db.query('SELECT COUNT(*) AS total FROM driver_alert_preferences WHERE driver_id = ?', [id]);
+    const [removalAlerts] = await db.query('SELECT COUNT(*) AS total FROM sponsor_removal_alerts WHERE driver_id = ?', [id]);
+    const memberCount = Number(memberships.total);
+    const points = Number(memberships.points);
+    if (memberCount) {
+      impact.removes.push({
+        key: 'memberships', count: memberCount,
+        text: `${memberCount} sponsorship${memberCount === 1 ? '' : 's'}, including ${points.toLocaleString('en-US')} point${points === 1 ? '' : 's'} held with ${memberCount === 1 ? 'that sponsor' : 'those sponsors'}`,
+      });
+    }
+    if (Number(applications.total)) {
+      impact.removes.push({ key: 'applications', count: Number(applications.total), text: `${applications.total} sponsor application${Number(applications.total) === 1 ? '' : 's'}, with their decisions and reasons` });
+    }
+    if (Number(preferences.total)) {
+      impact.removes.push({ key: 'preferences', count: Number(preferences.total), text: 'their point-alert preference' });
+    }
+    if (Number(removalAlerts.total)) {
+      impact.removes.push({ key: 'removalAlerts', count: Number(removalAlerts.total), text: `${removalAlerts.total} sponsor-removal alert${Number(removalAlerts.total) === 1 ? '' : 's'}` });
+    }
+    const [transactions] = await db.query('SELECT COUNT(*) AS total FROM point_transactions WHERE driver_id = ?', [id]);
+    const [purchases] = await db.query('SELECT COUNT(*) AS total FROM purchases WHERE driver_id = ?', [id]);
+    if (Number(transactions.total)) impact.keeps.push(`${transactions.total} point change${Number(transactions.total) === 1 ? '' : 's'} in the point history`);
+    if (Number(purchases.total)) impact.keeps.push(`${purchases.total} purchase${Number(purchases.total) === 1 ? '' : 's'} in the sales, fee, and invoice reports`);
+  }
+  if (user.role === 'sponsor' && user.sponsor_id) {
+    const [sponsor] = await db.query('SELECT name FROM sponsors WHERE id = ?', [user.sponsor_id]);
+    impact.removes.push({ key: 'sponsorLink', count: 1, text: `their link to ${sponsor ? sponsor.name : 'their organization'}, so they will no longer act for it` });
+  }
+  impact.keeps.push('the account itself, its username, email, and password');
+  return impact;
+}
+
+// Changes the role and clears away what belonged to the old one, all or
+// nothing. The rows deleted here are the ones roleChangeImpact counted, so
+// the confirmation page and the database can never disagree about what went.
+//
+// Point history and purchases are deliberately left alone: they are the
+// financial record the sales, fee, and invoice reports are built on, and a
+// role change is not a reason to rewrite what a sponsor was billed for.
+//
+// The row is locked and the role re-read inside the transaction, so two
+// administrators changing the same account at once cannot both act on a role
+// that has already changed.
+async function changeUserRole(id, newRole) {
+  if (!VALID_ROLES.includes(newRole)) throw new Error(`Invalid user role: ${newRole}`);
+  const conn = await db.pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.execute('SELECT id, role FROM users WHERE id = ? FOR UPDATE', [id]);
+    if (!rows.length) {
+      await conn.rollback();
+      return { changed: false, reason: 'missing' };
+    }
+    const from = rows[0].role;
+    if (from === newRole) {
+      await conn.rollback();
+      return { changed: false, reason: 'same', from };
+    }
+
+    const removed = {};
+    if (from === 'driver') {
+      const [memberships] = await conn.execute('DELETE FROM driver_sponsors WHERE driver_id = ?', [id]);
+      const [applications] = await conn.execute('DELETE FROM sponsor_applications WHERE driver_id = ?', [id]);
+      const [preferences] = await conn.execute('DELETE FROM driver_alert_preferences WHERE driver_id = ?', [id]);
+      const [removalAlerts] = await conn.execute('DELETE FROM sponsor_removal_alerts WHERE driver_id = ?', [id]);
+      removed.memberships = memberships.affectedRows;
+      removed.applications = applications.affectedRows;
+      removed.preferences = preferences.affectedRows;
+      removed.removalAlerts = removalAlerts.affectedRows;
+    }
+    // A sponsor user's organization link goes whichever role they move to; an
+    // account that is not a sponsor user must not keep acting for one.
+    if (from === 'sponsor') {
+      const [unlinked] = await conn.execute('UPDATE users SET sponsor_id = NULL WHERE id = ?', [id]);
+      removed.sponsorLink = unlinked.affectedRows;
+    }
+    await conn.execute('UPDATE users SET role = ? WHERE id = ?', [newRole, id]);
+    await conn.commit();
+    return { changed: true, from, to: newRole, removed };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 // Sets an account's status; returns true when a row was updated.
 async function updateUserStatus(id, status) {
   if (!USER_STATUSES.includes(status)) throw new Error(`Invalid user status: ${status}`);
@@ -311,4 +489,5 @@ module.exports = {
   PASSWORD_CHANGE_METHODS,
   listUsers, updateUserStatus, countRecentFailedLogins,
   revokeSessions, sessionsRevokedSince,
+  searchUsers, countUsers, countActiveAdmins, roleChangeImpact, changeUserRole,
 };

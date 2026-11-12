@@ -7,6 +7,7 @@ import request from 'supertest';
 const require = createRequire(import.meta.url);
 const db = require('../src/db');
 const { app } = require('../src/app');
+const SPONSOR_OPTIONS = [{ id: 7, name: 'Northstar Freight', contactEmail: 'ops@northstar.test', status: 'active' }];
 const { hashPassword } = require('../src/auth/password');
 
 const users = [
@@ -35,6 +36,11 @@ beforeEach(() => {
     if (sql.includes('FROM users WHERE id')) {
       return users.filter(u => u.id === params[0]).map(u => ({ ...u, name: null, email: null }));
     }
+    // Sprint 9: Manage users is searched, filtered, counted, and paged, so the
+    // page reads a count, one page of accounts, and the sponsor filter list.
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM users u')) return [{ total: users.length }];
+    if (sql.startsWith('SELECT u.id, u.name, u.email, u.username, u.role, u.status')) return users;
+    if (sql.startsWith('SELECT id, name, contact_email AS contactEmail')) return SPONSOR_OPTIONS;
     if (sql.includes('FROM users ORDER BY')) return users;
     if (sql.startsWith('UPDATE users SET status')) {
       statusUpdates.push(params);
@@ -175,10 +181,12 @@ test('the status control is the status: one coloured cell, no badge repeating it
   expect(page.text).not.toMatch(/status-badge status-(active|disabled|revoked)/);
 });
 
-test('the list stays at six columns', async () => {
+test('the list names and identifies each account, then its controls', async () => {
   const agent = await login('admin1');
   const { page } = await loadList(agent);
 
+  // Sprint 9 added Name, Email, and Sponsor so an account can be found, and
+  // made Role a control rather than a label.
   const headers = [...page.text.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map(m => m[1]);
-  expect(headers).toEqual(['Username', 'Role', 'Status', 'Password', 'Sponsors', 'Impersonate']);
+  expect(headers).toEqual(['Name', 'Username', 'Email', 'Sponsor', 'Role', 'Status', 'Password', 'Sponsors', 'Impersonate']);
 });

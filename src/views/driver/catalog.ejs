@@ -2,8 +2,11 @@
   <div class="page-header">
     <span class="eyebrow">Rewards</span>
     <h1>Product catalog</h1>
-    <p class="lede">Browse available products offered by your sponsor programs.</p>
+    <p class="lede">Browse the products your sponsors offer and add them to your cart. Points never mix between sponsors, so a cart holds items from one sponsor at a time.</p>
   </div>
+  <% if (locals.notice) { %>
+    <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %><% if (notice.link) { %> <a href="<%= notice.link.href %>"><%= notice.link.text %></a>.<% } %></p>
+  <% } %>
   <% if (!catalogs.length) { %>
     <p class="info">There are no available products in your sponsor catalogs yet.</p>
     <a class="button-link" href="/driver/programs">View my sponsor programs</a>
@@ -13,11 +16,23 @@
       <h2 id="sponsor-<%= catalog.sponsorId %>" class="section-title"><%= catalog.sponsorName %></h2>
       <div class="actions">
         <% catalog.products.forEach(product => { %>
-          <a class="action" href="/driver/catalog/<%= catalog.sponsorId %>/<%= product.id %>">
-            <%- include('../partials/product-image', { url: product.image_url, alt: product.name, size: 'card' }) %>
-            <span class="action__title"><%= product.name %></span>
-            <span class="action__text">Price: $<%= Number(product.price_value).toFixed(2) %></span>
-          </a>
+          <article class="action product-card">
+            <a class="product-card__link" href="/driver/catalog/<%= catalog.sponsorId %>/<%= product.id %>">
+              <%- include('../partials/product-image', { url: product.image_url, alt: product.name, size: 'card' }) %>
+              <span class="action__title"><%= product.name %></span>
+            </a>
+            <span class="action__text"><strong class="product-card__points"><%= points(product.points_cost) %></strong> · $<%= Number(product.price_value).toFixed(2) %></span>
+            <%# One add at a time. Two clicks before the page comes back are
+                two requests writing the same session, and one of them is
+                lost; the group releases itself when the page loads. %>
+            <form class="product-card__add" method="POST" action="/driver/cart/add" data-submit-group="cart-add">
+              <input type="hidden" name="token" value="<%= token %>">
+              <input type="hidden" name="itemId" value="<%= product.id %>">
+              <input type="hidden" name="sponsorId" value="<%= catalog.sponsorId %>">
+              <input type="hidden" name="back" value="/driver/catalog">
+              <button type="submit" class="button--small">Add to cart</button>
+            </form>
+          </article>
         <% }); %>
       </div>
     </section>

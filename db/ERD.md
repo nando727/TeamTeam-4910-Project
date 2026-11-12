@@ -38,6 +38,15 @@ erDiagram
                      boolean success }
                 %% login_attempts has no foreign key b/c it records attempts against usernames that don't exist
                 %% which a foreign key would prevent.
+    users ||--o{ admin_actions : "is acted on"
+    admin_actions { int id PK
+                    int admin_user_id FK
+                    int target_user_id FK
+                    varchar action
+                    varchar detail
+                    timestamp created_at }
+                %% migration 022: role changes, status changes, password
+                %% resets, unlocks, and sponsorship changes by an administrator
     about { int id PK
             varchar team_name
             varchar app_version }

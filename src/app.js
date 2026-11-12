@@ -3,6 +3,7 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const authRoutes = require('./auth/routes');
+const signupRoutes = require('./auth/signup');
 const { sessionTimeout, idleLimitMs, warningLeadMs, remainingMs } = require('./auth/session-timeout');
 const { sessionRevocation } = require('./auth/session-revocation');
 const { MysqlSessionStore } = require('./auth/session-store');
@@ -92,10 +93,15 @@ app.use((req, res, next) => {
   // While an admin acts as another user, every page shows a banner with a stop button.
   res.locals.currentImpersonator = req.session.impersonator || null;
   res.locals.impersonationToken = req.session.impersonator ? formToken(req) : null;
+  // Sprint 9: the header's Cart link shows how many items are in it.
+  const cart = req.session.cart;
+  res.locals.cartCount = cart && Array.isArray(cart.items) ? cart.items.reduce((n, line) => n + (Number(line.quantity) || 0), 0) : 0;
   next();
 });
 
 app.use(authRoutes);
+// Driver self sign-up: public, and only ever creates a driver.
+app.use(signupRoutes);
 app.use(apiRoutes);
 app.use('/sponsors', sponsorRoutes);
 app.use('/driver', driverRoutes);
@@ -192,7 +198,17 @@ app.get('/organization', requireLogin, requireSponsor, async (req, res, next) =>
       [req.session.user.sponsorId]
     );
 
-    res.render('sponsor/organization', { organization, rules, formToken: formToken(req) });
+    // Sprint 9: who belongs to this organization, so a sponsor user can see
+    // their own people on the page that describes the organization.
+    const [sponsorUsers, drivers] = await Promise.all([
+      listSponsorAccounts(req.session.user.sponsorId),
+      listDriversForSponsor(req.session.user.sponsorId),
+    ]);
+
+    res.render('sponsor/organization', {
+      organization, rules, sponsorUsers, drivers, formToken: formToken(req),
+      totalPoints: drivers.reduce((sum, driver) => sum + Number(driver.balance || 0), 0),
+    });
   } catch (err) { next(err); }
 });
 
@@ -403,6 +419,10 @@ app.post('/organization/edit', requireLogin, requireSponsor, requireFormToken, a
   }
 });
 
+// Sprint 9: with two product services there are a couple of hundred products
+// to browse, so the list is paged. Search and category narrow it first.
+const BROWSE_PAGE_SIZE = 50;
+
 app.get('/catalog', requireLogin, requireSponsor, async (req, res, next) => {
   const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
   const category = typeof req.query.category === 'string' ? req.query.category.trim().slice(0, 100) : '';
@@ -415,9 +435,20 @@ app.get('/catalog', requireLogin, requireSponsor, async (req, res, next) => {
     } catch (err) {
       if (err instanceof FakeStoreError) browseError = err.message; else throw err;
     }
+    const productCount = products.length;
+    const pageCount = Math.max(1, Math.ceil(productCount / BROWSE_PAGE_SIZE));
+    const wantedPage = typeof req.query.page === 'string' && /^[1-9]\d{0,3}$/.test(req.query.page) ? Number(req.query.page) : 1;
+    const page = Math.min(wantedPage, pageCount);
+    products = products.slice((page - 1) * BROWSE_PAGE_SIZE, page * BROWSE_PAGE_SIZE);
+    const pageHref = n => '/catalog?' + new URLSearchParams({ q, category, ...(n > 1 ? { page: String(n) } : {}) }).toString();
     const notice = req.session.accountNotice || null;
     delete req.session.accountNotice;
-    res.render('sponsor/catalog', { items, savedIds, products, categories, q, category, browseError, notice, formToken: formToken(req) });
+    res.render('sponsor/catalog', {
+      items, savedIds, products, categories, q, category, browseError, notice, formToken: formToken(req),
+      productCount, page, pageCount,
+      pageStart: productCount ? (page - 1) * BROWSE_PAGE_SIZE + 1 : 0, pageEnd: Math.min(page * BROWSE_PAGE_SIZE, productCount),
+      prevHref: page > 1 ? pageHref(page - 1) : null, nextHref: page < pageCount ? pageHref(page + 1) : null,
+    });
   } catch (err) { next(err); }
 });
 
@@ -614,9 +645,23 @@ app.post('/sponsor-users/create', requireLogin, requireSponsor, requireFormToken
   }
 });
 
+// Nothing above answered: a real page rather than Express's one-line "Cannot
+// GET". The JSON API keeps a JSON answer, so a client never parses HTML.
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'No such endpoint.' });
+  res.status(404).render('404', { attemptedPath: req.originalUrl.slice(0, 200) });
+});
+
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).send('Something went wrong.');
+  // Headers already on their way, or a request whose body was rejected before
+  // any page could be built: let Express finish it rather than render twice.
+  if (res.headersSent) return next(err);
+  if (req.path.startsWith('/api/')) return res.status(500).json({ error: 'Something went wrong.' });
+  // The view can only be rendered with a session; a failure before the session
+  // middleware (a malformed body, say) still gets the plain sentence.
+  if (!req.session) return res.status(500).send('Something went wrong.');
+  res.status(500).render('500');
 });
 
 module.exports = { app, requireLogin };

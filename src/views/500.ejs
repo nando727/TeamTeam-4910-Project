@@ -1,0 +1,17 @@
+<%- include('partials/head', { title: 'Something went wrong' }) %>
+  <div class="page--center">
+    <section class="card card--narrow login-card">
+      <%- include('partials/logo') %>
+      <h1>Something went wrong.</h1>
+      <p>The page could not be shown because of an error on our side. Nothing you entered was lost on purpose, but the last action may not have been saved.</p>
+      <p class="muted small">Try again in a moment. If it keeps happening, tell an administrator what you were doing when it happened.</p>
+      <div class="button-row">
+        <% if (locals.currentUser) { %>
+          <a class="button-link" href="/">Back to your home page</a>
+        <% } else { %>
+          <a class="button-link" href="/login">Go to the login page</a>
+        <% } %>
+      </div>
+    </section>
+  </div>
+<%- include('partials/foot') %>

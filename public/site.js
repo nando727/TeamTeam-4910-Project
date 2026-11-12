@@ -57,6 +57,29 @@
     });
   });
 
+  // A set of forms where only one submission can be in flight: the Add to
+  // cart buttons across a catalog page. Each one navigates, so a second click
+  // before the page comes back is a second request writing the same session,
+  // and whichever finishes last wins -- an item the driver watched themselves
+  // add, gone. Submitting any of them disables the lot.
+  list('form[data-submit-group]').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      var group = form.getAttribute('data-submit-group');
+      list('form[data-submit-group="' + group + '"] button[type="submit"]').forEach(function (button) {
+        // After the submit, so disabling cannot cancel it.
+        setTimeout(function () { button.disabled = true; }, 0);
+      });
+    });
+  });
+
+  // The back button restores a page from the cache exactly as it was left,
+  // disabled buttons and all, which would leave the driver with a catalog
+  // they cannot add anything from.
+  window.addEventListener('pageshow', function () {
+    list('form[data-submit-once] button[type="submit"], form[data-submit-group] button[type="submit"]')
+      .forEach(function (button) { button.disabled = false; });
+  });
+
   // A form that asks before it does something irreversible. Without scripting
   // the form still submits, exactly as it did with the attribute.
   list('form[data-confirm]').forEach(function (form) {

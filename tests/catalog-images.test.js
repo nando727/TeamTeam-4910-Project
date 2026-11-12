@@ -7,16 +7,17 @@ import { describe, test, expect } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const ejs = require('ejs');
-const { POLICY, PRODUCT_IMAGE_HOST } = require('../src/security-headers');
+const { POLICY, PRODUCT_IMAGE_HOSTS } = require('../src/security-headers');
 
 const partial = new URL('../src/views/partials/product-image.ejs', import.meta.url).pathname;
 const render = locals => ejs.renderFile(partial, locals);
 const view = path => readFileSync(new URL(`../src/views/${path}`, import.meta.url), 'utf8');
 
 describe('the policy', () => {
-  test('allows images from the product service host, which every stored image URL uses', () => {
-    expect(PRODUCT_IMAGE_HOST).toBe('https://fakestoreapi.com');
-    expect(POLICY).toContain("img-src 'self' data: https://fakestoreapi.com;");
+  test('allows images from the product services\' hosts, which every stored image URL uses', () => {
+    // Sprint 9: DummyJSON joined FakeStore, with images on its own CDN.
+    expect(PRODUCT_IMAGE_HOSTS).toEqual(['https://fakestoreapi.com', 'https://cdn.dummyjson.com']);
+    expect(POLICY).toContain("img-src 'self' data: https://fakestoreapi.com https://cdn.dummyjson.com;");
   });
 });
 

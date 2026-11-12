@@ -1,0 +1,23 @@
+<%- include('../partials/head', { title: 'Order placed' }) %>
+  <div class="page--center">
+    <section class="card card--narrow login-card order-complete" data-confetti>
+      <span class="order-complete__mark" aria-hidden="true">✓</span>
+      <h1>Order placed!</h1>
+      <p class="lede">You spent <strong><%= points(order.total) %></strong> with <%= order.sponsorName %>.</p>
+      <ul class="order-complete__lines">
+        <% order.lines.forEach(line => { %>
+          <li><span><%= line.quantity %> × <%= line.title %></span><span class="num"><%= points(line.pointsCost * line.quantity) %></span></li>
+        <% }); %>
+      </ul>
+      <p>Your balance with <%= order.sponsorName %> is now <strong><%= points(order.balance) %></strong>.</p>
+      <% if (order.emailedTo) { %>
+        <p class="muted small">A confirmation was emailed to <%= order.emailedTo %>.</p>
+      <% } %>
+      <div class="button-row">
+        <a class="button-link" href="/driver/orders">See my orders</a>
+        <a class="button-link" href="/driver/catalog">Keep shopping</a>
+      </div>
+    </section>
+  </div>
+  <script src="/confetti.js" defer></script>
+<%- include('../partials/foot') %>

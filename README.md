@@ -1209,3 +1209,140 @@ aws elasticbeanstalk describe-environments --application-name gooddriver \
 
 Rolling back does not undo a database change. That is another reason to keep
 changes additive, so the old code still runs against the new database.
+
+## Drivers sign themselves up (sprint 9)
+
+**Create a driver account** on the login page opens `/signup`. Anyone may use
+it, and it only ever creates a driver: the role is not a form field, so there
+is nothing to tamper with, and an admin or sponsor account still has to be
+made by an administrator.
+
+It uses the same password rules, the same duplicate checks on username and
+email, and the same `createUser` as every other way an account is made, so a
+password chosen here is remembered against reuse like any other
+(`src/auth/signup.js`).
+
+The form is throttled per source address: five posts per fifteen minutes by
+default, `SIGNUP_MAX_PER_WINDOW` and `SIGNUP_WINDOW_MINUTES` to change it.
+Invalid posts count too, so the form cannot be used to discover which
+usernames exist for free. The count lives in the web server's memory rather
+than in a table, because a refused sign-up leaves no row behind to count and a
+table of abuse attempts would grow with the abuse (`src/auth/rate-limit.js`).
+
+A new account is not signed in. It lands on the login page, so its first
+sign-in is audited in `login_attempts` like everyone else's.
+
+## Two product services, and a lot more products (sprint 9)
+
+FakeStoreAPI has about twenty products, which is too few to build a catalog
+from. DummyJSON has about two hundred with images on its own CDN, and both are
+used now (`src/products/sources.js`, `src/products/provider.js`).
+
+FakeStore ids stay exactly as they were, because sponsors have already saved
+those products and drivers have bought them. DummyJSON ids are offset by
+1000, so the two sets share `catalog_items.product_id` without colliding, and
+the offset is how a product id is routed back to the service that owns it.
+
+Failure is per service. One that cannot be reached falls back to its cache and
+then to a local snapshot; only when every service has nothing does the page
+show an error. `src/products/dummyjson-products.json` is that snapshot, 194
+products committed to the repository, so a DummyJSON outage is invisible.
+
+Both image hosts are named in the content security policy
+(`src/security-headers.js`), and a product whose image is hosted anywhere else
+is stored with no image rather than one the browser will refuse.
+
+## The driver's cart (sprint 9)
+
+A driver adds catalog items to a cart, reviews it, and checks out for points.
+
+**The cart is the session**, which is itself a row in MySQL, so it survives a
+deployment and ends when the session does. Nothing in it is trusted beyond an
+item id and a quantity: the title, the price, and the points cost are re-read
+from the sponsor's catalog on every page, and again under lock at checkout.
+
+**A cart holds one sponsor's items.** Points never mix between sponsors, so
+adding an item from a second sponsor asks whether to replace the cart rather
+than quietly mixing two balances.
+
+**Checkout is one transaction** (`purchaseCart` in `src/points/store.js`). The
+balance row is locked once and compared against the whole cart before anything
+is written, so a cart that is short by a point writes nothing at all. Each
+line then goes through the same code the sponsor's "Buy for a driver" flow
+uses, so every purchase is a `point_transactions` row, a `point_alerts` row,
+and a `purchases` row, and the sales, fee, and invoice reports pick them up
+without knowing the cart exists.
+
+**A confirmation cannot be replayed.** The reviewed order is pinned in the
+session with a one-time id; the id is spent on the first submit, whatever
+happens next, and the cart must still match what was reviewed.
+
+After it saves, the driver gets a success page with a short burst of confetti
+(`public/confetti.js`, no library, skipped entirely under
+`prefers-reduced-motion`) and an email listing what they bought. The email is
+sent after the commit and cannot undo it: a dead mail server is a logged
+failure, not a lost purchase.
+
+**A floating mini-cart** sits in the corner of every driver page once the
+cart holds something, showing the count and opening the cart on a click. It
+stays off the cart pages themselves and off paper.
+
+**Why an add never disappears any more.** The session is saved whole at the
+end of every request, so a slow request that began before an add could finish
+after it and write back the cart it had loaded -- most often the alerts fetch
+every driver page fires as it loads. Two changes close that: background
+requests no longer count as activity and so never write the session
+(`BACKGROUND_PATHS` in `src/auth/session-timeout.js`), and every cart change
+re-reads the stored session immediately before changing and saving it
+(`withFreshSession` in `src/driver/cart-session.js`). The same re-read is what
+spends the checkout confirmation, so even two racing submits cannot both hold
+it.
+
+**My orders** (`/driver/orders`) is everything they have bought, newest first,
+with sponsor and date filters, paging, and a CSV. It reads the same
+`purchases` rows and the same query as the admin's Sales by Driver report,
+pinned to the signed-in driver.
+
+## Administration (sprint 9)
+
+**Manage users** has a search box (name, username, or email), filters for
+role, status, and sponsor, and pages at 25. The filters survive paging and
+every action taken from a row: each row's form carries them as hidden fields,
+read back through the same validation as the query string.
+
+**Roles can be changed** from that list. The change is confirmed on a page
+that lists exactly what it will remove -- sponsorships and the points held
+with them, applications, alert preferences, the link to an organization --
+and what it keeps, which is the point history and the purchases the reports
+are built on. An administrator cannot change their own role, and the last
+administrator who can sign in cannot be demoted, because an installation with
+no administrator has no way back in. The cleanup and the role change are one
+transaction, and the account is signed out everywhere afterwards.
+
+**Each sponsor organization has a page** (`/admin/sponsors/:id`, linked from
+Sponsor status) showing its details, the sponsor users who act for it, and its
+drivers with the points they hold there. The sponsor's own Organization page
+gained the same People section.
+
+**The audit log** (`/admin/audit-log`, migration 022) records role changes,
+status changes, password resets, unlocks, and sponsorship changes: who did it,
+to whom, when, and what went with it. It holds no password, hash, or token,
+for the same reason `password_changes` does not. A failed write is logged and
+ignored -- the change it describes has already happened, and losing the record
+is better than undoing the change.
+
+## Daylight and night (sprint 9)
+
+The header has a theme toggle. It defaults to the computer's own setting and
+remembers a choice in `localStorage`, applied by `public/theme.js` before the
+first paint so there is no flash of the wrong palette. The script is a file
+rather than two inline lines because the content security policy refuses
+inline scripts. With scripts off the toggle is hidden and the page follows the
+computer's setting.
+
+Every colour in `public/styles.css` is a token on `:root`, with a soft
+daylight set and a slate night one. Nothing outside those blocks names a
+colour, and `tests/theme.test.js` fails the suite if a hex code appears in a
+rule, if the two night palettes drift apart, or if a filled surface is defined
+without the colour of the text on it. Printing forces the daylight values, so
+an invoice printed at night is not pale text on white paper.

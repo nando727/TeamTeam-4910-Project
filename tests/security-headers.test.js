@@ -24,16 +24,12 @@ describe('the headers are on every kind of response', () => {
     expectHeaders(res);
   });
 
-  // Express answers an unmatched route itself, and its own handler replaces
-  // our policy with a stricter one of its own ("default-src 'none'"). That
-  // policy has no frame-ancestors, so framing of a 404 is refused by the
-  // X-Frame-Options header below, which Express leaves alone.
+  // Sprint 9: an unmatched route is answered by our own 404 page rather than
+  // Express's one-line handler, so it carries the same policy as every page.
   test('a page that does not exist is still refused a frame', async () => {
     const res = await request(app).get('/no-such-page').expect(404);
-    expect(res.headers['content-security-policy']).toBe("default-src 'none'");
-    expect(res.headers['x-frame-options']).toBe('DENY');
-    expect(res.headers['x-content-type-options']).toBe('nosniff');
-    expect(res.headers['referrer-policy']).toBe('no-referrer');
+    expectHeaders(res);
+    expect(res.text).toContain('That page does not exist');
   });
 
   test('a file served out of public/', async () => expectHeaders(await request(app).get('/styles.css').expect(200)));
@@ -66,8 +62,9 @@ describe('what the policy says', () => {
     expect(directive('img-src')).toContain("'self' data:");
   });
 
-  test('catalog images may come from the product service, and from nowhere else outside', () => {
-    expect(directive('img-src')).toBe("img-src 'self' data: https://fakestoreapi.com");
+  test('catalog images may come from the product services, and from nowhere else outside', () => {
+    // Sprint 9: two services, two image hosts. Still named hosts, never a wildcard.
+    expect(directive('img-src')).toBe("img-src 'self' data: https://fakestoreapi.com https://cdn.dummyjson.com");
     expect(directive('img-src')).not.toMatch(/(^|\s)(https:|\*)(\s|$)/);
   });
 });

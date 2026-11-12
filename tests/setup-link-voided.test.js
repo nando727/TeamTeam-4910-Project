@@ -13,6 +13,7 @@ import request from 'supertest';
 const require = createRequire(import.meta.url);
 const db = require('../src/db');
 const { app } = require('../src/app');
+const SPONSOR_OPTIONS = [{ id: 7, name: 'Northstar Freight', contactEmail: 'ops@northstar.test', status: 'active' }];
 const { hashPassword } = require('../src/auth/password');
 const { hashToken } = require('../src/auth/setup-tokens');
 const { hashToken: hashResetToken } = require('../src/auth/password-reset');
@@ -69,6 +70,11 @@ beforeEach(() => {
       return user ? [{ ...user, password_hash: passwordHash, sponsor_id: null }] : [];
     }
     if (sql.includes('FROM users WHERE id')) return users.filter(u => u.id === params[0]);
+    // Sprint 9: Manage users is searched, filtered, counted, and paged, so the
+    // page reads a count, one page of accounts, and the sponsor filter list.
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM users u')) return [{ total: users.length }];
+    if (sql.startsWith('SELECT u.id, u.name, u.email, u.username, u.role, u.status')) return users;
+    if (sql.startsWith('SELECT id, name, contact_email AS contactEmail')) return SPONSOR_OPTIONS;
     if (sql.includes('FROM users ORDER BY')) return users;
 
     // --- setup_tokens -----------------------------------------------------
