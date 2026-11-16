@@ -36,10 +36,11 @@ const EVENT_CATEGORIES = {
 // writer, and both the writer and the reader know about it at once.
 const EVENT_TYPES = Object.values(EVENT_CATEGORIES).flat();
 
-// detail is VARCHAR(255). A long one is cut rather than refused -- losing the
-// tail of a reason is a smaller loss than failing the thing being recorded --
-// and the cut is marked so nobody reads a truncated reason as the whole of it.
-const MAX_DETAIL = 255;
+/* detail is VARCHAR(2048), wide enough for a rejection_reason (2000) whole
+ * a longer one is cut rather than refused, and the cut is marked so nobody
+   reads a truncated reason as the whole of it
+*/
+const MAX_DETAIL = 2048;
 const ELLIPSIS = '...';
 
 // How many rows a single read returns. The reports this feeds are filtered by
@@ -55,29 +56,30 @@ function detailText(detail) {
   return text.slice(0, MAX_DETAIL - ELLIPSIS.length) + ELLIPSIS;
 }
 
-// Appends one event. Returns its id.
-//
-// occurred_at is deliberately absent from the statement: the database's own
-// clock sets it, so every row in the table is timed by the same clock and
-// nothing can write a time of its own choosing (story AA-59).
-//
-// This throws if the insert fails, and callers do not catch it. An audit
-// record that goes missing quietly is the one failure this table cannot
-// tolerate -- a request that errors out is visible, and a log with a hole in
-// it is not. Where that leaves a change made with nothing recorded, the
-// README says so plainly rather than the code pretending otherwise.
-async function recordEvent({ type, actorId = null, subjectId = null, sponsorId = null, detail = null } = {}) {
+/* appends one event, returns its id
+ * occurred_at is deliberately absent from the statement so the database's
+   clock sets it and no caller can choose a time (aa-59)
+ * throws if the insert fails, and callers do not catch it -- a record that
+   goes missing quietly is the one failure this table cannot tolerate
+*/
+async function recordEvent({ type, actorId = null, subjectId = null, sponsorId = null, detail = null } = {}, conn = null) {
   const known = EVENT_TYPES.includes(type);
-  // An event nobody can account for is exactly what an audit log exists to
-  // show, so an unrecognised type is recorded as 'unknown' with what the
-  // caller said kept in the detail. Never dropped, and never let through to
-  // make the column mean less than it says.
+  // an unrecognised type is recorded as 'unknown' with what the caller said
+  // kept in the detail, never dropped
   const text = known ? detail : [`type=${type}`, detail].filter(Boolean).join(' ');
-  const result = await db.query(
-    'INSERT INTO audit_events (event_type, actor_user_id, subject_user_id, sponsor_id, detail) '
-      + 'VALUES (?, ?, ?, ?, ?)',
-    [known ? type : 'unknown', actorId, subjectId, sponsorId, detailText(text)]
-  );
+  const sql = 'INSERT INTO audit_events (event_type, actor_user_id, subject_user_id, sponsor_id, detail) '
+    + 'VALUES (?, ?, ?, ?, ?)';
+  const params = [known ? type : 'unknown', actorId, subjectId, sponsorId, detailText(text)];
+
+  // conn is the caller's open transaction. adjustPoints and setApplicationStatus
+  // each run on their own connection, and db.query takes a different one from
+  // the pool -- the row would commit apart from the change it records, so a
+  // rollback would leave a record of something that never happened
+  if (conn) {
+    const [result] = await conn.execute(sql, params);
+    return result.insertId;
+  }
+  const result = await db.query(sql, params);
   return result.insertId;
 }
 

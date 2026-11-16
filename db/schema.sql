@@ -233,7 +233,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
   actor_user_id INT NULL,
   subject_user_id INT NULL,
   sponsor_id INT NULL,
-  detail VARCHAR(255) NULL,
+  detail VARCHAR(2048) NULL,
   occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_audit_events_time (occurred_at),
   INDEX idx_audit_events_subject (subject_user_id, occurred_at),

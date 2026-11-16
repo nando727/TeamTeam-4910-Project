@@ -43,10 +43,11 @@ CREATE TABLE IF NOT EXISTS audit_events (
   -- The sponsor the event concerned, where one did. NULL is ordinary and not a
   -- gap: a sign-in and a password change have no sponsor (story AA-57).
   sponsor_id INT NULL,
-  -- The part that varies, as short stable text: the method of a password
-  -- change, the size and reason of a point change. Anything that gets filtered
-  -- or counted earns a column of its own instead of living in here.
-  detail VARCHAR(255) NULL,
+  -- the part that varies: a password change's method, a point change's size
+  -- and reason, an application decision's reason
+  -- wide enough to hold sponsor_applications.rejection_reason (2000) whole
+  -- anything filtered or counted earns its own column instead
+  detail VARCHAR(2048) NULL,
   -- Set by the database, never by the application, and compared in SQL. One
   -- clock, one convention (story AA-59).
   occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

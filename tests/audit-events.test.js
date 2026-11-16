@@ -94,7 +94,7 @@ describe('an event the app does not recognise', () => {
 
 describe('a detail longer than the column', () => {
   test('is cut to fit, and says that it was cut', async () => {
-    const reason = 'r'.repeat(400);
+    const reason = 'r'.repeat(MAX_DETAIL + 100);
 
     await recordEvent({ type: 'password.changed', detail: reason });
 
@@ -102,6 +102,16 @@ describe('a detail longer than the column', () => {
     expect(detail).toHaveLength(MAX_DETAIL);
     expect(detail.endsWith('...')).toBe(true);
     expect(detail.startsWith('rrr')).toBe(true);
+  });
+
+  test('a rejection reason the size of its own column is kept whole', async () => {
+    // sponsor_applications.rejection_reason is VARCHAR(2000), so an application
+    // decision's reason has to fit with room for the prefix around it
+    const reason = `status=rejected reason=${'r'.repeat(2000)}`;
+
+    await recordEvent({ type: 'application.decided', detail: reason });
+
+    expect(columns().detail).toBe(reason);
   });
 
   test('a detail that just fits is left alone', async () => {
@@ -150,5 +160,57 @@ describe('the migration', () => {
     // db:migrate reapplies every file on every run. Row-by-row skipping would
     // drop a second change to the same account in the same second.
     expect(migration).toMatch(/NOT EXISTS \(\s*SELECT 1 FROM audit_events ae WHERE ae\.event_type = 'password\.changed'/);
+  });
+});
+
+describe("an event written inside a caller's transaction", () => {
+  // adjustPoints and setApplicationStatus each open their own connection. A row
+  // written on the pool instead would commit apart from the change it records
+  let conn;
+
+  beforeEach(() => {
+    conn = { execute: vi.fn(async () => [{ insertId: 31 }]) };
+  });
+
+  test('goes on that connection, and nowhere near the pool', async () => {
+    const id = await recordEvent({ type: 'points.changed', subjectId: 1, sponsorId: 4, detail: 'points=+50' }, conn);
+
+    expect(id).toBe(31);
+    expect(conn.execute).toHaveBeenCalledTimes(1);
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
+  test('is the same row either way', async () => {
+    const event = { type: 'points.changed', actorId: 3, subjectId: 1, sponsorId: 4, detail: 'points=-10' };
+
+    await recordEvent(event);
+    await recordEvent(event, conn);
+
+    const [pooled] = inserts;
+    const [sql, params] = conn.execute.mock.calls[0];
+    expect(sql).toBe(pooled.sql);
+    expect(params).toEqual(pooled.params);
+  });
+
+  test('still leaves occurred_at to the database', async () => {
+    await recordEvent({ type: 'points.changed' }, conn);
+
+    const [sql, params] = conn.execute.mock.calls[0];
+    expect(sql).not.toContain('occurred_at');
+    expect(params.some(p => p instanceof Date)).toBe(false);
+  });
+
+  test('a failure on the connection is not swallowed either', async () => {
+    // the caller is mid-transaction, so it has to be able to roll back
+    conn.execute.mockRejectedValueOnce(new Error('deadlock'));
+
+    await expect(recordEvent({ type: 'points.changed' }, conn)).rejects.toThrow('deadlock');
+  });
+
+  test('no connection means the pool, as before', async () => {
+    await recordEvent({ type: 'password.changed', detail: 'method=profile' });
+
+    expect(inserts).toHaveLength(1);
+    expect(conn.execute).not.toHaveBeenCalled();
   });
 });
