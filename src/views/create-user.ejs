@@ -16,10 +16,12 @@
           <dt>Role</dt><dd><%= created.role %></dd>
         </dl>
         <% if (locals.setupLink) { %>
-          <p>Send this setup link to <%= created.name %> so they can choose a password.
-            It works once, and a copy has been emailed to <%= created.email %>.</p>
+          <% if (locals.mailNotice) { %>
+            <p class="mail-outcome mail-outcome--<%= mailNotice.kind %>"><%= mailNotice.text %></p>
+          <% } %>
+          <p>The setup link lets <%= created.name %> choose a password. It works once.</p>
           <p><input class="setup-link" type="text" readonly value="<%= setupLink %>"
-                    aria-label="Setup link" onfocus="this.select()"></p>
+                    aria-label="Setup link" data-select-on-focus></p>
         <% } else { %>
           <p>You set this user's password. They can sign in with it now.</p>
         <% } %>

@@ -9,6 +9,7 @@
 import { createRequire } from 'node:module';
 import { describe, test, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
+import { readFileSync } from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const db = require('../src/db');
@@ -60,13 +61,21 @@ describe('pressing Enter submits the login form', () => {
   test('nothing on the page can intercept the keypress', async () => {
     const res = await request(app).get('/login');
 
-    // Story 22217 added one script: it creates the Show/Hide button and
-    // changes the field's type. It binds no key or submit handler, so Enter
-    // still reaches the form. Any other script here deserves a second look.
+    // Two scripts, both known. Story 22217 added the Show/Hide button, and
+    // sprint 9 added the colour theme, which runs before the first paint.
+    // Neither binds a key or submit handler, so Enter still reaches the form,
+    // and that is checked against their source below. Any other script here
+    // deserves a second look.
     const scripts = res.text.match(/<script[^>]*>/gi) || [];
-    expect(scripts).toHaveLength(1);
-    expect(scripts[0]).toContain('/password-toggle.js');
+    expect(scripts).toHaveLength(2);
+    expect(scripts.join(' ')).toContain('/theme.js');
+    expect(scripts.join(' ')).toContain('/password-toggle.js');
     expect(res.text).not.toMatch(/onkeydown|onkeypress|onsubmit/i);
+
+    for (const file of ['theme.js', 'password-toggle.js']) {
+      const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
+      expect(source).not.toMatch(/addEventListener\('(keydown|keypress|keyup|submit)'/);
+    }
   });
 
   test('both fields sit inside that form, so Enter works from either one', async () => {

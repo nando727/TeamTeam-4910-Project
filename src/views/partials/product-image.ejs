@@ -1,0 +1,11 @@
+<%# A catalog product image, or a placeholder when there is none. /product-images.js
+    swaps in the same placeholder when an image fails to load. `size` is 'card',
+    'detail', or 'thumb'; a thumbnail sits beside the product name, so it is
+    decorative and has empty alt text. %>
+<% const size = locals.size || 'card'; const decorative = size === 'thumb'; %>
+<% const cls = `product-image product-image--${size}`; %>
+<% if (locals.url) { %>
+  <img class="<%= cls %>" src="<%= url %>" alt="<%= decorative ? '' : alt %>" loading="lazy" data-fallback>
+<% } else { %>
+  <span class="<%= cls %> product-image--missing"<%- decorative ? ' aria-hidden="true"' : ` role="img" aria-label="No image available"` %>><span class="product-image__label">No image</span></span>
+<% } %>

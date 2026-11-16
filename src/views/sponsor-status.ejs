@@ -3,7 +3,7 @@
     <div class="page-header">
       <span class="eyebrow">Administration</span>
       <h1>Sponsor status</h1>
-      <p class="lede">All sponsor organizations and their current status.</p>
+      <p class="lede">All sponsor organizations and their current status. Open one to see its sponsor users and the drivers in its program.</p>
     </div>
     <% if (sponsors.length === 0) { %>
       <p class="info" role="status">No sponsors have been created yet. <a href="/admin/create-sponsor">Create a sponsor</a>.</p>
@@ -15,14 +15,16 @@
               <th scope="col">Organization</th>
               <th scope="col">Contact email</th>
               <th scope="col">Status</th>
+              <th scope="col">People</th>
             </tr>
           </thead>
           <tbody>
             <% sponsors.forEach(sponsor => { %>
               <tr>
-                <td class="cell-strong"><%= sponsor.name %></td>
+                <td class="cell-strong"><a href="/admin/sponsors/<%= sponsor.id %>"><%= sponsor.name %></a></td>
                 <td><a href="mailto:<%= sponsor.contactEmail %>"><%= sponsor.contactEmail %></a></td>
                 <td><span class="status-badge status-<%= sponsor.status %>"><%= sponsor.status %></span></td>
+                <td><a class="button-link button--small" href="/admin/sponsors/<%= sponsor.id %>">View organization</a></td>
               </tr>
             <% }); %>
           </tbody>

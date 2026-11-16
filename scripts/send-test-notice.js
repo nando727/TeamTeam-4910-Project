@@ -5,8 +5,8 @@
 // functions a made-up account row whose address is the recipient, so what
 // arrives is the same text the app sends, composed by the same code.
 //
-// In SES's sandbox the recipient has to be a verified address, or the send
-// comes back as "554 Message rejected".
+// The deployed site sends through Gmail. If Gmail refuses the sign-in, the
+// password is almost always the cause: it must be a Google app password.
 require('dotenv').config();
 
 const { missingSmtpSettings } = require('../src/mail/mailer');
@@ -14,7 +14,7 @@ const { notifyPasswordChanged } = require('../src/auth/password-notice');
 const { notifyEmailChanged } = require('../src/auth/contact-notice');
 
 const KINDS = ['password', 'email', 'both'];
-const USAGE = 'Usage: npm run mail:test -- you@verified.example [password|email|both]';
+const USAGE = 'Usage: npm run mail:test -- you@example.com [password|email|both]';
 
 // Deliberately a .invalid address: it is shown inside the email-change notice
 // as the "new" address, and that TLD can never be delivered to by anyone.
@@ -80,8 +80,9 @@ async function main() {
     }
     failures += 1;
     console.error(`  FAILED: ${label}${message && message.error ? ` -- ${message.error}` : ''}`);
-    if (message && /Message rejected|not verified/i.test(message.error || '')) {
-      console.error('  SES is in sandbox mode: verify this address in SES, or ask AWS for production access.');
+    if (message && /535|Username and Password not accepted|Invalid login|BadCredentials/i.test(message.error || '')) {
+      console.error('  Gmail refused the sign-in. MAIL_PASSWORD must be a Google app password for MAIL_USER,');
+      console.error('  not the normal password, and changing the Google password revokes app passwords.');
     }
   }
 

@@ -1,39 +1,46 @@
 <%- include('../partials/head', { title: 'Sponsor Home' }) %>
-  <section class="hero">
+  <section class="dash">
     <%- include('../partials/logo') %>
-    <div>
+    <div class="dash__text">
       <h1>Welcome, <%= user.username %></h1>
-      <p>You are signed in as a sponsor user.</p>
+      <p>You are signed in as a sponsor user. <span class="dash__chip">sponsor</span></p>
     </div>
+    <dl class="dash__stats">
+      <div class="dash__stat"><dt>Applications waiting</dt><dd><%= applications.filter(a => a.status === 'pending').length %></dd></div>
+    </dl>
   </section>
 
   <h2 class="section-title">Your program</h2>
-  <div class="actions actions--2">
+  <div class="actions actions--3">
     <a class="action" href="/organization">
       <span class="action__icon"><%- include('../partials/icon', { name: 'building' }) %></span>
       <span class="action__title">Your organization</span>
-      <span class="action__text">View your sponsor organization's details or modify rules.</span>
-    </a>
-    <a class="action" href="/reports/points">
-      <span class="action__icon"><%- include('../partials/icon', { name: 'chart' }) %></span>
-      <span class="action__title">Driver point report</span>
-      <span class="action__text">Review your drivers' point changes by driver and date, or download a CSV.</span>
+      <span class="action__text">Its details, its people, and the rules you reward points for.</span>
     </a>
     <a class="action" href="/drivers">
-      <span class="action__icon" aria-hidden="true">D</span>
+      <span class="action__icon"><%- include('../partials/icon', { name: 'users' }) %></span>
       <span class="action__title">Your drivers</span>
-      <span class="action__text">View and filter drivers associated with your organization.</span>
+      <span class="action__text">Everyone in your program, their points with you, and their access.</span>
     </a>
-    <a class="action" href="/sponsor-users/create">
-      <span class="action__icon" aria-hidden="true">+</span>
-      <span class="action__title">Add a sponsor user</span>
-      <span class="action__text">Create another sponsor account for your organization.</span>
-    </a>
+    <a class="action" href="/points">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'chart' }) %></span>
+      <span class="action__title">Adjust points</span>
+      <span class="action__text">Award or deduct points for a driver, with a reason they will see.</span>
     </a>
     <a class="action" href="/catalog">
-      <span class="action__icon" aria-hidden="true">+</span>
-      <span class="action__title">Add to your catalog</span>
-      <span class="action__text">Browse through items to add to the visible catalog.</span>
+      <span class="action__icon"><%- include('../partials/icon', { name: 'cart' }) %></span>
+      <span class="action__title">Your catalog</span>
+      <span class="action__text">Choose the products your drivers can spend points on, or buy for one.</span>
+    </a>
+    <a class="action" href="/reports/points">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'receipt' }) %></span>
+      <span class="action__title">Driver point report</span>
+      <span class="action__text">Point changes by driver and date, with a chart and a CSV download.</span>
+    </a>
+    <a class="action" href="/sponsor-users/create">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'user-plus' }) %></span>
+      <span class="action__title">Add a sponsor user</span>
+      <span class="action__text">Create another sponsor account for your organization.</span>
     </a>
   </div>
 
@@ -56,57 +63,65 @@
     </a>
   </div>
 
-  <h2 class="section-title">Driver Applications</h2>
-  <div class="table-wrap">
-    <form method="GET" action="/" class="filter-form">
-      <label for="StatusFilter">Filter by status:</label>
+  <h2 class="section-title">Driver applications</h2>
+  <form method="GET" action="/" class="filters">
+    <div class="filters__field">
+      <label for="StatusFilter">Status</label>
       <select id="StatusFilter" name="status" data-autosubmit>
         <option value="" <%= !StatusFilter ? 'selected' : '' %>>All</option>
         <option value="pending" <%= StatusFilter === 'pending' ? 'selected' : '' %>>Pending</option>
         <option value="approved" <%= StatusFilter === 'approved' ? 'selected' : '' %>>Approved</option>
         <option value="rejected" <%= StatusFilter === 'rejected' ? 'selected' : '' %>>Rejected</option>
       </select>
-
-      <label for="search">Name or email:</label>
-      <input type="text" id="search" name="search" value="<%= searchFilter %>" maxlength="128" placeholder="Search...">
+    </div>
+    <div class="filters__field">
+      <label for="search">Name or email</label>
+      <input type="text" id="search" name="search" value="<%= searchFilter %>" maxlength="128" placeholder="Search applications">
+    </div>
+    <div class="filters__actions">
       <button type="submit">Filter</button>
-    </form>
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Applicant</th>
-        <th>Contact</th>
-        <th>Reason</th>
-        <th>Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      <% applications.forEach(app => { %>
+      <a class="button-link" href="/">Clear</a>
+    </div>
+  </form>
+
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
         <tr>
-          <td><%= app.full_name %></td>
-          <td><%= app.contact_email %></td>
-          <td><%= app.reason %></td>
-          <td><%= app.status %></td>
-          <td>
-            <% if (app.status === 'pending') { %>
-              <form method="POST" action="/applications/<%= app.id %>/approve" class="inline-form">
-                <input type="hidden" name="token" value="<%= formToken %>">
-                <button type="submit">Approve</button>
-              </form>
-              <form method="POST" action="/applications/<%= app.id %>/reject" class="inline-form">
-                <input type="hidden" name="token" value="<%= formToken %>">
-                <input type="text" name="rejectionReason" placeholder="Reason" required>
-                <button type="submit">Reject</button>
-              </form>
-            <% } %>
-          </td>
+          <th scope="col">Applicant</th>
+          <th scope="col">Contact</th>
+          <th scope="col">Reason</th>
+          <th scope="col">Status</th>
+          <th scope="col">Actions</th>
         </tr>
-      <% }) %>
-      <% if (applications.length === 0) { %>
-        <tr><td colspan="5">No applications yet.</td></tr>
-      <% } %>
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        <% applications.forEach(app => { %>
+          <tr>
+            <td class="cell-strong"><%= app.full_name %></td>
+            <td class="cell-email"><%= app.contact_email %></td>
+            <td><%= app.reason %></td>
+            <td><span class="status-badge status-<%= app.status %>"><%= app.status %></span></td>
+            <td>
+              <% if (app.status === 'pending') { %>
+                <form method="POST" action="/applications/<%= app.id %>/approve" class="inline-form">
+                  <input type="hidden" name="token" value="<%= formToken %>">
+                  <button type="submit" class="button--small">Approve</button>
+                </form>
+                <form method="POST" action="/applications/<%= app.id %>/reject" class="status-form">
+                  <input type="hidden" name="token" value="<%= formToken %>">
+                  <label for="reject-<%= app.id %>" class="sr-only">Reason for rejecting <%= app.full_name %></label>
+                  <input id="reject-<%= app.id %>" type="text" name="rejectionReason" placeholder="Reason" required>
+                  <button type="submit" class="button--small">Reject</button>
+                </form>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+        <% if (applications.length === 0) { %>
+          <tr><td colspan="5">No applications match.</td></tr>
+        <% } %>
+      </tbody>
+    </table>
   </div>
 <%- include('../partials/foot') %>

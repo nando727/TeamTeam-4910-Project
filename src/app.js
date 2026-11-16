@@ -3,6 +3,7 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const authRoutes = require('./auth/routes');
+const signupRoutes = require('./auth/signup');
 const { sessionTimeout, idleLimitMs, warningLeadMs, remainingMs } = require('./auth/session-timeout');
 const { sessionRevocation } = require('./auth/session-revocation');
 const { MysqlSessionStore } = require('./auth/session-store');
@@ -21,10 +22,13 @@ const { formToken, requireFormToken } = require('./auth/form-token');
 const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES, escapeLike} = require('./applications');
 const db = require('./db');
 
+const ruleData = require('./sponsors/rules');
 const { createUser,updateUserContact, updateUserStatus, DuplicateError } = require('./users/store');
 const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('./auth/setup-tokens');
 const { listDriversForSponsor, listSponsorAccounts, findOrgMember, deleteOrgMember } = require('./sponsors/accounts');
 const { sendMail } = require('./mail/mailer');
+const { setupMailNotice } = require('./mail/outcome');
+const { adjustPoints } = require('./points/store');
 const { securityHeaders } = require('./security-headers');
 const { PUBLIC_RULES, MAX_PASSWORD_LENGTH, passwordProblems } = require('./auth/password-policy');
 const { randomBytes } = require('crypto');
@@ -90,10 +94,15 @@ app.use((req, res, next) => {
   // While an admin acts as another user, every page shows a banner with a stop button.
   res.locals.currentImpersonator = req.session.impersonator || null;
   res.locals.impersonationToken = req.session.impersonator ? formToken(req) : null;
+  // Sprint 9: the header's Cart link shows how many items are in it.
+  const cart = req.session.cart;
+  res.locals.cartCount = cart && Array.isArray(cart.items) ? cart.items.reduce((n, line) => n + (Number(line.quantity) || 0), 0) : 0;
   next();
 });
 
 app.use(authRoutes);
+// Driver self sign-up: public, and only ever creates a driver.
+app.use(signupRoutes);
 app.use(apiRoutes);
 app.use('/sponsors', sponsorRoutes);
 app.use('/driver', driverRoutes);
@@ -185,12 +194,24 @@ app.get('/organization', requireLogin, requireSponsor, async (req, res, next) =>
     const organization = rows[0];
     if (!organization) return res.status(404).send('Organization not found.');
 
-    const rules = await db.query(
-      'SELECT id, title, description FROM rules WHERE sponsor_id = ? ORDER BY id DESC',
-      [req.session.user.sponsorId]
-    );
+    const sponsorId = req.session.user.sponsorId;
+    const [rules, rate] = await Promise.all([ruleData.listRules(sponsorId), catalog.conversionRate(sponsorId)]);
+    const notice = req.session.accountNotice || null;
+    
 
-    res.render('sponsor/organization', { organization, rules, formToken: formToken(req) });
+    // Sprint 9: who belongs to this organization, so a sponsor user can see
+    // their own people on the page that describes the organization.
+    const [sponsorUsers, drivers] = await Promise.all([
+      listSponsorAccounts(req.session.user.sponsorId),
+      listDriversForSponsor(req.session.user.sponsorId),
+    ]);
+
+    delete req.session.accountNotice;
+    res.render('sponsor/organization', {
+      organization, rules, rate, valueLabel: ruleData.dollarsPerPoint(rate), notice,
+      sponsorUsers, drivers, formToken: formToken(req),
+      totalPoints: drivers.reduce((sum, driver) => sum + Number(driver.balance || 0), 0),
+    });
   } catch (err) { next(err); }
 });
 
@@ -304,38 +325,43 @@ app.post('/accounts/:userId/delete', requireLogin, requireSponsor, requireFormTo
   }
 });
 
+function backToRules(req, res, kind, text) {
+  flash(req, kind, text);
+  return res.redirect(303, '/organization');
+}
+
 app.post('/organization/rules', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
-  const title = (req.body.title || '').trim();
-  const description = (req.body.description || '').trim();
-  const pointValue = (req.body.pointValue || '').trim();
-
-  if (!title || title.length > 255) {
-    return res.status(400).send('Enter a title (up to 255 characters).');
-  }
-  if (!pointValue || pointValue.length > 255){
-    return res.status(400).send('Enter a valid point amount.');
-  }
-  if (!description || description.length > 2000) {
-    return res.status(400).send('Enter a description (up to 2000 characters).');
-  }
-
+  const title = ruleData.parseRuleTitle(req.body.title);
+  const description = ruleData.parseRuleDescription(req.body.description);
+  const points = ruleData.parseRulePoints(req.body.pointValue);
+  if (!title) return backToRules(req, res, 'error', 'Enter a rule name (up to 255 characters).');
+  if (points === null) return backToRules(req, res, 'error', 'Enter the points as a whole number other than 0 (up to 1,000,000, negative to take points away).');
+  if (!description) return backToRules(req, res, 'error', 'Enter a description (up to 2000 characters).');
   try {
-    await db.query(
-      'INSERT INTO rules (sponsor_id, title, points, description) VALUES (?, ?, ?, ?)',
-      [req.session.user.sponsorId, title, pointValue, description]
-    );
-    res.redirect('/organization');
+    await ruleData.addRule(req.session.user.sponsorId, { title, points, description });
+    backToRules(req, res, 'success', `Added the rule "${title}".`);
+  } catch (err) {
+    if (err instanceof ruleData.DuplicateRuleError) return backToRules(req, res, 'error', err.message);
+    next(err);
+  }
+});
+
+app.post('/organization/rules/:id/points', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const points = ruleData.parseRulePoints(req.body.pointValue);
+  if (!/^[1-9]\d{0,9}$/.test(req.params.id)) return res.status(400).send('Invalid rule.');
+  if (points === null) return backToRules(req, res, 'error', 'Enter the points as a whole number other than 0 (up to 1,000,000, negative to take points away).');
+  try {
+    const rule = await ruleData.updateRulePoints(req.session.user.sponsorId, Number(req.params.id), points);
+    if (!rule) return backToRules(req, res, 'error', 'Rule not found.');
+    backToRules(req, res, 'success', `"${rule.title}" now awards ${points} points.`);
   } catch (err) { next(err); }
 });
 
 app.post('/organization/rules/:id/delete', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  if (!/^[1-9]\d{0,9}$/.test(req.params.id)) return res.status(400).send('Invalid rule.');
   try {
-    const result = await db.query(
-      'DELETE FROM rules WHERE id = ? AND sponsor_id = ?',
-      [req.params.id, req.session.user.sponsorId]
-    );
-    if (result.affectedRows === 0) return res.status(404).send('Rule not found.');
-    res.redirect('/organization');
+    const ok = await ruleData.removeRule(req.session.user.sponsorId, Number(req.params.id));
+    backToRules(req, res, ok ? 'success' : 'error', ok ? 'Rule removed.' : 'Rule not found.');
   } catch (err) { next(err); }
 });
 
@@ -401,6 +427,10 @@ app.post('/organization/edit', requireLogin, requireSponsor, requireFormToken, a
   }
 });
 
+// Sprint 9: with two product services there are a couple of hundred products
+// to browse, so the list is paged. Search and category narrow it first.
+const BROWSE_PAGE_SIZE = 50;
+
 app.get('/catalog', requireLogin, requireSponsor, async (req, res, next) => {
   const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
   const category = typeof req.query.category === 'string' ? req.query.category.trim().slice(0, 100) : '';
@@ -413,10 +443,32 @@ app.get('/catalog', requireLogin, requireSponsor, async (req, res, next) => {
     } catch (err) {
       if (err instanceof FakeStoreError) browseError = err.message; else throw err;
     }
+    const productCount = products.length;
+    const pageCount = Math.max(1, Math.ceil(productCount / BROWSE_PAGE_SIZE));
+    const wantedPage = typeof req.query.page === 'string' && /^[1-9]\d{0,3}$/.test(req.query.page) ? Number(req.query.page) : 1;
+    const page = Math.min(wantedPage, pageCount);
+    products = products.slice((page - 1) * BROWSE_PAGE_SIZE, page * BROWSE_PAGE_SIZE);
+    const pageHref = n => '/catalog?' + new URLSearchParams({ q, category, ...(n > 1 ? { page: String(n) } : {}) }).toString();
     const notice = req.session.accountNotice || null;
     delete req.session.accountNotice;
-    res.render('sponsor/catalog', { items, savedIds, products, categories, q, category, browseError, notice, formToken: formToken(req) });
+    res.render('sponsor/catalog', {
+      rate: await catalog.conversionRate(sponsorId), items, savedIds, products, categories, q, category, browseError, notice, formToken: formToken(req),
+      productCount, page, pageCount,
+      pageStart: productCount ? (page - 1) * BROWSE_PAGE_SIZE + 1 : 0, pageEnd: Math.min(page * BROWSE_PAGE_SIZE, productCount),
+      prevHref: page > 1 ? pageHref(page - 1) : null, nextHref: page < pageCount ? pageHref(page + 1) : null,
+    });
   } catch (err) { next(err); }
+});
+
+app.post('/catalog/rate', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const rate = Number(req.body.rate);
+  const back = req.body.returnTo === '/organization' ? '/organization' : '/catalog';
+  if (!req.session.user.sponsorId || !Number.isInteger(rate) || rate < 1 || rate > 10000) return res.status(400).send('Enter a whole number from 1 to 10,000 points per dollar.');
+  try {
+    await db.query('INSERT INTO sponsor_point_rates (sponsor_id, points_per_dollar) VALUES (?, ?) ON DUPLICATE KEY UPDATE points_per_dollar = ?', [req.session.user.sponsorId, rate, rate]);
+    flash(req, 'success', 'Conversion rate saved. Catalog point costs now use the new rate.');
+    res.redirect(303, back);
+  } catch (error) { next(error); }
 });
 
 app.post('/catalog/add', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
@@ -424,16 +476,11 @@ app.post('/catalog/add', requireLogin, requireSponsor, requireFormToken, async (
   const category = typeof req.body.category === 'string' ? req.body.category.trim().slice(0, 100) : '';
   const back = '/catalog?' + new URLSearchParams({ q, category }).toString();
   const rawId = typeof req.body.productId === 'string' ? req.body.productId : '';
-  const pointsCost = Number(req.body.pointsCost);
   if (!/^[1-9]\d{0,9}$/.test(rawId)) return res.status(400).send('Invalid product.');
-  if (!Number.isInteger(pointsCost) || pointsCost < 1 || pointsCost > 1000000) {
-    flash(req, 'error', 'Enter a whole number of points from 1 to 1,000,000.');
-    return res.redirect(303, back);
-  }
   try {
     // Title, price and image come from the product service, not from the form.
     const product = await getProduct(Number(rawId));
-    await catalog.addCatalogItem(req.session.user.sponsorId, product, pointsCost);
+    await catalog.addCatalogItem(req.session.user.sponsorId, product);
     flash(req, 'success', `Added "${product.title}" to your catalog.`);
     res.redirect(303, back);
   } catch (err) {
@@ -451,6 +498,95 @@ app.post('/catalog/:id/remove', requireLogin, requireSponsor, requireFormToken, 
   } catch (err) { next(err); }
 });
 
+// ---- Sponsor buys from the catalog for one of their drivers (sprint 8) -------
+// The sponsor picks a driver, reviews the cost against that driver's balance
+// with this sponsor, then confirms. The points are spent through adjustPoints,
+// which also writes the purchases row the reports read, all in one
+// transaction. The review is held in the session with a one-time id, so a
+// confirmation cannot be forged or replayed.
+
+const points = n => `${Number(n).toLocaleString('en-US')} point${Number(n) === 1 ? '' : 's'}`;
+
+function shortfallMessage(driver, organization, balance, cost) {
+  const short = cost - balance;
+  return `${driver.displayName} has ${points(balance)} with ${organization}. This item costs ${points(cost)}, ` +
+    `so they need ${short.toLocaleString('en-US')} more point${short === 1 ? '' : 's'}.`;
+}
+
+async function loadPurchase(req) {
+  const sponsorId = req.session.user.sponsorId;
+  if (!sponsorId || !/^[1-9]\d{0,9}$/.test(req.params.id)) return null;
+  const item = await catalog.findCatalogItem(sponsorId, Number(req.params.id));
+  if (!item) return null;
+  const [drivers, organization] = await Promise.all([catalog.listDriversForPurchase(sponsorId), catalog.sponsorName(sponsorId)]);
+  return { sponsorId, item, drivers, organization };
+}
+
+function renderPurchase(req, res, context, { driver = null, review = null, problem = null, status = 200 } = {}) {
+  res.status(status).render('sponsor/buy', {
+    ...context, driver, review, problem, points, formToken: formToken(req),
+  });
+}
+
+app.get('/catalog/:id/buy', requireLogin, requireSponsor, async (req, res, next) => {
+  try {
+    const context = await loadPurchase(req);
+    if (!context) { flash(req, 'error', 'That item is not in your catalog.'); return res.redirect('/catalog'); }
+    const wanted = typeof req.query.driver === 'string' ? req.query.driver.trim() : '';
+    if (!wanted) return renderPurchase(req, res, context);
+    const driver = context.drivers.find(d => String(d.id) === wanted);
+    if (!driver) return renderPurchase(req, res, context, { problem: 'Choose one of your drivers from the list.', status: 400 });
+    const balance = Number(driver.balance);
+    const cost = context.item.points_cost;
+    if (balance < cost) {
+      return renderPurchase(req, res, context, { driver, problem: shortfallMessage(driver, context.organization, balance, cost), status: 409 });
+    }
+    const confirmId = randomBytes(32).toString('hex');
+    req.session.purchaseDraft = { itemId: context.item.id, driverId: driver.id, pointsCost: cost, confirmId };
+    renderPurchase(req, res, context, { driver, review: { balance, after: balance - cost, confirmId } });
+  } catch (err) { next(err); }
+});
+
+app.post('/catalog/:id/buy', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  const draft = req.session.purchaseDraft;
+  // Used once, whatever happens next: a second click finds nothing to confirm.
+  delete req.session.purchaseDraft;
+  try {
+    if (!draft || String(draft.itemId) !== req.params.id || String(draft.driverId) !== req.body.driver || draft.confirmId !== req.body.confirmId) {
+      flash(req, 'error', 'That purchase was not confirmed, or it has already been made. Review it again before buying.');
+      return res.redirect(303, '/catalog');
+    }
+    const context = await loadPurchase(req);
+    if (!context) { flash(req, 'error', 'That item is no longer in your catalog, so nothing was bought.'); return res.redirect(303, '/catalog'); }
+    const { item, organization } = context;
+    if (item.points_cost !== draft.pointsCost) {
+      flash(req, 'error', `The points cost of "${item.title}" changed, so nothing was bought. Review the purchase again.`);
+      return res.redirect(303, '/catalog');
+    }
+    const driver = context.drivers.find(d => d.id === draft.driverId);
+    if (!driver) { flash(req, 'error', 'That driver is no longer one of your active drivers, so nothing was bought.'); return res.redirect(303, '/catalog'); }
+
+    const title = item.title.trim().slice(0, 255);
+    let balance;
+    try {
+      balance = await adjustPoints({
+        driverId: driver.id, sponsorId: context.sponsorId, userId: req.session.user.id,
+        amount: -item.points_cost, reason: `Catalog purchase: ${title}`.slice(0, 255),
+        purchase: { description: title, amountCents: Math.round(Number(item.price_value) * 100) },
+      });
+    } catch (err) {
+      if (err.code === 'INSUFFICIENT_POINTS') {
+        return renderPurchase(req, res, context, { driver, problem: shortfallMessage(driver, organization, err.balance, err.cost), status: 409 });
+      }
+      if (err.status) { flash(req, 'error', err.message); return res.redirect(303, '/catalog'); }
+      throw err;
+    }
+    flash(req, 'success', `Bought "${title}" for ${driver.displayName} for ${points(item.points_cost)}. ` +
+      `Their balance with ${organization} is now ${points(balance)}.`);
+    res.redirect(303, '/catalog');
+  } catch (err) { next(err); }
+});
+
 app.get('/my-catalog', requireLogin, (req, res) => {
   if (req.session.user.role !== 'driver') return denyAccess(req, res, { needs: 'driver' });
   res.redirect('/driver/catalog');
@@ -462,9 +598,9 @@ app.get('/my-catalog', requireLogin, (req, res) => {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMPTY_SPONSOR_USER = { name: '', email: '', username: '' };
 
-function renderCreateSponsorUser(req, res, values, { error = null, created = null, setupLink = null, status = 200 } = {}) {
+function renderCreateSponsorUser(req, res, values, { error = null, created = null, setupLink = null, mailNotice = null, status = 200 } = {}) {
   return res.status(status).render('sponsor/create-user', {
-    values, error, created, setupLink, token: formToken(req),
+    values, error, created, setupLink, mailNotice, token: formToken(req),
     rules: PUBLIC_RULES, maxLength: MAX_PASSWORD_LENGTH,
   });
 }
@@ -495,10 +631,11 @@ app.post('/sponsor-users/create', requireLogin, requireSponsor, requireFormToken
     });
 
     let setupLink = null;
+    let mailNotice = null;
     if (usesSetupLink) {
       const rawToken = await issueSetupToken(created.id);
       setupLink = setupLinkFor(req, rawToken);
-      await sendMail({
+      const mail = await sendMail({
         to: created.email,
         subject: 'Set up your Good Driver Incentive Program account',
         text: [
@@ -512,18 +649,44 @@ app.post('/sponsor-users/create', requireLogin, requireSponsor, requireFormToken
           `The link works once and expires in ${linkLifetimeHours()} hours.`,
         ].join('\n'),
       });
+      mailNotice = setupMailNotice(mail);
     }
 
-    renderCreateSponsorUser(req, res, EMPTY_SPONSOR_USER, { created, setupLink });
+    renderCreateSponsorUser(req, res, EMPTY_SPONSOR_USER, { created, setupLink, mailNotice });
   } catch (err) {
     if (err instanceof DuplicateError) return renderCreateSponsorUser(req, res, values, { error: err.message, status: 409 });
     next(err);
   }
 });
 
+//Can't figure out where all of the driver pages are built so I'm putting it here for now
+app.get('/my-rules', requireLogin, async (req, res, next) => {
+  if (req.session.user.role !== 'driver') return denyAccess(req, res, { needs: 'driver' });
+  try {
+    const sponsor = await ruleData.findDriverSponsor(req.session.user.id);
+    if (!sponsor) return res.render('driver/rules', { sponsor: null, rules: [], rate: null, valueLabel: null });
+    const [rules, rate] = await Promise.all([ruleData.listRules(sponsor.id), catalog.conversionRate(sponsor.id)]);
+    res.render('driver/rules', { sponsor, rules, rate, valueLabel: ruleData.dollarsPerPoint(rate) });
+  } catch (err) { next(err); }
+});
+
+// Nothing above answered: a real page rather than Express's one-line "Cannot
+// GET". The JSON API keeps a JSON answer, so a client never parses HTML.
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'No such endpoint.' });
+  res.status(404).render('404', { attemptedPath: req.originalUrl.slice(0, 200) });
+});
+
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).send('Something went wrong.');
+  // Headers already on their way, or a request whose body was rejected before
+  // any page could be built: let Express finish it rather than render twice.
+  if (res.headersSent) return next(err);
+  if (req.path.startsWith('/api/')) return res.status(500).json({ error: 'Something went wrong.' });
+  // The view can only be rendered with a session; a failure before the session
+  // middleware (a malformed body, say) still gets the plain sentence.
+  if (!req.session) return res.status(500).send('Something went wrong.');
+  res.status(500).render('500');
 });
 
 module.exports = { app, requireLogin };

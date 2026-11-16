@@ -14,7 +14,7 @@ const { sendMail, sentMessages, clearOutbox, resetTransport, missingSmtpSettings
 const MAIL_VARS = ['MAIL_TRANSPORT', 'MAIL_HOST', 'MAIL_PORT', 'MAIL_USER', 'MAIL_PASSWORD', 'MAIL_FROM'];
 const originalEnv = { ...process.env };
 
-const PASSWORD = 'ses-smtp-password-should-never-be-logged';
+const PASSWORD = 'abcd efgh ijkl mnop-should-never-be-logged';
 
 let sent;        // what nodemailer was asked to send
 let created;     // the options each transporter was built with
@@ -22,11 +22,11 @@ let created;     // the options each transporter was built with
 function configureSmtp(overrides = {}) {
   const settings = {
     MAIL_TRANSPORT: 'smtp',
-    MAIL_HOST: 'email-smtp.us-east-1.amazonaws.com',
+    MAIL_HOST: 'smtp.gmail.com',
     MAIL_PORT: '587',
-    MAIL_USER: 'AKIAEXAMPLE',
+    MAIL_USER: 'gooddriver.team@gmail.com',
     MAIL_PASSWORD: PASSWORD,
-    MAIL_FROM: 'no-reply@example.com',
+    MAIL_FROM: 'gooddriver.team@gmail.com',
     ...overrides,
   };
   for (const [key, value] of Object.entries(settings)) {
@@ -97,7 +97,7 @@ describe('the message nodemailer is given', () => {
     await send();
 
     expect(sent[0]).toEqual({
-      from: 'no-reply@example.com',
+      from: 'gooddriver.team@gmail.com',
       to: 'driver1@example.com',
       subject: 'Reset your password',
       text: 'Here is your link.',
@@ -186,13 +186,13 @@ describe('when the mail server refuses', () => {
     // did: the account exists either way and the admin can resend.
     configureSmtp();
     nodemailer.createTransport.mockImplementation(() => ({
-      sendMail: async () => { throw new Error('554 Message rejected: not verified in SES'); },
+      sendMail: async () => { throw new Error('Invalid login: 535-5.7.8 Username and Password not accepted'); },
     }));
 
     const message = await send();
 
     expect(message.delivered).toBe(false);
-    expect(message.error).toMatch(/not verified in SES/);
+    expect(message.error).toMatch(/Username and Password not accepted/);
     expect(sentMessages().at(-1).delivered).toBe(false);
   });
 

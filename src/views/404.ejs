@@ -1,0 +1,16 @@
+<%- include('partials/head', { title: 'Page not found' }) %>
+  <div class="page--center">
+    <section class="card card--narrow login-card">
+      <%- include('partials/logo') %>
+      <h1>That page does not exist</h1>
+      <p>There is nothing at <code class="path"><%= attemptedPath %></code>. The link may be old, or the address may have a typo.</p>
+      <div class="button-row">
+        <% if (locals.currentUser) { %>
+          <a class="button-link" href="/">Back to your home page</a>
+        <% } else { %>
+          <a class="button-link" href="/login">Go to the login page</a>
+        <% } %>
+      </div>
+    </section>
+  </div>
+<%- include('partials/foot') %>

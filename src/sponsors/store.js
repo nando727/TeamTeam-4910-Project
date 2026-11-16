@@ -30,4 +30,15 @@ async function listSponsors() {
   );
 }
 
-module.exports = { createSponsor, listSponsors };
+// One organization in full, or null. Read-only, for the admin organization
+// page (sprint 9), which shows an organization's details beside the people
+// who belong to it.
+async function findSponsorById(id) {
+  const rows = await db.query(
+    'SELECT id, name, contact_email AS contactEmail, contact_phone AS contactPhone, address, status, created_at AS createdAt FROM sponsors WHERE id = ?',
+    [id]
+  );
+  return rows[0] || null;
+}
+
+module.exports = { createSponsor, listSponsors, findSponsorById };

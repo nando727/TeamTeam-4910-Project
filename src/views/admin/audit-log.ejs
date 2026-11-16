@@ -1,0 +1,86 @@
+<%- include('../partials/head', { title: 'Audit log' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Audit log</h1>
+      <p class="lede">What administrators have done to accounts, newest first: role changes, status changes, password resets, unlocks, and sponsorship changes. Sign-in attempts are recorded separately and are never changed by anything here.</p>
+      <% if (target) { %>
+        <p class="hint">Filtered to <strong><%= target.username %></strong>. <a href="/admin/audit-log">Show every account</a>.</p>
+      <% } %>
+    </div>
+
+    <form class="filters" method="GET" action="/admin/audit-log">
+      <% if (state.user) { %><input type="hidden" name="user" value="<%= state.user %>"><% } %>
+      <div class="filters__field">
+        <label for="action">Action</label>
+        <select id="action" name="action" data-autosubmit>
+          <option value="">All actions</option>
+          <% actions.forEach(action => { %>
+            <option value="<%= action.value %>" <%= state.action === action.value ? 'selected' : '' %>><%= action.label %></option>
+          <% }); %>
+        </select>
+      </div>
+      <div class="filters__actions">
+        <button type="submit">Filter</button>
+        <a class="button-link" href="/admin/audit-log">Clear</a>
+      </div>
+    </form>
+
+    <div class="report-bar">
+      <span class="muted small">
+        <% if (total === 0) { %>Nothing recorded<% } else { %>Showing <%= pageStart %> to <%= pageEnd %> of <%= total.toLocaleString('en-US') %> action<%= total === 1 ? '' : 's' %><% } %><%= filtered ? ' for these filters' : '' %>.
+      </span>
+    </div>
+
+    <% if (total === 0) { %>
+      <div class="info" role="status">
+        <% if (filtered) { %>
+          <p>Nothing matches these filters. <a href="/admin/audit-log">Show everything</a>.</p>
+        <% } else { %>
+          <p>Nothing has been recorded yet. Changing a role or a status, resetting a password, unlocking an account, or adding and removing a sponsorship is recorded here.</p>
+        <% } %>
+      </div>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">When (UTC)</th>
+              <th scope="col">Action</th>
+              <th scope="col">Account</th>
+              <th scope="col">By</th>
+              <th scope="col">Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% rows.forEach(row => { %>
+              <tr>
+                <td class="nowrap"><%= formatStamp(row.createdAt) %></td>
+                <td class="cell-strong"><%= actionLabel(row.action) %></td>
+                <td>
+                  <% if (row.targetUsername) { %>
+                    <a href="/admin/audit-log?user=<%= row.targetUserId %>"><%= row.targetUsername %></a>
+                    <% if (row.targetRole) { %> <span class="role-chip"><%= row.targetRole %></span><% } %>
+                  <% } else if (row.targetUserId) { %>
+                    <span class="muted small">deleted account #<%= row.targetUserId %></span>
+                  <% } else { %>
+                    <span class="muted small">—</span>
+                  <% } %>
+                </td>
+                <td><%= row.adminUsername || (row.adminUserId ? `deleted account #${row.adminUserId}` : 'system') %></td>
+                <td><%= row.detail || '—' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <% if (pageCount > 1) { %>
+        <nav class="pager" aria-label="Audit log pages">
+          <% if (prevHref) { %><a class="button-link button--small" href="<%= prevHref %>">&larr; Previous</a><% } else { %><span class="button-link button--small is-disabled" aria-disabled="true">&larr; Previous</span><% } %>
+          <span class="pager__status">Page <%= page %> of <%= pageCount %></span>
+          <% if (nextHref) { %><a class="button-link button--small" href="<%= nextHref %>">Next &rarr;</a><% } else { %><span class="button-link button--small is-disabled" aria-disabled="true">Next &rarr;</span><% } %>
+        </nav>
+      <% } %>
+    <% } %>
+  </section>
+<%- include('../partials/foot') %>

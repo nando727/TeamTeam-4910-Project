@@ -1,0 +1,11 @@
+<%# The Manage users filters, as hidden fields, so an action taken from a row
+    returns to the list exactly as the administrator had filtered it. Prefixed
+    with f because a row's own form already has `role` and `status` fields.
+    `state` comes from the manage-users route; every value is escaped here,
+    which is why these are a partial and not a string built in the page. %>
+<input type="hidden" name="from" value="manage-users">
+<input type="hidden" name="fq" value="<%= state.q %>">
+<input type="hidden" name="frole" value="<%= state.role %>">
+<input type="hidden" name="fstatus" value="<%= state.status %>">
+<input type="hidden" name="fsponsor" value="<%= state.sponsor %>">
+<input type="hidden" name="fpage" value="<%= state.page %>">

@@ -3,7 +3,7 @@ const db = require('../db');
 // Story AA-55 (22263): the one door into the audit log. Everything the audit
 // requirement names -- login attempts, password changes, point changes, driver
 // application decisions -- is written through here, into audit_events
-// (db/migrations/022_audit_events.sql), in one shape.
+// (db/migrations/024_audit_events.sql), in one shape.
 //
 // One function and one statement, for the same reason updateUserPassword is
 // one function: a record that four callers each write their own way is four

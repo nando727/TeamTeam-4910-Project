@@ -1,0 +1,61 @@
+<%- include('../partials/head', { title: 'Buy for a driver' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Item catalog</span>
+      <h1>Buy for a driver</h1>
+      <p class="lede">Spend one of your drivers' points with <%= organization %> on this item. The purchase is added to their point history and to the sales, fee, and invoice reports.</p>
+    </div>
+
+    <% if (problem) { %><p class="error" role="alert"><%= problem %></p><% } %>
+
+    <div class="purchase-item">
+      <%- include('../partials/product-image', { url: item.image_url, alt: item.title, size: 'card' }) %>
+      <div>
+        <h2 class="purchase-item__title"><%= item.title %></h2>
+        <p class="purchase-item__cost"><strong><%= points(item.points_cost) %></strong> <span class="muted">· $<%= Number(item.price_value).toFixed(2) %></span></p>
+        <% if (item.category) { %><p class="muted small"><%= item.category %></p><% } %>
+      </div>
+    </div>
+
+    <% if (!drivers.length) { %>
+      <p class="info" role="status">You have no active drivers yet, so there is nobody to buy for.</p>
+    <% } else { %>
+      <form class="filters" method="GET" action="/catalog/<%= item.id %>/buy">
+        <div class="filters__field">
+          <label for="driver">Driver</label>
+          <select id="driver" name="driver" required>
+            <option value="">Choose a driver</option>
+            <% drivers.forEach(d => { %>
+              <option value="<%= d.id %>" <%= driver && driver.id === d.id ? 'selected' : '' %>><%= d.displayName %><%= d.displayName !== d.username ? ` (${d.username})` : '' %>: <%= points(d.balance) %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="filters__actions"><button type="submit">Review purchase</button></div>
+      </form>
+    <% } %>
+
+    <% if (review) { %>
+      <div class="confirm-box confirm-box--purchase" role="region" aria-labelledby="confirm-title">
+        <h2 id="confirm-title">Buy "<%= item.title %>" for <%= driver.displayName %>?</h2>
+        <dl class="details">
+          <dt>Driver</dt><dd><%= driver.displayName %><%= driver.displayName !== driver.username ? ` (${driver.username})` : '' %></dd>
+          <dt>Cost</dt><dd><%= points(item.points_cost) %></dd>
+          <dt>Balance with <%= organization %></dt><dd><%= points(review.balance) %></dd>
+          <dt>Balance after</dt><dd><strong><%= points(review.after) %></strong></dd>
+        </dl>
+        <div class="button-row">
+          <form method="POST" action="/catalog/<%= item.id %>/buy" data-submit-once>
+            <input type="hidden" name="token" value="<%= formToken %>">
+            <input type="hidden" name="driver" value="<%= driver.id %>">
+            <input type="hidden" name="confirmId" value="<%= review.confirmId %>">
+            <button type="submit">Confirm purchase</button>
+          </form>
+          <a class="button-link" href="/catalog">Cancel</a>
+        </div>
+      </div>
+    <% } %>
+
+    <p><a href="/catalog">&larr; Back to the catalog</a></p>
+  </section>
+  <script src="/product-images.js" defer></script>
+<%- include('../partials/foot') %>

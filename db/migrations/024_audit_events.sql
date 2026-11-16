@@ -24,7 +24,7 @@
 -- table that holds the only copy of something is a decision for a later story,
 -- taken on purpose and not as a side effect of this one.
 --
--- Runs after 021 (via `npm run db:migrate`). Safe to rerun.
+-- Runs after 023 (via `npm run db:migrate`). Safe to rerun.
 
 CREATE TABLE IF NOT EXISTS audit_events (
   id INT AUTO_INCREMENT PRIMARY KEY,

@@ -84,11 +84,12 @@ const transports = {
   // Used by tests and by any caller that wants silence.
   silent() {},
 
-  // Real delivery. Configured for SES in the deployed environment, but any
-  // SMTP server works, which is what makes a demo inbox possible.
+  // Real delivery. The deployed environment uses Gmail's SMTP server
+  // (smtp.gmail.com, port 587) with a Google app password, but any SMTP server
+  // works. Returns nodemailer's result, which carries the message id.
   async smtp(message) {
     const settings = smtpSettings();
-    await smtpTransporter(settings).sendMail({
+    return smtpTransporter(settings).sendMail({
       from: settings.from,
       to: message.to,
       subject: message.subject,
@@ -97,11 +98,23 @@ const transports = {
   },
 };
 
+// Enough to tell an address from a placeholder such as "(no email on file)".
+const ADDRESS_PATTERN = /^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[^\s@<>(),;:"]+$/;
+
+// For the line logged on every successful send: enough to recognize the
+// recipient without writing every address into the log in full.
+function maskAddress(address) {
+  const [local, domain] = String(address).trim().split('@');
+  return domain ? `${local.slice(0, 1)}***@${domain}` : '***';
+}
+
 // Kept so tests (and a future "resend" feature) can see what was sent.
 const outbox = [];
 const MAX_OUTBOX = 50;
 
-function activeTransport() {
+// The name of the transport a message will go through: 'smtp', 'console', or
+// 'silent'. Callers use it to say whether an email really went out.
+function activeTransportName() {
   const name = process.env.MAIL_TRANSPORT || 'console';
 
   // Asking for real delivery without the settings for it would drop every
@@ -114,11 +127,11 @@ function activeTransport() {
         `MAIL_TRANSPORT=smtp but ${missing.join(', ')} ` +
         `${missing.length === 1 ? 'is' : 'are'} not set; writing mail to the log instead.`
       );
-      return transports.console;
+      return 'console';
     }
   }
 
-  return transports[name] || transports.console;
+  return transports[name] ? name : 'console';
 }
 
 // Callers await this, but a failure to send must never break the operation
@@ -127,10 +140,28 @@ async function sendMail({ to, subject, text }) {
   if (!to || !subject) throw new Error('sendMail needs at least a "to" and a "subject".');
 
   const message = { to, subject, text: text || '', sentAt: new Date() };
+  const transport = activeTransportName();
+  message.transport = transport;
 
   try {
-    await activeTransport()(message);
-    message.delivered = true;
+    if (transport === 'smtp' && !ADDRESS_PATTERN.test(String(to).trim())) {
+      // An account with no address on file. The console transport still shows
+      // such a message during development, but a real server can only refuse
+      // it, and the reset or setup link inside would vanish without a trace.
+      // Saying so here is the trace.
+      message.delivered = false;
+      message.skipped = true;
+      message.error = 'No email address on file.';
+      console.log(`[mail] "${subject}" was not sent: no email address on file.`);
+    } else {
+      const info = await transports[transport](message);
+      message.delivered = true;
+      // Without this line a delivery leaves nothing in the log, which is what
+      // made "nobody is getting emails" impossible to check.
+      if (transport === 'smtp') {
+        console.log(`[mail] Sent "${subject}" to ${maskAddress(to)}${info && info.messageId ? ` ${info.messageId}` : ''}`);
+      }
+    }
   } catch (err) {
     message.delivered = false;
     message.error = err.message;
@@ -156,4 +187,4 @@ function resetTransport() {
   cached = { key: null, transporter: null };
 }
 
-module.exports = { sendMail, sentMessages, clearOutbox, resetTransport, missingSmtpSettings, mailIsConfigured };
+module.exports = { sendMail, sentMessages, clearOutbox, resetTransport, missingSmtpSettings, mailIsConfigured, maskAddress };

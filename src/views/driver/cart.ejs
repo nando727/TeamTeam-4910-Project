@@ -1,0 +1,113 @@
+<%- include('../partials/head', { title: 'Your cart' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Rewards</span>
+      <h1>Your cart</h1>
+      <p class="lede">Review what you are about to buy with your points<% if (sponsorName) { %> from <strong><%= sponsorName %></strong><% } %>. Quantities and prices are read from the sponsor's catalog as it is right now.</p>
+    </div>
+    <% if (notice) { %>
+      <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %><% if (notice.link) { %> <a href="<%= notice.link.href %>"><%= notice.link.text %></a>.<% } %></p>
+    <% } %>
+
+    <% if (conflict) { %>
+      <div class="confirm-box confirm-box--purchase" role="region" aria-labelledby="conflict-title">
+        <h2 id="conflict-title">Replace your cart?</h2>
+        <p>Your cart holds items from <strong><%= conflict.currentSponsorName %></strong>, and "<%= conflict.title %>" is from <strong><%= conflict.sponsorName %></strong>. Points never mix between sponsors, so a cart can hold items from one sponsor at a time.</p>
+        <div class="button-row">
+          <form method="POST" action="/driver/cart/add">
+            <input type="hidden" name="token" value="<%= token %>">
+            <input type="hidden" name="itemId" value="<%= conflict.itemId %>">
+            <input type="hidden" name="sponsorId" value="<%= conflict.sponsorId %>">
+            <input type="hidden" name="quantity" value="<%= conflict.quantity %>">
+            <input type="hidden" name="replace" value="1">
+            <input type="hidden" name="back" value="/driver/cart">
+            <button type="submit" class="button--danger">Empty my cart and add this item</button>
+          </form>
+          <form method="POST" action="/driver/cart/conflict/keep">
+            <input type="hidden" name="token" value="<%= token %>">
+            <button type="submit" class="button-link">Keep my cart</button>
+          </form>
+        </div>
+      </div>
+    <% } %>
+
+    <% if (!cart) { %>
+      <p class="info" role="status">Your cart is empty.</p>
+      <p><a class="button-link" href="/driver/catalog">Browse the product catalog</a></p>
+    <% } else { %>
+      <div class="table-wrap">
+        <table class="table cart-table">
+          <thead>
+            <tr>
+              <th scope="col">Item</th>
+              <th scope="col" class="num">Each</th>
+              <th scope="col" class="num">Quantity</th>
+              <th scope="col" class="num">Points</th>
+              <th scope="col">Remove</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% lines.forEach(line => { %>
+              <tr>
+                <td class="cell-strong">
+                  <%- include('../partials/product-image', { url: line.image_url, alt: '', size: 'thumb' }) %>
+                  <%= line.title %>
+                  <span class="muted small">· $<%= Number(line.price_value).toFixed(2) %></span>
+                </td>
+                <td class="num"><%= points(line.points_cost) %></td>
+                <td class="num">
+                  <form class="status-form cart-qty" method="POST" action="/driver/cart/update">
+                    <input type="hidden" name="token" value="<%= token %>">
+                    <input type="hidden" name="itemId" value="<%= line.id %>">
+                    <label for="qty-<%= line.id %>" class="sr-only">Quantity of <%= line.title %></label>
+                    <input id="qty-<%= line.id %>" name="quantity" type="number" min="0" max="<%= maxQuantity %>" step="1" value="<%= line.quantity %>">
+                    <button type="submit" class="button--small">Update</button>
+                  </form>
+                </td>
+                <td class="num cell-strong"><%= points(line.lineTotal) %></td>
+                <td>
+                  <form class="status-form" method="POST" action="/driver/cart/remove">
+                    <input type="hidden" name="token" value="<%= token %>">
+                    <input type="hidden" name="itemId" value="<%= line.id %>">
+                    <button type="submit" class="button--small button--danger">Remove</button>
+                  </form>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row" colspan="3">Total</th>
+              <td class="num"><%= points(total) %></td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="totals" style="margin-top: 18px;">
+        <div class="total"><span class="total__label">Your balance with <%= sponsorName %></span><span class="total__value"><%= points(balance) %></span></div>
+        <div class="total"><span class="total__label">This cart</span><span class="total__value"><%= points(total) %></span></div>
+        <div class="total"><span class="total__label">After checkout</span><span class="total__value <%= shortfall ? 'delta--neg' : '' %>"><%= shortfall ? `${shortfall.toLocaleString('en-US')} short` : points(balance - total) %></span></div>
+      </div>
+
+      <% if (shortfall) { %>
+        <p class="error" role="alert" style="margin-top: 18px;">You need <%= shortfall.toLocaleString('en-US') %> more point<%= shortfall === 1 ? '' : 's' %> with <%= sponsorName %> for this cart. Remove something or lower a quantity to check out.</p>
+      <% } %>
+
+      <div class="button-row" style="margin-top: 20px;">
+        <% if (shortfall) { %>
+          <span class="button-link is-disabled" aria-disabled="true">Check out</span>
+        <% } else { %>
+          <a class="button-link cart-checkout" href="/driver/cart/checkout">Check out</a>
+        <% } %>
+        <a class="button-link" href="/driver/catalog">Keep shopping</a>
+        <form method="POST" action="/driver/cart/clear" data-confirm="Empty your cart?">
+          <input type="hidden" name="token" value="<%= token %>">
+          <button type="submit" class="button-link">Empty cart</button>
+        </form>
+      </div>
+    <% } %>
+  </section>
+  <script src="/product-images.js" defer></script>
+<%- include('../partials/foot') %>

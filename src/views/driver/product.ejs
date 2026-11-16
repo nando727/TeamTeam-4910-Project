@@ -3,10 +3,26 @@
     <a class="back" href="/driver/catalog">Back to product catalog</a>
     <span class="eyebrow"><%= product.sponsorName %></span>
     <h1><%= product.name %></h1>
-    <% if (product.image_url) { %>
-      <img class="catalog-image catalog-image--detail" src="<%= product.image_url %>" alt="<%= product.name %>">
+    <% if (locals.notice) { %>
+      <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %><% if (notice.link) { %> <a href="<%= notice.link.href %>"><%= notice.link.text %></a>.<% } %></p>
     <% } %>
-    <p><strong>Price:</strong> $<%= Number(product.price_value).toFixed(2) %></p>
+    <%- include('../partials/product-image', { url: product.image_url, alt: product.name, size: 'detail' }) %>
+    <p class="purchase-item__cost"><strong><%= points(product.points_cost) %></strong> <span class="muted">· $<%= Number(product.price_value).toFixed(2) %></span></p>
+    <% if (product.category) { %><p class="muted small"><%= product.category %></p><% } %>
     <p><%= product.description %></p>
+    <p role="status"><strong>Availability:</strong> <%= product.availability === 'available' ? 'Available' : product.availability === 'unavailable' ? 'Currently unavailable' : 'Unable to confirm current availability' %></p>
+    <% if (product.availability !== 'available') { %><p class="info">This offer cannot be selected right now. Check again later.</p><% } %>
+    <form class="filters" method="POST" action="/driver/cart/add" data-submit-group="cart-add">
+      <input type="hidden" name="token" value="<%= token %>">
+      <input type="hidden" name="itemId" value="<%= product.id %>">
+      <input type="hidden" name="sponsorId" value="<%= product.sponsorId %>">
+      <input type="hidden" name="back" value="/driver/catalog/<%= product.sponsorId %>/<%= product.id %>">
+      <div class="filters__field">
+        <label for="quantity">Quantity</label>
+        <input id="quantity" name="quantity" type="number" min="1" max="<%= maxQuantity %>" step="1" value="1" required <%= product.availability !== 'available' ? 'disabled' : '' %>>
+      </div>
+      <div class="filters__actions"><button type="submit" <%= product.availability !== 'available' ? 'disabled' : '' %>>Add to cart</button></div>
+    </form>
   </section>
+  <script src="/product-images.js" defer></script>
 <%- include('../partials/foot') %>

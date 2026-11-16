@@ -134,7 +134,7 @@ describe('a write that fails', () => {
 });
 
 describe('the migration', () => {
-  const migration = readFileSync(new URL('../db/migrations/022_audit_events.sql', import.meta.url), 'utf8');
+  const migration = readFileSync(new URL('../db/migrations/024_audit_events.sql', import.meta.url), 'utf8');
   const schema = readFileSync(new URL('../db/schema.sql', import.meta.url), 'utf8');
   // The definition, without the prose: the two files explain the table to
   // different readers, so only the columns, indexes and keys have to match.

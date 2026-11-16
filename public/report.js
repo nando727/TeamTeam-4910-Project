@@ -35,6 +35,14 @@
   window.addEventListener('pageshow', idle);
 })();
 
+// Story AD-40: the invoice's print button. A file the content security policy
+// trusts, since an inline onclick would not run.
+(function () {
+  Array.prototype.forEach.call(document.querySelectorAll('[data-print]'), function (button) {
+    button.addEventListener('click', function () { window.print(); });
+  });
+})();
+
 // Chart tooltips (story AD-31): the same details on hover, focus, and tap. The
 // values are also on the chart or in the table under it, so this only adds
 // convenience. Text goes in with textContent because names are user data.

@@ -1,14 +1,14 @@
 <%- include('../partials/head', { title: 'Admin Home' }) %>
-  <section class="hero">
+  <section class="dash">
     <%- include('../partials/logo') %>
-    <div>
+    <div class="dash__text">
       <h1>Welcome, <%= user.username %></h1>
-      <p>You are signed in as an admin.</p>
+      <p>You are signed in as an admin. <span class="dash__chip">admin</span></p>
     </div>
   </section>
 
   <h2 class="section-title">Users</h2>
-  <div class="actions actions--2">
+  <div class="actions actions--3">
     <a class="action" href="/admin/create-user">
       <span class="action__icon"><%- include('../partials/icon', { name: 'user-plus' }) %></span>
       <span class="action__title">Create a user</span>
@@ -29,6 +29,11 @@
       <span class="action__title">Bulk upload</span>
       <span class="action__text">Load organizations, sponsor users, and drivers from a pipe-delimited file.</span>
     </a>
+    <a class="action" href="/admin/audit-log">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'clipboard-check' }) %></span>
+      <span class="action__title">Audit log</span>
+      <span class="action__text">Role changes, status changes, password resets, unlocks, and sponsorship changes.</span>
+    </a>
   </div>
 
   <h2 class="section-title">Sponsors</h2>
@@ -46,7 +51,7 @@
   </div>
 
   <h2 class="section-title">Reports</h2>
-  <div class="actions actions--2">
+  <div class="actions actions--3">
     <a class="action" href="/reports/points">
       <span class="action__icon"><%- include('../partials/icon', { name: 'chart' }) %></span>
       <span class="action__title">Driver point report</span>
@@ -66,6 +71,11 @@
       <span class="action__icon"><%- include('../partials/icon', { name: 'users' }) %></span>
       <span class="action__title">Sales by driver</span>
       <span class="action__text">Purchases for one driver or all of them, by sponsor and date, with charts and CSV export.</span>
+    </a>
+    <a class="action" href="/reports/invoices">
+      <span class="action__icon"><%- include('../partials/icon', { name: 'receipt' }) %></span>
+      <span class="action__title">Invoices</span>
+      <span class="action__text">A printable monthly invoice for each sponsor, with every purchase and the 1% fee due.</span>
     </a>
   </div>
 

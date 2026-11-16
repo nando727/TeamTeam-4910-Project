@@ -155,6 +155,8 @@ describe('processing the sample file', () => {
     expect(tokens).toHaveLength(4);
     expect(db.query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO users')).every(([, p]) => p[3] === '!no-password-set')).toBe(true);
     expect((t.match(/class="setup-link"/g) || []).length).toBe(4);
+    // With no email service connected each row says so, beside its link.
+    expect((t.match(/Not emailed: no email service/g) || []).length).toBe(4);
     expect(t).toContain('/setup/');
     // Story 4 contract: memberships for each driver.
     expect(memberships).toEqual([[103, 11], [104, 11], [105, 11]]);

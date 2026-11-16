@@ -82,8 +82,8 @@
 
     <% if (grand.sales === 0 && !error) { %>
       <div class="info" role="status">
-        <p><strong>No sales<%= rangeLabel %> for these filters.</strong></p>
-        <p>The report ran successfully and found no purchases matching <%= summary[0].value %>, <%= summary[1].value.toLowerCase() %>, <%= summary[2].value.toLowerCase() %>. Widen the date range or <a href="/reports/sales-by-driver">clear the filters</a> to see everything.</p>
+        <p><strong><%= emptyMessage.title %></strong></p>
+        <p><%= emptyMessage.detail %> Widen the date range or <a href="/reports/sales-by-driver">clear the filters</a> to see everything.</p>
       </div>
     <% } %>
 

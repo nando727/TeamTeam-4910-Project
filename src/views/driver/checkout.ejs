@@ -1,0 +1,46 @@
+<%- include('../partials/head', { title: 'Confirm your order' }) %>
+  <section class="card card--form">
+    <div class="page-header">
+      <span class="eyebrow">Rewards</span>
+      <h1>Confirm your order</h1>
+      <p class="lede">Check the items and the points once more. Nothing is bought until you confirm.</p>
+    </div>
+
+    <div class="table-wrap">
+      <table class="table" style="min-width: 0;">
+        <thead>
+          <tr><th scope="col">Item</th><th scope="col" class="num">Quantity</th><th scope="col" class="num">Points</th></tr>
+        </thead>
+        <tbody>
+          <% lines.forEach(line => { %>
+            <tr>
+              <td class="cell-strong"><%= line.title %></td>
+              <td class="num"><%= line.quantity %></td>
+              <td class="num"><%= points(line.lineTotal) %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+        <tfoot>
+          <tr><th scope="row" colspan="2">Total</th><td class="num"><%= points(total) %></td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="confirm-box confirm-box--purchase" role="region" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">Spend <%= points(total) %> with <%= sponsorName %>?</h2>
+      <dl class="details">
+        <dt>Balance now</dt><dd><%= points(balance) %></dd>
+        <dt>This order</dt><dd><%= points(total) %></dd>
+        <dt>Balance after</dt><dd><strong><%= points(after) %></strong></dd>
+      </dl>
+      <div class="button-row">
+        <form method="POST" action="/driver/cart/checkout" data-submit-once>
+          <input type="hidden" name="token" value="<%= token %>">
+          <input type="hidden" name="confirmId" value="<%= confirmId %>">
+          <button type="submit">Confirm and buy</button>
+        </form>
+        <a class="button-link" href="/driver/cart">Back to cart</a>
+      </div>
+    </div>
+  </section>
+<%- include('../partials/foot') %>

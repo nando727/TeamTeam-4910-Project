@@ -1,0 +1,91 @@
+<%- include('../partials/head', { title: 'Invoices' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Reports</span>
+      <h1>Invoices</h1>
+      <p class="lede">One invoice per sponsor for the month: every purchase their drivers made, and the <%= feePercent %>% program fee as the amount due. Open an invoice to print it or save it as a PDF.</p>
+      <dl class="report-summary" aria-label="Invoices cover">
+        <% summary.forEach(item => { %>
+          <div class="report-summary__item"><dt><%= item.label %></dt><dd><%= item.value %></dd></div>
+        <% }); %>
+      </dl>
+    </div>
+
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+    <form class="filters" method="GET" action="/reports/invoices" data-report-form>
+      <div class="filters__field">
+        <label for="month">Month</label>
+        <input id="month" name="month" type="month" value="<%= month %>" required>
+      </div>
+      <div class="filters__actions">
+        <button type="submit">Apply</button>
+      </div>
+    </form>
+    <p class="quick-ranges">
+      <span class="muted small">Months with purchases:</span>
+      <% months.forEach(m => { %>
+        <a class="chip<%= m.active ? ' is-active' : '' %>" href="/reports/invoices?month=<%= m.value %>"<%- m.active ? ' aria-current="true"' : '' %> data-busy="Loading invoices…"><%= m.label %></a>
+      <% }); %>
+    </p>
+    <p class="report-status" id="report-status" role="status" aria-live="polite" hidden>
+      <span class="spinner" aria-hidden="true"></span> <span class="report-status__text">Loading invoices…</span>
+    </p>
+
+    <% if (!error && !period.complete) { %>
+      <p class="info" role="status"><%= monthLabel %> is still in progress, so these invoices are not final. Purchases made before the month ends will be added.</p>
+    <% } %>
+
+    <div class="report-bar">
+      <span class="muted small"><%= rows.length %> invoice<%= rows.length === 1 ? '' : 's' %> for <%= monthLabel %>, <%= dollars(sum.feeCents) %> due in total</span>
+      <a class="button-link button--small" href="<%= csvHref %>" data-busy="Preparing the CSV download…" data-busy-reset="4000">Download CSV</a>
+    </div>
+
+    <% if (!error && rows.length === 0) { %>
+      <p class="info" role="status">There are no sponsors yet, so there is nobody to invoice.</p>
+    <% } else if (!error) { %>
+      <% if (sum.purchases === 0) { %>
+        <div class="info" role="status">
+          <p><strong>No purchases in <%= monthLabel %>.</strong></p>
+          <p>The report ran successfully. Every sponsor's invoice for this month is for $0.00. Pick another month to see one with purchases.</p>
+        </div>
+      <% } %>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Invoice</th>
+              <th scope="col">Sponsor</th>
+              <th scope="col">Status</th>
+              <th scope="col" class="num">Purchases</th>
+              <th scope="col" class="num">Purchase total</th>
+              <th scope="col" class="num">Amount due</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% rows.forEach(row => { %>
+              <tr<%- row.purchases === 0 ? ' class="is-muted"' : '' %>>
+                <td class="nowrap"><a href="/reports/invoices/<%= row.id %>?month=<%= month %>" data-busy="Opening the invoice…"><%= row.number %></a></td>
+                <td class="cell-strong"><%= row.name %></td>
+                <td><span class="status-badge status-<%= row.status %>"><%= row.status %></span></td>
+                <td class="num"><%= row.purchases %></td>
+                <td class="num"><%= dollars(row.totalCents) %></td>
+                <td class="num cell-strong"><%= dollars(row.feeCents) %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row" colspan="3">All sponsors</th>
+              <td class="num"><%= sum.purchases %></td>
+              <td class="num"><%= dollars(sum.totalCents) %></td>
+              <td class="num cell-strong"><%= dollars(sum.feeCents) %></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="hint">The amount due is the same <%= feePercent %>% fee the Sponsor fees page shows, calculated by the database.</p>
+    <% } %>
+  </section>
+  <script src="/report.js" defer></script>
+<%- include('../partials/foot') %>

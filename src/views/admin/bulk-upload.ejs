@@ -38,13 +38,13 @@
                   <td><span class="role-chip"><%= row.type %></span></td>
                   <td><span class="status-badge status-<%= row.status === 'created' ? 'active' : row.status === 'skipped' ? 'inactive' : 'revoked' %>"><%= row.status %></span></td>
                   <td><%= row.message %><% if (row.status === 'error') { %><br><code class="small muted"><%= row.raw %></code><% } %></td>
-                  <td><% if (row.setupLink) { %><input class="setup-link" type="text" readonly value="<%= row.setupLink %>" aria-label="Setup link for <%= row.username %>" onfocus="this.select()"><% } %></td>
+                  <td><% if (row.setupLink) { %><input class="setup-link" type="text" readonly value="<%= row.setupLink %>" aria-label="Setup link for <%= row.username %>" data-select-on-focus><br><span class="small mail-outcome--<%= row.mailKind %>"><%= row.mailKind === 'sent' ? 'Emailed' : row.mailKind === 'failed' ? 'Email failed: pass the link on' : 'Not emailed: no email service' %></span><% } %></td>
                 </tr>
               <% }); %>
             </tbody>
           </table>
         </div>
-        <p class="hint">Setup links are also written to the server log as emails. They work once and expire after the usual setup period.</p>
+        <p class="hint">Each row says whether its setup email went out. The links work once and expire after the usual setup period.</p>
       <% } %>
       <h2 class="section-title">Upload another file</h2>
     <% } %>

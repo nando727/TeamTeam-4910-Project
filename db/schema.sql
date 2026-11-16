@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS password_history (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
--- Every audit record in the app (see migration 022): login attempts, password
+-- Every audit record in the app (see migration 024): login attempts, password
 -- changes, point changes and application decisions, in one shape. The tables
 -- that do a job besides recording keep their own rows and append here as well;
 -- see the migration for why the audit log is not what the lockout counts.
@@ -243,6 +243,22 @@ CREATE TABLE IF NOT EXISTS audit_events (
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
 );
 
+-- Administrator actions on accounts (see migration 022): role changes, status
+-- changes, password resets, unlocks, and sponsorship changes. Never holds a
+-- password, a hash, or a token.
+CREATE TABLE IF NOT EXISTS admin_actions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  admin_user_id INT NULL,
+  target_user_id INT NULL,
+  action VARCHAR(32) NOT NULL,
+  detail VARCHAR(500) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_admin_actions_created (created_at),
+  INDEX idx_admin_actions_target (target_user_id, created_at),
+  FOREIGN KEY (admin_user_id) REFERENCES users(id),
+  FOREIGN KEY (target_user_id) REFERENCES users(id)
+);
+
 -- The 1% monthly fee each sponsor owes (see migration 018). Keep this text the
 -- same as the migration; tests/sponsor-fees.test.js checks that it is.
 DROP PROCEDURE IF EXISTS sponsor_monthly_fees;
@@ -259,3 +275,11 @@ CREATE PROCEDURE sponsor_monthly_fees(IN p_month_start DATE, IN p_sponsor_id INT
   WHERE p_sponsor_id IS NULL OR s.id = p_sponsor_id
   GROUP BY s.id, s.name, s.status
   ORDER BY s.name, s.id;
+
+-- No row means the default: 10 points per dollar.
+CREATE TABLE IF NOT EXISTS sponsor_point_rates (
+  sponsor_id INT PRIMARY KEY,
+  points_per_dollar INT NOT NULL DEFAULT 10,
+  FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
+  CHECK (points_per_dollar BETWEEN 1 AND 10000)
+);

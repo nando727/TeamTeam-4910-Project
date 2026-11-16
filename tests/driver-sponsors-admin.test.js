@@ -46,6 +46,10 @@ beforeEach(() => {
       return u ? [{ ...u, password_hash: passwordHash }] : [];
     }
     if (sql.includes('FROM users WHERE id')) return users.filter(u => u.id === params[0]).map(u => ({ ...u, name: null, email: null }));
+    // Sprint 9: Manage users is searched, filtered, counted, and paged, so the
+    // page reads a count, one page of accounts, and the sponsor filter list.
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM users u')) return [{ total: users.length }];
+    if (sql.startsWith('SELECT u.id, u.name, u.email, u.username, u.role, u.status')) return users;
     if (sql.includes('FROM users ORDER BY')) return users;
     if (sql.includes('FROM sponsors ORDER BY')) return sponsors;
     if (sql.startsWith('SELECT s.id, s.name, s.status, ds.point_balance AS balance')) {

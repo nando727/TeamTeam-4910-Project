@@ -7,6 +7,7 @@ import request from 'supertest';
 const require = createRequire(import.meta.url);
 const db = require('../src/db');
 const { app } = require('../src/app');
+const SPONSOR_OPTIONS = [{ id: 7, name: 'Northstar Freight', contactEmail: 'ops@northstar.test', status: 'active' }];
 const { hashPassword } = require('../src/auth/password');
 
 const PASSWORD = 'Password1!';
@@ -36,6 +37,11 @@ beforeEach(() => {
       return user ? [{ ...user, password_hash: passwordHash }] : [];
     }
     if (sql.includes('FROM users WHERE id')) return users.filter(u => u.id === params[0]).map(u => ({ ...u, name: null, email: null }));
+    // Sprint 9: Manage users is searched, filtered, counted, and paged, so the
+    // page reads a count, one page of accounts, and the sponsor filter list.
+    if (sql.startsWith('SELECT COUNT(*) AS total FROM users u')) return [{ total: users.length }];
+    if (sql.startsWith('SELECT u.id, u.name, u.email, u.username, u.role, u.status')) return users;
+    if (sql.startsWith('SELECT id, name, contact_email AS contactEmail')) return SPONSOR_OPTIONS;
     if (sql.includes('FROM users ORDER BY')) return users;
     if (sql.startsWith('SELECT s.id')) return [];
     if (sql.includes('FROM sponsor_applications')) { applicationQueries.push(params); return []; }
@@ -151,7 +157,7 @@ describe('AD-10: acting as a sponsor user', () => {
     await agent.post('/admin/impersonate/2').type('form').send({ token, from: 'manage-users' }).expect(303);
     const home = await agent.get('/').expect(200);
     expect(home.text).toContain('You are acting as <strong>sponsor1</strong> (sponsor)');
-    expect(home.text).toContain('Driver Applications');
+    expect(home.text).toContain('Driver applications');
     // The applications query runs for sponsor1's organization, not for null.
     expect(applicationQueries.pop()).toEqual([1]);
     const report = await agent.get('/reports/points').expect(200);

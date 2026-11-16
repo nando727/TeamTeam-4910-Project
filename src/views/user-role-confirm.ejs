@@ -1,0 +1,50 @@
+<%- include('partials/head', { title: 'Confirm role change' }) %>
+  <section class="card card--form">
+    <div class="page-header">
+      <span class="eyebrow">Administration</span>
+      <h1>Confirm role change</h1>
+      <p class="lede">A role change removes what belonged to the old role. Everything it will remove is listed below.</p>
+    </div>
+    <dl class="details">
+      <dt>Username</dt><dd><%= user.username %></dd>
+      <dt>Name</dt><dd><%= user.name || '—' %></dd>
+      <dt>Current role</dt><dd><span class="role-chip"><%= impact.from %></span></dd>
+      <dt>New role</dt><dd><span class="role-chip"><%= impact.to %></span></dd>
+    </dl>
+
+    <div class="confirm-box" role="region" aria-labelledby="removes-title">
+      <h2 id="removes-title">What this removes</h2>
+      <% if (impact.removes.length === 0) { %>
+        <p>Nothing. This account has nothing tied to the <%= impact.from %> role, so only the role itself changes.</p>
+      <% } else { %>
+        <ul class="recovery">
+          <% impact.removes.forEach(item => { %>
+            <li><%= item.text %></li>
+          <% }); %>
+        </ul>
+        <p class="muted small">This cannot be undone. Making them a <%= impact.from %> again would start them over with nothing.</p>
+      <% } %>
+    </div>
+
+    <h2 class="section-title">What stays</h2>
+    <ul class="recovery">
+      <% impact.keeps.forEach(item => { %>
+        <li><%= item %></li>
+      <% }); %>
+    </ul>
+
+    <% if (impact.to === 'sponsor') { %>
+      <p class="info" role="status">A sponsor user acts for one organization, and this change does not set one. Until an administrator links them to an organization, they will be able to sign in but will see no applications, drivers, or reports.</p>
+    <% } %>
+    <p class="hint"><%= user.username %> will be signed out of every device, so the new role applies the next time they sign in.</p>
+
+    <form action="/admin/manage-users/<%= user.id %>/role/confirm" method="POST">
+      <input type="hidden" name="token" value="<%= token %>">
+      <input type="hidden" name="confirmId" value="<%= draft.confirmId %>">
+      <div class="button-row">
+        <button type="submit" class="button--danger">Confirm: make <%= user.username %> a <%= impact.to %></button>
+        <a class="button-link" href="<%= draft.returnTo || '/admin/manage-users' %>">Cancel</a>
+      </div>
+    </form>
+  </section>
+<%- include('partials/foot') %>
