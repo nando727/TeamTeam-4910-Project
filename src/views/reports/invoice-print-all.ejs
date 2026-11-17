@@ -1,0 +1,45 @@
+<%- include('../partials/head', { title: `Invoices for ${monthLabel}` }) %>
+  <% if (error) { %>
+    <section class="card">
+      <span class="eyebrow">Reports</span>
+      <h1>Invoices</h1>
+      <p class="error" role="alert"><%= error %></p>
+      <p><a href="<%= backHref %>">&larr; All invoices</a></p>
+    </section>
+  <% } else { %>
+  <div class="invoice-toolbar no-print">
+    <div>
+      <a href="<%= backHref %>">&larr; All invoices for <%= monthLabel %></a>
+      <p class="muted small" style="margin: 4px 0 0;">
+        <%= invoices.length %> invoice<%= invoices.length === 1 ? '' : 's' %> for <%= monthLabel %>, <%= dollars(due) %> due in total.
+        Each one starts on its own printed page. Sponsors with no purchases this month are not billed and are not here.
+      </p>
+    </div>
+    <span class="invoice-toolbar__actions">
+      <button type="button" class="button--small" data-print>Print or save as PDF</button>
+    </span>
+  </div>
+  <% if (!period.complete) { %>
+    <p class="info no-print" role="status"><strong>Not final.</strong> <%= monthLabel %> is still in progress, so purchases made before it ends will be added to these invoices.</p>
+  <% } %>
+
+  <% if (invoices.length === 0) { %>
+    <section class="card">
+      <div class="info" role="status">
+        <p><strong>No purchases in <%= monthLabel %>.</strong></p>
+        <p>No sponsor's drivers bought anything, so there is nothing to bill and nothing to print.</p>
+      </div>
+    </section>
+  <% } %>
+  <% invoices.forEach(invoice => { %>
+    <div class="invoice-sheet">
+      <%- include('../partials/invoice-sheet', {
+        number: invoice.number, issuer, period, monthLabel,
+        sponsor: invoice.sponsor, items: invoice.items, totals: invoice.totals,
+        drivers: invoice.drivers, consistent: invoice.consistent, feePercent, formatStamp, dollars,
+      }) %>
+    </div>
+  <% }); %>
+  <% } %>
+  <script src="/report.js" defer></script>
+<%- include('../partials/foot') %>

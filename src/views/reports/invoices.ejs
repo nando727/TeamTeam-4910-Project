@@ -38,7 +38,10 @@
 
     <div class="report-bar">
       <span class="muted small"><%= rows.length %> invoice<%= rows.length === 1 ? '' : 's' %> for <%= monthLabel %>, <%= dollars(sum.feeCents) %> due in total</span>
-      <a class="button-link button--small" href="<%= csvHref %>" data-busy="Preparing the CSV download…" data-busy-reset="4000">Download CSV</a>
+      <span class="invoice-toolbar__actions">
+        <a class="button-link button--small" href="<%= csvHref %>" data-busy="Preparing the CSV download…" data-busy-reset="4000">Download CSV</a>
+        <a class="button-link button--small" href="/reports/invoices/print?month=<%= month %>" data-busy="Preparing every invoice…" data-busy-reset="4000">Print all invoices</a>
+      </span>
     </div>
 
     <% if (!error && rows.length === 0) { %>

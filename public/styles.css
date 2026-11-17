@@ -926,11 +926,22 @@ p.mail-outcome--logged { background: var(--gray-bg); }
 @media print {
   /* Paper is always white, so the daylight tokens are forced here: a page
      printed while the night palette is on would otherwise come out as pale
-     text on white. Invoices are printed, so this matters. */
-  :root {
+     text on white. Invoices are printed, so this matters.
+
+     The selector list is the fix for a bug this actually had: the night
+     palette lives on :root[data-theme="dark"] and on
+     :root:not([data-theme="light"]) inside the dark media query, both more
+     specific than a plain :root -- so a dark page printed dark. Repeating
+     the block under those same selectors, later in the file, outranks them
+     in every combination of toggle choice and system setting. */
+  :root, :root:not([data-theme="light"]), :root[data-theme="dark"] {
     --bg: var(--paper); --canvas-glow: var(--paper); --surface: var(--paper); --surface-muted: var(--paper);
-    --row-hover: var(--paper); --text: #1a2430; --muted: #4a5663;
+    --row-hover: var(--paper); --image-bg: var(--paper); --text: #1a2430; --muted: #4a5663; --heading: #12293f;
     --border: #c9d1db; --border-strong: #9aa6b4; --navy: #12293f; --blue: #1c5aa0;
+    --green: #27764a; --green-bg: var(--paper); --green-border: #9aa6b4; --green-text: #1d5c39;
+    --red: #b2453f; --red-bg: var(--paper); --red-border: #9aa6b4;
+    --gray: #4a5663; --gray-bg: var(--paper); --gray-border: #9aa6b4;
+    --info-text: #1d4a7a; --info-border: #9aa6b4; --blue-soft: var(--paper);
   }
   .site-header, .site-footer, .skip-link, .session-warning, .no-print, .report-status, .theme-toggle, .mini-cart { display: none !important; }
   body { background: var(--paper); background-image: none; }
@@ -938,6 +949,11 @@ p.mail-outcome--logged { background: var(--gray-bg); }
   .invoice .table-wrap { overflow: visible; }
   .invoice .table th, .invoice .table td { padding: 6px 8px; }
   .invoice tr { break-inside: avoid; }
+  /* Chrome repeats a table footer at the bottom of every printed page the
+     table spans, so an invoice longer than a sheet showed "Amount due" under
+     its first purchase, with more still to come. As an ordinary row group
+     the totals print once, after the last line, where a reader looks. */
+  .invoice tfoot { display: table-row-group; }
   a { color: inherit; text-decoration: none; }
 }
 @page { margin: 16mm; }
@@ -1106,4 +1122,22 @@ html.theme-ready .theme-toggle {
 }
 @media (max-width: 720px) {
   .mini-cart { right: 12px; bottom: 12px; }
+}
+
+/* ---- Invoices: print-all and the email preview (sprint 9) -------------------- */
+
+/* Story AD-41: one page, every invoice, each on its own printed sheet. */
+.invoice-sheet + .invoice-sheet { margin-top: 28px; }
+@media print {
+  .invoice-sheet + .invoice-sheet { break-before: page; margin-top: 0; }
+}
+
+/* Story AD-46: the email shown exactly as it will arrive, so confirming it
+   means having read it. Monospace because the email itself relies on it. */
+.email-preview {
+  margin: 8px 0 12px; padding: 14px 16px; overflow-x: auto;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-muted); color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem; line-height: 1.5; white-space: pre;
 }

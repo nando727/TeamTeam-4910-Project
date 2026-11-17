@@ -17,6 +17,7 @@ const EVENT_TYPES = {
   'sponsorship.added': { label: 'Sponsorship added', category: 'accounts', stored: true },
   'sponsorship.removed': { label: 'Sponsorship removed', category: 'accounts', stored: true },
   'account.unlocked': { label: 'Sign-in unlocked', category: 'accounts' },
+  'invoice.emailed': { label: 'Invoice emailed', category: 'billing', stored: true },
   unknown: { label: 'Other', category: 'other', stored: true },
 };
 
@@ -27,6 +28,7 @@ const CATEGORIES = {
   points: 'Point changes',
   applications: 'Driver applications',
   accounts: 'Account changes',
+  billing: 'Billing',
   other: 'Other',
 };
 

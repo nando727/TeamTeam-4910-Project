@@ -15,6 +15,11 @@ const {
   readDateRange, rangeLabel, datesSummary, quickRangeLinks, sendCsv,
 } = require('./helpers');
 const { niceStep, buildRankedBars, buildTimeColumns } = require('./charts');
+const { apportionDriverFees } = require('./invoice-drivers');
+const { invoiceEmailSubject, invoiceEmailText, looksLikePlaceholder } = require('./invoice-email');
+const { formToken, requireFormToken } = require('../auth/form-token');
+const { sendMail } = require('../mail/mailer');
+const { recordEvent } = require('../audit/log');
 
 const router = express.Router();
 
@@ -354,13 +359,12 @@ router.get('/invoices.csv', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// One invoice: the sponsor, the month, the line items, and the amount due.
-async function loadInvoice(req) {
-  const { month, problems } = resolveInvoiceMonth(req);
-  const sponsorId = positiveInt(req.params.sponsorId);
-  if (problems.length) return { month, problems, status: 400 };
+// One sponsor's invoice for one month: who it bills, the line items, the
+// per-driver fee split (story AD-43), and the amount due from the procedure.
+// Shared by the invoice page, its CSV, the print-all view, and the email.
+async function buildInvoice(month, sponsorId) {
   const sponsor = sponsorId ? await invoiceSponsor(sponsorId) : null;
-  if (!sponsor) return { month, problems: ['There is no sponsor with that id.'], status: 404 };
+  if (!sponsor) return null;
   const [fee, items] = await Promise.all([sponsorMonthlyFee(month, sponsor.id), invoiceLineItems(month, sponsor.id)]);
   const totals = {
     purchases: Number(fee ? fee.purchases : 0), totalCents: Number(fee ? fee.totalCents : 0), feeCents: Number(fee ? fee.feeCents : 0),
@@ -370,8 +374,132 @@ async function loadInvoice(req) {
   // between the two reads they can differ, and the invoice says so.
   const itemsCents = items.reduce((acc, item) => acc + Number(item.amountCents), 0);
   const consistent = itemsCents === totals.totalCents && items.length === totals.purchases;
-  return { month, problems: [], sponsor, items, totals, consistent, status: 200 };
+  return {
+    sponsor, items, totals, consistent, number: invoiceNumber(month, sponsor.id),
+    drivers: apportionDriverFees(items, totals.feeCents),
+  };
 }
+
+async function loadInvoice(req) {
+  const { month, problems } = resolveInvoiceMonth(req);
+  if (problems.length) return { month, problems, status: 400 };
+  const invoice = await buildInvoice(month, positiveInt(req.params.sponsorId));
+  if (!invoice) return { month, problems: ['There is no sponsor with that id.'], status: 404 };
+  return { month, problems: [], status: 200, ...invoice };
+}
+
+// What the app itself knows about the issuer, for the page and the email.
+async function invoiceIssuer() {
+  const about = await getAbout().catch(() => null);
+  return (about && about.team_name) || 'Good Driver Incentive Program';
+}
+
+// ---- Every invoice at once (story AD-41) ------------------------------------
+// One page holding every sponsor's complete invoice for the month, each
+// starting on its own printed sheet, so a whole billing run is one print.
+// Sponsors with no purchases that month are left out: a $0 invoice bills
+// nothing and buries the ones that do. Registered before the :sponsorId
+// routes, which would otherwise read "print" as a sponsor id.
+
+router.get('/invoices/print', async (req, res, next) => {
+  try {
+    if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
+    const { month, problems } = resolveInvoiceMonth(req);
+    const period = invoicePeriod(month);
+    const issuer = await invoiceIssuer();
+    let invoices = [];
+    if (!problems.length) {
+      const billable = (await monthlySponsorFees(month)).filter(row => Number(row.purchases) > 0);
+      // One sponsor at a time, in the list's own order. A handful of
+      // organizations, two queries each: clarity over cleverness.
+      for (const row of billable) {
+        const invoice = await buildInvoice(month, Number(row.id));
+        if (invoice) invoices.push(invoice);
+      }
+    }
+    const due = invoices.reduce((sum, invoice) => sum + invoice.totals.feeCents, 0);
+    res.status(problems.length ? 400 : 200).render('reports/invoice-print-all', {
+      error: problems.join(' ') || null, month, monthLabel: monthLabel(month), period, issuer,
+      invoices, due, feePercent: FEE_PERCENT, backHref: `/reports/invoices?month=${month}`,
+      formatStamp, dollars,
+    });
+  } catch (err) { next(err); }
+});
+
+// ---- Emailing an invoice (story AD-46) --------------------------------------
+// A confirm page first: who it goes to, what it says, and a warning when the
+// address is a documentation-reserved placeholder. Only the confirmed POST
+// sends, through sendMail exactly as it is -- a dead mail server is a logged
+// failure and an unconfigured one writes the mail to the server log, and the
+// outcome is reported either way, in the same spirit as the setup-link flow.
+
+async function loadEmailContext(req) {
+  const invoice = await loadInvoice(req);
+  if (invoice.problems.length) return { invoice };
+  const issuer = await invoiceIssuer();
+  const label = monthLabel(invoice.month);
+  const context = {
+    number: invoice.number, issuer, monthLabel: label, period: invoicePeriod(invoice.month),
+    sponsor: invoice.sponsor, drivers: invoice.drivers, items: invoice.items, totals: invoice.totals,
+    feePercent: FEE_PERCENT, dollars, formatStamp,
+  };
+  return {
+    invoice, issuer,
+    subject: invoiceEmailSubject({ number: invoice.number, issuer, monthLabel: label }),
+    text: invoiceEmailText(context),
+    placeholder: looksLikePlaceholder(invoice.sponsor.contactEmail),
+  };
+}
+
+router.get('/invoices/:sponsorId/email', async (req, res, next) => {
+  try {
+    if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
+    const { invoice, subject, text, placeholder } = await loadEmailContext(req);
+    if (invoice.problems.length) return res.status(invoice.status).type('text/plain').send(invoice.problems.join(' '));
+    res.render('reports/invoice-email', {
+      invoice, subject, text, placeholder, monthLabel: monthLabel(invoice.month),
+      token: formToken(req), dollars,
+      invoiceHref: `/reports/invoices/${invoice.sponsor.id}?month=${invoice.month}`,
+    });
+  } catch (err) { next(err); }
+});
+
+router.post('/invoices/:sponsorId/email', requireFormToken, async (req, res, next) => {
+  try {
+    if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
+    const { invoice, subject, text } = await loadEmailContext(req);
+    if (invoice.problems.length) return res.status(invoice.status).type('text/plain').send(invoice.problems.join(' '));
+
+    const mail = await sendMail({ to: invoice.sponsor.contactEmail, subject, text });
+    let outcome;
+    let notice;
+    if (mail.skipped) {
+      outcome = 'failed';
+      notice = { kind: 'error', text: `${invoice.sponsor.name} has no usable email address on file, so nothing was sent.` };
+    } else if (!mail.delivered) {
+      outcome = 'failed';
+      notice = { kind: 'error', text: `The email to ${mail.to} could not be sent. The invoice is unchanged; try again, or send the saved PDF yourself.` };
+    } else if (mail.transport === 'smtp') {
+      outcome = 'sent';
+      notice = { kind: 'success', text: `Invoice ${invoice.number} was emailed to ${mail.to}.` };
+    } else {
+      outcome = 'written to the server log';
+      notice = { kind: 'info', text: `No email service is connected here, so invoice ${invoice.number} was written to the server log instead of being sent to ${mail.to}.` };
+    }
+
+    // Billing went out (or visibly did not): both belong in the audit log.
+    // Not tied to a user account; the sponsor is named in the detail.
+    await recordEvent({
+      type: 'invoice.emailed',
+      actorId: req.session.impersonator ? req.session.impersonator.id : req.session.user.id,
+      sponsorId: invoice.sponsor.id,
+      detail: `${invoice.number} for ${invoice.sponsor.name} (${monthLabel(invoice.month)}) to ${invoice.sponsor.contactEmail}: ${outcome}`,
+    });
+
+    req.session.invoiceNotice = notice;
+    res.redirect(303, `/reports/invoices/${invoice.sponsor.id}?month=${invoice.month}`);
+  } catch (err) { next(err); }
+});
 
 // Registered before the page route, which would otherwise take "2.csv" as an id.
 router.get('/invoices/:sponsorId.csv', async (req, res, next) => {
@@ -395,13 +523,16 @@ router.get('/invoices/:sponsorId', async (req, res, next) => {
   try {
     if (req.session.user.role !== 'admin') return denyAccess(req, res, { needs: 'admin' });
     const invoice = await loadInvoice(req);
-    const about = await getAbout().catch(() => null);
+    // One-shot: what happened to the email this invoice page sent.
+    const notice = req.session.invoiceNotice || null;
+    delete req.session.invoiceNotice;
     res.status(invoice.status).render('reports/invoice', {
-      ...invoice, error: invoice.problems.join(' ') || null,
-      number: invoice.sponsor ? invoiceNumber(invoice.month, invoice.sponsor.id) : null,
+      ...invoice, error: invoice.problems.join(' ') || null, notice,
+      number: invoice.sponsor ? invoice.number : null,
       period: invoicePeriod(invoice.month), monthLabel: monthLabel(invoice.month),
-      issuer: (about && about.team_name) || 'Good Driver Incentive Program', feePercent: FEE_PERCENT,
+      issuer: await invoiceIssuer(), feePercent: FEE_PERCENT,
       csvHref: invoice.sponsor ? `/reports/invoices/${invoice.sponsor.id}.csv?month=${invoice.month}` : null,
+      emailHref: invoice.sponsor ? `/reports/invoices/${invoice.sponsor.id}/email?month=${invoice.month}` : null,
       backHref: `/reports/invoices?month=${invoice.month}`,
       formatStamp, dollars,
     });

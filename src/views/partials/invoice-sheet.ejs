@@ -1,0 +1,126 @@
+<%# One sponsor's invoice, the whole card: header, bill-to, the per-driver fee
+    split (story AD-43), the purchase line items, and the totals. Shared by
+    the single-invoice page and the print-all view (story AD-41), so the two
+    can never drift apart. Needs: number, issuer, period, monthLabel, sponsor,
+    items, totals, drivers, consistent, feePercent, formatStamp, dollars. %>
+<article class="card invoice" aria-labelledby="invoice-title-<%= sponsor.id %>">
+  <header class="invoice__head">
+    <div>
+      <span class="eyebrow">Good Driver Incentive Program</span>
+      <h1 id="invoice-title-<%= sponsor.id %>">Invoice <%= number %></h1>
+      <p class="muted">From <%= issuer %></p>
+    </div>
+    <dl class="invoice__meta">
+      <dt>Invoice</dt><dd><%= number %></dd>
+      <dt>Billing period</dt><dd><%= period.label %></dd>
+      <dt>Issued</dt><dd><%= period.issued %></dd>
+      <dt>Amount due</dt><dd class="invoice__due"><%= dollars(totals.feeCents) %></dd>
+    </dl>
+  </header>
+
+  <% if (!period.complete) { %>
+    <p class="info" role="status"><strong>Not final.</strong> <%= monthLabel %> is still in progress, so purchases made before it ends will be added to this invoice.</p>
+  <% } %>
+  <% if (!consistent) { %>
+    <p class="error" role="alert">A purchase was recorded while this invoice was being prepared, so the line items and the total do not match. Reload the page.</p>
+  <% } %>
+
+  <section class="invoice__parties">
+    <div>
+      <h2 class="section-title">Bill to</h2>
+      <p class="invoice__party">
+        <strong><%= sponsor.name %></strong><% if (sponsor.status !== 'active') { %> <span class="status-badge status-<%= sponsor.status %>"><%= sponsor.status %></span><% } %><br>
+        <%= sponsor.address %><br>
+        <%= sponsor.contactEmail %><% if (sponsor.contactPhone) { %><br><%= sponsor.contactPhone %><% } %>
+      </p>
+    </div>
+    <div>
+      <h2 class="section-title">What this covers</h2>
+      <p class="invoice__party">The program fee of <%= feePercent %>% on the points purchases <%= sponsor.name %>'s drivers made during <%= monthLabel %>, rounded to the cent.</p>
+    </div>
+  </section>
+
+  <% if (items.length) { %>
+    <h2 class="section-title">Fee by driver</h2>
+    <div class="table-wrap">
+      <table class="table invoice__lines">
+        <thead>
+          <tr>
+            <th scope="col">Driver</th>
+            <th scope="col" class="num">Purchases</th>
+            <th scope="col" class="num">Purchase total</th>
+            <th scope="col" class="num">Fee (<%= feePercent %>%)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% drivers.forEach(driver => { %>
+            <tr>
+              <td class="cell-strong"><%= driver.driverName %><% if (driver.driverName !== driver.driverUsername) { %> <span class="muted small">(<%= driver.driverUsername %>)</span><% } %></td>
+              <td class="num"><%= driver.purchases %></td>
+              <td class="num"><%= dollars(driver.totalCents) %></td>
+              <td class="num"><%= dollars(driver.feeCents) %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">All drivers</th>
+            <td class="num"><%= totals.purchases %></td>
+            <td class="num"><%= dollars(totals.totalCents) %></td>
+            <td class="num cell-strong"><%= dollars(totals.feeCents) %></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <p class="hint">Each driver's fee is <%= feePercent %>% of their own purchases. Odd cents are spread across the drivers, so the fees above sum exactly to the amount due.</p>
+  <% } %>
+
+  <h2 class="section-title">Purchases</h2>
+  <% if (items.length === 0) { %>
+    <div class="info" role="status">
+      <p><strong>No purchases in <%= monthLabel %>.</strong></p>
+      <p>The invoice ran successfully. <%= sponsor.name %>'s drivers bought nothing this month, so nothing is due.</p>
+    </div>
+  <% } %>
+  <div class="table-wrap">
+    <table class="table invoice__lines">
+      <thead>
+        <tr>
+          <th scope="col">Date (UTC)</th>
+          <th scope="col">Driver</th>
+          <th scope="col">Item</th>
+          <th scope="col" class="num">Points</th>
+          <th scope="col" class="num">Amount</th>
+        </tr>
+      </thead>
+      <% if (items.length) { %>
+        <tbody>
+          <% items.forEach(item => { %>
+            <tr>
+              <td class="nowrap"><%= formatStamp(item.purchasedAt) %></td>
+              <td><%= item.driverName %></td>
+              <td><%= item.item %></td>
+              <td class="num"><%= Number(item.points).toLocaleString('en-US') %></td>
+              <td class="num"><%= dollars(item.amountCents) %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      <% } %>
+      <tfoot>
+        <tr>
+          <th scope="row" colspan="3">Purchases subtotal, <%= totals.purchases %> purchase<%= totals.purchases === 1 ? '' : 's' %></th>
+          <td class="num"><%= totals.points.toLocaleString('en-US') %></td>
+          <td class="num"><%= dollars(totals.totalCents) %></td>
+        </tr>
+        <tr>
+          <th scope="row" colspan="4">Program fee, <%= feePercent %>% of purchases</th>
+          <td class="num"><%= dollars(totals.feeCents) %></td>
+        </tr>
+        <tr class="invoice__total">
+          <th scope="row" colspan="4">Amount due</th>
+          <td class="num"><%= dollars(totals.feeCents) %></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</article>
