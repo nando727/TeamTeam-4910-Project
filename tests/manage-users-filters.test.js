@@ -61,7 +61,8 @@ describe('the list', () => {
     const agent = await admin();
     const page = await agent.get('/admin/manage-users').expect(200);
     expect(page.text).toContain('Theo Trucker');
-    expect(page.text).toContain('theo@example.com');
+    // a long email breaks before its @, not mid-word
+    expect(page.text).toContain('href="mailto:theo@example.com">theo<wbr>@example.com</a>');
     expect(page.text).toContain('Northstar Freight');
     expect(page.text).toContain('name="q"');
     expect(page.text).toContain('<option value="driver" >driver</option>');

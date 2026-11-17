@@ -185,8 +185,9 @@ test('the list names and identifies each account, then its controls', async () =
   const agent = await login('admin1');
   const { page } = await loadList(agent);
 
-  // Sprint 9 added Name, Email, and Sponsor so an account can be found, and
-  // made Role a control rather than a label.
+  // name, username and email share the account cell, so the table fits without scrolling
   const headers = [...page.text.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map(m => m[1]);
-  expect(headers).toEqual(['Name', 'Username', 'Email', 'Sponsor', 'Role', 'Status', 'Password', 'Sponsors', 'Impersonate']);
+  expect(headers).toEqual(['Account', 'Sponsors', 'Role', 'Status', 'Actions']);
+  // role and status submit when picked, the buttons stay for a browser without JS
+  expect(page.text.match(/data-autosubmit/g).length).toBeGreaterThanOrEqual(2);
 });

@@ -86,24 +86,30 @@
         <table class="table table--users">
           <thead>
             <tr>
-              <th scope="col">Name</th>
-              <th scope="col">Username</th>
-              <th scope="col">Email</th>
-              <th scope="col">Sponsor</th>
+              <th scope="col">Account</th>
+              <th scope="col">Sponsors</th>
               <th scope="col">Role</th>
               <th scope="col">Status</th>
-              <th scope="col">Password</th>
-              <th scope="col">Sponsors</th>
-              <th scope="col">Impersonate</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
             <% users.forEach(user => { %>
               <tr>
-                <td class="cell-strong"><%= user.name || '—' %><% if (user.id === currentUserId) { %> <span class="muted small">(you)</span><% } %></td>
-                <td><%= user.username %></td>
-                <td class="cell-email"><% if (user.email) { %><a href="mailto:<%= user.email %>"><%= user.email %></a><% } else { %><span class="muted small">—</span><% } %></td>
-                <td><% if (user.sponsorNames) { %><%= user.sponsorNames %><% } else { %><span class="muted small">—</span><% } %></td>
+                <td class="cell-strong">
+                  <%= user.name || user.username %><% if (user.id === currentUserId) { %> <span class="muted small">(you)</span><% } %>
+                  <% if (user.name) { %><span class="cell-sub muted small"><%= user.username %></span><% } %>
+                  <%# a long email breaks before its @, not mid-word %>
+                  <% if (user.email) { const at = user.email.lastIndexOf('@'); %>
+                    <a class="cell-sub small" href="mailto:<%= user.email %>"><% if (at > 0) { %><%= user.email.slice(0, at) %><wbr><%= user.email.slice(at) %><% } else { %><%= user.email %><% } %></a>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (user.sponsorNames) { %><%= user.sponsorNames %><% } else { %><span class="muted small">—</span><% } %>
+                  <% if (user.role === 'driver') { %>
+                    <p class="cell-note"><a class="small" href="/admin/manage-users/<%= user.id %>/sponsors">Edit sponsors</a></p>
+                  <% } %>
+                </td>
                 <td>
                   <%# The dropdown shows the current role and is the way to change it. %>
                   <% if (user.id === currentUserId) { %>
@@ -114,7 +120,7 @@
                       <input type="hidden" name="token" value="<%= token %>">
                       <%- include('partials/manage-filters', { state }) %>
                       <label for="role-<%= user.id %>" class="sr-only">Role for <%= user.username %></label>
-                      <select class="status-select" id="role-<%= user.id %>" name="role">
+                      <select class="status-select" id="role-<%= user.id %>" name="role" data-autosubmit>
                         <% roles.forEach(role => { %>
                           <option value="<%= role %>" <%= role === user.role ? 'selected' : '' %>><%= role %></option>
                         <% }); %>
@@ -128,7 +134,7 @@
                     <input type="hidden" name="token" value="<%= token %>">
                     <%- include('partials/manage-filters', { state }) %>
                     <label for="status-<%= user.id %>" class="sr-only">Status for <%= user.username %></label>
-                    <select class="status-select status-<%= user.status %>" id="status-<%= user.id %>" name="status">
+                    <select class="status-select status-<%= user.status %>" id="status-<%= user.id %>" name="status" data-autosubmit>
                       <% statuses.forEach(status => { %>
                         <option value="<%= status %>" <%= status === user.status ? 'selected' : '' %>><%= status %></option>
                       <% }); %>
@@ -145,35 +151,26 @@
                   <% } %>
                 </td>
                 <td>
-                  <% if (user.awaitingSetup) { %>
-                    <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/setup-link">
-                      <input type="hidden" name="token" value="<%= token %>">
-                      <%- include('partials/manage-filters', { state }) %>
-                      <button type="submit" class="button--small">Send new link</button>
-                    </form>
-                  <% } else if (user.id === currentUserId) { %>
-                    <a class="button-link button--small" href="/profile/password">Change</a>
-                  <% } else { %>
-                    <a class="button-link button--small" href="/admin/manage-users/<%= user.id %>/password?from=manage-users">Reset</a>
-                  <% } %>
-                </td>
-                <td>
-                  <% if (user.role === 'driver') { %>
-                    <a class="button-link button--small" href="/admin/manage-users/<%= user.id %>/sponsors">Sponsors</a>
-                  <% } else { %>
-                    <span class="muted small">—</span>
-                  <% } %>
-                </td>
-                <td>
-                  <% if (user.role !== 'admin') { %>
-                    <form class="status-form" method="POST" action="/admin/impersonate/<%= user.id %>">
-                      <input type="hidden" name="token" value="<%= token %>">
-                      <%- include('partials/manage-filters', { state }) %>
-                      <button type="submit" class="button--small">Sign in as</button>
-                    </form>
-                  <% } else { %>
-                    <span class="muted small">Not available</span>
-                  <% } %>
+                  <div class="cell-actions">
+                    <% if (user.awaitingSetup) { %>
+                      <form class="status-form" method="POST" action="/admin/manage-users/<%= user.id %>/setup-link">
+                        <input type="hidden" name="token" value="<%= token %>">
+                        <%- include('partials/manage-filters', { state }) %>
+                        <button type="submit" class="button--small">Send new link</button>
+                      </form>
+                    <% } else if (user.id === currentUserId) { %>
+                      <a class="button-link button--small" href="/profile/password">Change password</a>
+                    <% } else { %>
+                      <a class="button-link button--small" href="/admin/manage-users/<%= user.id %>/password?from=manage-users">Reset password</a>
+                    <% } %>
+                    <% if (user.role !== 'admin') { %>
+                      <form class="status-form" method="POST" action="/admin/impersonate/<%= user.id %>">
+                        <input type="hidden" name="token" value="<%= token %>">
+                        <%- include('partials/manage-filters', { state }) %>
+                        <button type="submit" class="button--small">Sign in as</button>
+                      </form>
+                    <% } %>
+                  </div>
                 </td>
               </tr>
             <% }); %>
