@@ -47,6 +47,8 @@ erDiagram
                    varchar detail
                    timestamp occurred_at }
                 %% migration 024: password changes, application decisions and account changes
+                %% migration 025: triggers refuse UPDATE and DELETE on audit_events, login_attempts,
+                %% point_transactions and login_unlocks
     about { int id PK
             varchar team_name
             varchar app_version }
