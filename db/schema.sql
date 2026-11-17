@@ -266,3 +266,30 @@ CREATE TABLE IF NOT EXISTS sponsor_point_rates (
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id),
   CHECK (points_per_dollar BETWEEN 1 AND 10000)
 );
+
+-- aa-58 audit rows can't be changed or deleted (see migration 025), keep this
+-- text the same as the migration
+DROP TRIGGER IF EXISTS audit_events_no_update;
+CREATE TRIGGER audit_events_no_update BEFORE UPDATE ON audit_events FOR EACH ROW
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit rows cannot be changed (audit_events)';
+DROP TRIGGER IF EXISTS audit_events_no_delete;
+CREATE TRIGGER audit_events_no_delete BEFORE DELETE ON audit_events FOR EACH ROW
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit rows cannot be deleted (audit_events)';
+DROP TRIGGER IF EXISTS login_attempts_no_update;
+CREATE TRIGGER login_attempts_no_update BEFORE UPDATE ON login_attempts FOR EACH ROW
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit rows cannot be changed (login_attempts)';
+DROP TRIGGER IF EXISTS login_attempts_no_delete;
+CREATE TRIGGER login_attempts_no_delete BEFORE DELETE ON login_attempts FOR EACH ROW
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit rows cannot be deleted (login_attempts)';
+DROP TRIGGER IF EXISTS point_transactions_no_update;
+CREATE TRIGGER point_transactions_no_update BEFORE UPDATE ON point_transactions FOR EACH ROW
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit rows cannot be changed (point_transactions)';
+DROP TRIGGER IF EXISTS point_transactions_no_delete;
+CREATE TRIGGER point_transactions_no_delete BEFORE DELETE ON point_transactions FOR EACH ROW
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit rows cannot be deleted (point_transactions)';
+DROP TRIGGER IF EXISTS login_unlocks_no_update;
+CREATE TRIGGER login_unlocks_no_update BEFORE UPDATE ON login_unlocks FOR EACH ROW
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit rows cannot be changed (login_unlocks)';
+DROP TRIGGER IF EXISTS login_unlocks_no_delete;
+CREATE TRIGGER login_unlocks_no_delete BEFORE DELETE ON login_unlocks FOR EACH ROW
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit rows cannot be deleted (login_unlocks)';

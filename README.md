@@ -499,7 +499,7 @@ What this does not cover: someone cycling through *different* usernames. That
 needs the request's origin, which `password_resets` does not record &mdash; a
 column and a migration, worth its own story rather than being tacked on here.
 
-### Audit log (stories AA-55, AA-57, AA-59, AA-60)
+### Audit log (stories AA-55, AA-57, AA-58, AA-59, AA-60)
 
 Admins read everything the system audits on one page, **Audit log**
 (`/admin/audit-log`), newest first. It filters by category, sponsor, date range
@@ -526,10 +526,12 @@ the same file is the only thing that writes `audit_events`.
 - The database sets the time, not the app.
 - If an audit write fails, it is logged to the server console and the action
   still completes.
+- Audit rows cannot be edited or deleted. A database trigger on each of the
+  four tables refuses `UPDATE` and `DELETE`, whoever runs it; only inserts work.
 
 **Before deploying:** run `npm run db:migrate`. Migration 024 creates
 `audit_events`, copies the old `password_changes` rows into it, and drops the
-unused `admin_actions` table.
+unused `admin_actions` table. Migration 025 adds the triggers.
 
 ### The owner is told when a password changes (story 22227)
 
