@@ -987,14 +987,18 @@ p.mail-outcome--logged { background: var(--gray-bg); }
 
 /* ---- Manage users, audit log, organization pages (sprint 9) ------------------ */
 
-/* Manage users carries nine columns, and squeezing them makes every cell
-   wrap to three lines. The table keeps its width and the wrapper scrolls,
-   which is what every other wide table here already does. */
-.table--users { min-width: 1120px; }
-.table--users .cell-strong, .table--users .cell-email { white-space: nowrap; }
+/* manage users: five columns that fit a laptop without scrolling
+ * the account cell stacks name, username and email
+ * role and status submit on change, the button is only for a browser without JS
+*/
+.table--users { min-width: 880px; }
 .table--users td { vertical-align: top; }
+.table--users th:last-child { width: 262px; }
 .table--users .status-form { flex-wrap: nowrap; }
-.table--users .status-select { min-width: 104px; }
+.table--users .status-select { min-width: 100px; padding-right: 30px; }
+html.js .table--users [data-autosubmit] + button { display: none; }
+.cell-sub { display: block; font-weight: 400; }
+.cell-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* A details table: the first column is a label, not data. */
 .table--details { min-width: 0; }

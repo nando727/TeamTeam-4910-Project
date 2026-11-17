@@ -264,12 +264,10 @@ out?" comes up when somebody calls for help, and answering it should not mean
 reading every row. Both pages get their answer from the same
 `lockedUsernames()`, so they cannot disagree.
 
-That split also took the user list from nine columns to six. Two pairs were the
-same fact twice: **Status** and **Change status** (the dropdown already shows
-the current status, so it is now the badge as well, coloured green, grey or red
-by status), and **Password** and **Setup link** (an account either has a
-password or is still waiting to set one &mdash; each column was offering the
-other's action to accounts that could not use it).
+The user list has five columns, so it fits a laptop without scrolling:
+**Account** (name, username and email), **Sponsors**, **Role**, **Status** and
+**Actions**. Role and status submit as soon as one is picked and go to the
+usual confirm page; their buttons only show when JavaScript is off.
 
 Clearing the lock needed a decision, because the lock is not stored anywhere:
 it is counted from `login_attempts`. There is no flag to switch off, and the
@@ -1108,7 +1106,7 @@ Sample file: `docs/bulk-upload-sample.txt` (also downloadable from the page).
 
 Migration 014 changes the `driver_sponsors` key to `(driver_id, sponsor_id)`,
 so a driver can belong to several sponsors, each with its own point balance.
-Admins open **Manage users -> Sponsors** on a driver row to see every
+Admins open **Manage users -> Edit sponsors** on a driver row to see every
 sponsorship, add one, or remove one (confirmed first) while leaving the rest in
 place. Removing a sponsorship deletes that balance; the point history stays in
 `point_transactions`. The sponsor approval flow still creates a membership on
