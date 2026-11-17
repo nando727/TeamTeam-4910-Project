@@ -1368,3 +1368,34 @@ colour, and `tests/theme.test.js` fails the suite if a hex code appears in a
 rule, if the two night palettes drift apart, or if a filled surface is defined
 without the colour of the text on it. Printing forces the daylight values, so
 an invoice printed at night is not pale text on white paper.
+
+## Invoices: per driver, all at once, and by email (stories AD-41 to AD-46)
+
+**Fee by driver (AD-43).** Each invoice itemizes the fee per driver: purchases,
+purchase total, and their 1% share, above the full purchase line items. The
+amount due is still the `sponsor_monthly_fees` procedure's number, rounded once
+on the sponsor's whole month; the per-driver fees are a split of that number,
+not a second calculation of it. They are apportioned by largest remainder
+(`src/reports/invoice-drivers.js`): every driver gets the whole cents of their
+exact share, and the cents left over go one each to the largest fractional
+parts, ties broken by name. The fees therefore always sum to the cent to the
+amount due, which `tests/invoice-drivers.test.js` checks across 200 random
+invoices.
+
+**Print all (AD-41).** "Print all invoices" on the invoice list opens one page
+with every sponsor's complete invoice for the month, each starting on its own
+printed sheet. Sponsors with no purchases that month are left out.
+
+**Email (AD-46).** "Email this invoice" opens a confirm page showing the
+recipient, the subject, and the full email exactly as it will arrive, with a
+warning when the sponsor's address is a documentation-reserved placeholder.
+Only the confirmed POST sends, through `sendMail` exactly as it is. The mailer
+sends plain text only, so the email is the invoice laid out in columns within
+72 characters; the PDF stays the browser's "Print or save as PDF" button. The
+page reports whether the mail was sent, written to the server log, or failed,
+and every send is recorded in the admin audit log.
+
+**Printing at night.** The print styles force the daylight palette under the
+same selectors the night palette uses, so an invoice printed in dark mode
+comes out on white. Invoice totals print once after the last line, rather than
+repeating at the foot of every printed page.

@@ -18,6 +18,7 @@ const ACTIONS = {
   'unlock': 'Sign-in unlocked',
   'sponsorship-added': 'Sponsorship added',
   'sponsorship-removed': 'Sponsorship removed',
+  'invoice-emailed': 'Invoice emailed',
   other: 'Other',
 };
 
