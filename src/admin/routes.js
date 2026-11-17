@@ -7,8 +7,9 @@ const {
 } = require('../users/store');
 const { createSponsor, listSponsors, findSponsorById } = require('../sponsors/store');
 const { listDriversForSponsor, listSponsorAccounts } = require('../sponsors/accounts');
-const { CATEGORIES, recordEvent, findEvents, countEvents } = require('../audit/log');
-const { positiveInt, text, queryString, formatStamp } = require('../reports/helpers');
+const { recordEvent } = require('../audit/log');
+const { auditPages } = require('../audit/pages');
+const { positiveInt, queryString } = require('../reports/helpers');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { requireActiveAdmin } = require('./guard');
 const { listDriverSponsors, addDriverSponsor, removeDriverSponsor, MembershipError } = require('../memberships/store');
@@ -171,35 +172,11 @@ router.get('/sponsors/:sponsorId', async (req, res, next) => {
 });
 
 // ---- Audit log --------------------------------------------------------------
-// aa-55 every audited event in one list, newest first, filtered by category
+// aa-55 every audited event in one list, the page itself is src/audit/pages.js
 
-const AUDIT_PAGE_SIZE = 25;
-
-router.get('/audit-log', async (req, res, next) => {
-  try {
-    const wanted = text(req.query.category);
-    const category = Object.prototype.hasOwnProperty.call(CATEGORIES, wanted) ? wanted : '';
-    const userId = positiveInt(text(req.query.user));
-    const filters = { category: category || null, userId };
-
-    const total = await countEvents(filters);
-    const pageCount = Math.max(1, Math.ceil(total / AUDIT_PAGE_SIZE));
-    const page = Math.min(positiveInt(text(req.query.page)) || 1, pageCount);
-    const rows = await findEvents(filters, { limit: AUDIT_PAGE_SIZE, offset: (page - 1) * AUDIT_PAGE_SIZE });
-    const state = { category, user: userId ? String(userId) : '' };
-    const pageHref = n => '/admin/audit-log' + queryString({ ...state, page: n > 1 ? n : null });
-    const target = userId ? await findUserById(userId) : null;
-
-    res.render('admin/audit-log', {
-      rows, categories: Object.entries(CATEGORIES).map(([value, label]) => ({ value, label })),
-      state, target, formatStamp,
-      total, page, pageCount,
-      pageStart: total ? (page - 1) * AUDIT_PAGE_SIZE + 1 : 0, pageEnd: Math.min(page * AUDIT_PAGE_SIZE, total),
-      prevHref: page > 1 ? pageHref(page - 1) : null, nextHref: page < pageCount ? pageHref(page + 1) : null,
-      filtered: Boolean(category || userId),
-    });
-  } catch (err) { next(err); }
-});
+const auditLog = auditPages('/admin/audit-log');
+router.get('/audit-log', auditLog.page);
+router.get('/audit-log.csv', auditLog.csv);
 
 // ---- Manage users (change account status) ---------------------------------
 

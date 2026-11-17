@@ -20,6 +20,7 @@ const { invoiceEmailSubject, invoiceEmailText, looksLikePlaceholder } = require(
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { sendMail } = require('../mail/mailer');
 const { recordEvent } = require('../audit/log');
+const { auditPages } = require('../audit/pages');
 
 const router = express.Router();
 
@@ -143,6 +144,13 @@ function buildChart(daily, { from, to }) {
 
   return { W, H, L, R, T, B, plotW, plotH, zeroY: +zeroY.toFixed(1), bars, linePoints, ticks, xLabels, bucketDays, start, end, totals, finalCumulative: running };
 }
+
+// ---- Audit log ----------------------------------------------------------------
+// aa-55 a sponsor's audit log, limited to its own drivers by the session
+
+const auditLog = auditPages('/reports/audit-log');
+router.get('/audit-log', auditLog.page);
+router.get('/audit-log.csv', auditLog.csv);
 
 // ---- Driver Point Tracking ----------------------------------------------------
 

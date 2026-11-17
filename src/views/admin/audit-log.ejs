@@ -1,15 +1,17 @@
 <%- include('../partials/head', { title: 'Audit log' }) %>
   <section class="card">
     <div class="page-header">
-      <span class="eyebrow">Administration</span>
+      <span class="eyebrow"><%= pinned ? 'Reports' : 'Administration' %></span>
       <h1>Audit log</h1>
-      <p class="lede">Everything the system audits, newest first: sign-in attempts, password changes, point changes, driver application decisions, and account changes.</p>
+      <p class="lede"><%= pinned ? 'What has happened on your drivers\' accounts and in your organization' : 'Everything the system audits' %>, newest first: sign-in attempts, password changes, point changes, driver application decisions, and account changes.</p>
       <% if (target) { %>
-        <p class="hint">Filtered to <strong><%= target.username %></strong>. <a href="/admin/audit-log">Show every account</a>.</p>
+        <p class="hint">Filtered to <strong><%= target.username %></strong>. <a href="<%= base %>">Show every account</a>.</p>
       <% } %>
     </div>
 
-    <form class="filters" method="GET" action="/admin/audit-log">
+    <% if (error) { %><p class="error" role="alert"><%= error %></p><% } %>
+
+    <form class="filters" method="GET" action="<%= base %>">
       <% if (state.user) { %><input type="hidden" name="user" value="<%= state.user %>"><% } %>
       <div class="filters__field">
         <label for="category">Category</label>
@@ -20,22 +22,42 @@
           <% }); %>
         </select>
       </div>
+      <% if (!pinned) { %>
+        <div class="filters__field">
+          <label for="sponsor">Sponsor</label>
+          <select id="sponsor" name="sponsor">
+            <option value="">All sponsors</option>
+            <% sponsors.forEach(sponsor => { %>
+              <option value="<%= sponsor.id %>" <%= state.sponsor === String(sponsor.id) ? 'selected' : '' %>><%= sponsor.name %></option>
+            <% }); %>
+          </select>
+        </div>
+      <% } %>
+      <div class="filters__field">
+        <label for="from">From</label>
+        <input id="from" name="from" type="date" value="<%= state.from || '' %>" max="<%= today %>">
+      </div>
+      <div class="filters__field">
+        <label for="to">To</label>
+        <input id="to" name="to" type="date" value="<%= state.to || '' %>" max="<%= today %>">
+      </div>
       <div class="filters__actions">
         <button type="submit">Filter</button>
-        <a class="button-link" href="/admin/audit-log">Clear</a>
+        <a class="button-link" href="<%= base %>">Clear</a>
       </div>
     </form>
 
     <div class="report-bar">
       <span class="muted small">
-        <% if (total === 0) { %>Nothing recorded<% } else { %>Showing <%= pageStart %> to <%= pageEnd %> of <%= total.toLocaleString('en-US') %> event<%= total === 1 ? '' : 's' %><% } %><%= filtered ? ' for these filters' : '' %>.
+        <% if (total === 0) { %>Nothing recorded<% } else { %>Showing <%= pageStart %> to <%= pageEnd %> of <%= total.toLocaleString('en-US') %> event<%= total === 1 ? '' : 's' %><% } %><%= rangeLabel %>.
       </span>
+      <% if (total > 0) { %><a class="button-link button--small" href="<%= csvHref %>">Download CSV</a><% } %>
     </div>
 
     <% if (total === 0) { %>
       <div class="info" role="status">
         <% if (filtered) { %>
-          <p>Nothing matches these filters. <a href="/admin/audit-log">Show everything</a>.</p>
+          <p>Nothing matches these filters. <a href="<%= base %>">Show everything</a>.</p>
         <% } else { %>
           <p>Nothing has been recorded yet.</p>
         <% } %>
@@ -49,6 +71,7 @@
               <th scope="col">Event</th>
               <th scope="col">Account</th>
               <th scope="col">By</th>
+              <th scope="col">Sponsor</th>
               <th scope="col">Detail</th>
             </tr>
           </thead>
@@ -59,7 +82,7 @@
                 <td class="cell-strong"><%= row.label %></td>
                 <td>
                   <% if (row.subjectId) { %>
-                    <a href="/admin/audit-log?user=<%= row.subjectId %>"><%= row.subject %></a>
+                    <% if (pinned) { %><%= row.subject %><% } else { %><a href="<%= base %>?user=<%= row.subjectId %>"><%= row.subject %></a><% } %>
                     <% if (row.subjectRole) { %> <span class="role-chip"><%= row.subjectRole %></span><% } %>
                   <% } else if (row.subject) { %>
                     <%= row.subject %> <span class="muted small">(no such account)</span>
@@ -68,6 +91,7 @@
                   <% } %>
                 </td>
                 <td><%= row.actor || '—' %></td>
+                <td><%= row.sponsor || '—' %></td>
                 <td><%= row.detail || '—' %></td>
               </tr>
             <% }); %>

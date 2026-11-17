@@ -105,7 +105,8 @@ describe('filters', () => {
   test("aa-57 a sponsor sees its drivers' events even though they carry no sponsor", async () => {
     await findEvents({ sponsorId: 7 });
 
-    expect(sql()).toContain('e.sponsor_id = ? OR EXISTS');
+    // ...but not an event that names another sponsor, for a driver they share
+    expect(sql()).toContain('e.sponsor_id = ? OR (e.sponsor_id IS NULL AND EXISTS');
     expect(sql()).toContain('ds.driver_id = e.subject_user_id AND ds.sponsor_id = ?');
     expect(params().slice(0, 2)).toEqual([7, 7]);
   });

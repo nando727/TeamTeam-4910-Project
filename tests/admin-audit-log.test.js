@@ -1,4 +1,5 @@
-// aa-55 the audit log page: every audited event in one list, admin only
+// aa-55 the audit log page: every audited event in one list
+// an admin sees all of it, a sponsor its own drivers
 import { createRequire } from 'node:module';
 import { describe, test, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
@@ -10,6 +11,8 @@ const { hashPassword } = require('../src/auth/password');
 
 const ADMIN = { id: 3, username: 'admin1', role: 'admin', status: 'active', name: 'Ada', email: 'ada@example.com', sponsor_id: null };
 const DRIVER = { id: 1, username: 'driver1', role: 'driver', status: 'active', name: 'Theo', email: 'theo@example.com', sponsor_id: null };
+const SPONSOR = { id: 2, username: 'sponsor1', role: 'sponsor', status: 'active', name: 'Sam', email: 'sam@example.com', sponsor_id: 7 };
+const USERS = [ADMIN, DRIVER, SPONSOR];
 
 let hash;
 let rows;
@@ -40,14 +43,15 @@ beforeEach(() => {
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
     if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];
     if (sql.includes('FROM users WHERE username')) {
-      const user = [ADMIN, DRIVER].find(u => u.username === params[0]);
+      const user = USERS.find(u => u.username === params[0]);
       return user ? [{ ...user, password_hash: hash }] : [];
     }
     if (sql.includes('FROM users WHERE id')) {
-      const user = [ADMIN, DRIVER].find(u => u.id === params[0]);
+      const user = USERS.find(u => u.id === params[0]);
       return user ? [user] : [];
     }
     if (sql.includes('FROM audit_events ae')) return sql.includes('COUNT(*)') ? [{ total }] : rows;
+    if (sql.includes('FROM sponsors ORDER BY')) return [{ id: 4, name: 'Acme', contactEmail: 'a@acme.example', status: 'active' }];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
@@ -128,5 +132,85 @@ describe('filtering and paging', () => {
     expect(page.text).toContain('Page 2 of 3');
     expect(page.text).toContain('href="/admin/audit-log?category=accounts&amp;page=3"');
     expect(listQuery()[1].slice(-2)).toEqual(['25', '25']);
+  });
+});
+
+describe('the report filters the spec asks for', () => {
+  test('one sponsor and a date range reach the query, and the count says the range', async () => {
+    const page = await (await signIn()).get('/admin/audit-log?sponsor=4&from=2026-11-01&to=2026-11-09').expect(200);
+
+    expect(page.text).toContain('<option value="4" selected>Acme</option>');
+    expect(page.text).toContain('from 2026-11-01 to 2026-11-09');
+    expect(listQuery()[1].slice(0, 4)).toEqual([4, 4, '2026-11-01', '2026-11-09']);
+  });
+
+  test('a sponsor that does not exist is ignored', async () => {
+    await (await signIn()).get('/admin/audit-log?sponsor=999').expect(200);
+
+    expect(listQuery()[0]).not.toContain('e.sponsor_id = ?');
+  });
+
+  test('a date that is not a date is refused with a message', async () => {
+    const page = await (await signIn()).get('/admin/audit-log?from=yesterday').expect(400);
+
+    expect(page.text).toContain('Enter the start date as YYYY-MM-DD.');
+  });
+});
+
+describe('the CSV download', () => {
+  test('has every row for the same filters, as a file', async () => {
+    const agent = await signIn();
+    const page = await agent.get('/admin/audit-log?category=points&from=2026-11-01').expect(200);
+    expect(page.text).toContain('href="/admin/audit-log.csv?category=points&amp;from=2026-11-01"');
+
+    const csv = await agent.get('/admin/audit-log.csv?category=points&from=2026-11-01').expect(200);
+
+    expect(csv.headers['content-disposition']).toContain('audit-log-from-2026-11-01.csv');
+    expect(csv.text).toContain('"Date (UTC)","Category","Event","Account","By","Sponsor","Detail"');
+    expect(csv.text).toContain('"2026-11-10 12:00","Point changes","Points changed","driver1","sponsor1","Acme","\'+50 points: safe driving"');
+    // not paged: one query, with the filters and no offset
+    expect(listQuery()[1]).toEqual(['points.changed', '2026-11-01', '10000', '0']);
+  });
+
+  test('refuses a bad date instead of downloading everything', async () => {
+    const res = await (await signIn()).get('/admin/audit-log.csv?to=nope').expect(400);
+
+    expect(res.text).toContain('Enter the end date as YYYY-MM-DD.');
+  });
+
+  test('is admin only', async () => {
+    await request(app).get('/admin/audit-log.csv').expect(302);
+    await (await signIn('driver1')).get('/admin/audit-log.csv').expect(403);
+  });
+});
+
+describe("a sponsor's audit log", () => {
+  test('is pinned to its own organization, whatever the form asks for', async () => {
+    const agent = await signIn('sponsor1');
+    const page = await agent.get('/reports/audit-log?sponsor=4&user=1&category=points').expect(200);
+
+    expect(listQuery()[1]).toEqual(['points.changed', 7, 7, '25', '0']);
+    expect(page.text).not.toContain('name="sponsor"');
+    expect(page.text).not.toContain('?user=');
+    expect(page.text).toContain('href="/reports/audit-log.csv?category=points"');
+    await agent.get('/admin/audit-log').expect(403);
+  });
+
+  test('shows that a driver signed in, not where from, on the page and in the CSV', async () => {
+    const agent = await signIn('sponsor1');
+    const page = await agent.get('/reports/audit-log').expect(200);
+    const csv = await agent.get('/reports/audit-log.csv').expect(200);
+
+    for (const text of [page.text, csv.text]) {
+      expect(text).toContain('Failed sign-in');
+      expect(text).not.toContain('203.0.113.7');
+      expect(text).toContain('+50 points: safe driving');
+    }
+    expect(listQuery()[1]).toEqual([7, 7, '10000', '0']);
+  });
+
+  test('a signed-out visitor is sent to log in, and a driver is refused', async () => {
+    await request(app).get('/reports/audit-log').expect(302);
+    await (await signIn('driver1')).get('/reports/audit-log.csv').expect(403);
   });
 });

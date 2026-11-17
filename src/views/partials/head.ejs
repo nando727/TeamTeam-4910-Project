@@ -17,7 +17,12 @@
       const count = (typeof cartCount !== 'undefined' && cartCount) || 0;
       navItems.push({ href: '/driver/cart', label: count ? `Cart (${count})` : 'Cart' });
     }
-    if (me.role === 'sponsor') navItems.push({ href: '/reports/points', label: 'Reports' });
+    if (me.role === 'sponsor') {
+      navItems.push({ label: 'Reports', children: [
+        { href: '/reports/points', label: 'Driver point tracking' },
+        { href: '/reports/audit-log', label: 'Audit log' },
+      ] });
+    }
     if (me.role === 'sponsor') navItems.push({ href: '/points', label: 'Adjust points' });
     if (me.role === 'admin') {
       navItems.push({ label: 'Reports', children: [

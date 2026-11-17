@@ -85,8 +85,9 @@ const ALL_EVENTS = `
     FROM login_unlocks lu LEFT JOIN users u ON u.username = lu.username`;
 
 /* turns the filters into a WHERE clause, every value is bound
- * aa-57 a sponsor is matched through its drivers as well as sponsor_id, because
-   a password change or sign-in has no sponsor and '= ?' never matches NULL
+ * aa-57 an event with no sponsor (a sign-in, a password change) is matched
+   through the driver it is about, because '= ?' never matches NULL
+ * one that names another sponsor is not, a shared driver's other program stays private
  * `to` covers its whole day
 */
 function whereFor({ category = null, userId = null, sponsorId = null, from = null, to = null } = {}) {
@@ -103,8 +104,8 @@ function whereFor({ category = null, userId = null, sponsorId = null, from = nul
     params.push(userId);
   }
   if (sponsorId) {
-    where.push('(e.sponsor_id = ? OR EXISTS (SELECT 1 FROM driver_sponsors ds '
-      + 'WHERE ds.driver_id = e.subject_user_id AND ds.sponsor_id = ?))');
+    where.push('(e.sponsor_id = ? OR (e.sponsor_id IS NULL AND EXISTS (SELECT 1 FROM driver_sponsors ds '
+      + 'WHERE ds.driver_id = e.subject_user_id AND ds.sponsor_id = ?)))');
     params.push(sponsorId, sponsorId);
   }
   for (const [value, clause] of [[from, 'e.occurred_at >= ?'], [to, 'e.occurred_at < ? + INTERVAL 1 DAY']]) {

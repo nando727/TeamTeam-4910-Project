@@ -502,7 +502,11 @@ column and a migration, worth its own story rather than being tacked on here.
 ### Audit log (stories AA-55, AA-57, AA-59, AA-60)
 
 Admins read everything the system audits on one page, **Audit log**
-(`/admin/audit-log`), newest first and filterable by category or by account.
+(`/admin/audit-log`), newest first. It filters by category, sponsor, date range
+and account, and **Download CSV** exports every row for the current filters.
+
+Sponsors get the same page at `/reports/audit-log`, limited to their own
+drivers and organization: no sponsor or account filter, and no sign-in address.
 
 Each event is stored once:
 
@@ -511,7 +515,7 @@ Each event is stored once:
 | Sign-in attempts | `login_attempts` |
 | Point changes | `point_transactions` |
 | Sign-in unlocks | `login_unlocks` |
-| Password changes, driver application decisions, account changes (role, status, sponsorship) | `audit_events` |
+| Password changes, driver application decisions, account changes (role, status, sponsorship), invoice emails | `audit_events` |
 
 `findEvents` in `src/audit/log.js` reads all four as one list. `recordEvent` in
 the same file is the only thing that writes `audit_events`.
@@ -558,7 +562,7 @@ when the notice does not go out &mdash; `tests/password-change-notice.test.js`
 covers that with a transport that throws.
 
 The timestamp is this process's clock, formatted in UTC and labelled as such.
-Reading `changed_at` back out of the audit row would mean a MySQL `DATETIME`
+Reading `occurred_at` back out of the audit row would mean a MySQL `DATETIME`
 crossing into Node, which has already cost this app two fixes; the mail is
 composed within a second of the write, which is close enough for a human
 deciding whether they recognise the change.
