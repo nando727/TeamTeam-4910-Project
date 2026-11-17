@@ -3,9 +3,38 @@
     <div class="page-header">
       <span class="eyebrow">Your account</span>
       <h1>Account activity</h1>
-      <p class="lede">Changes an administrator made to your account, newest first: password resets, role and status changes, sponsorships, points, and unlocks.</p>
+      <p class="lede">Recent sign-ins to your account and the changes an administrator made to it, newest first.</p>
     </div>
 
+    <h2 class="section-title">Recent sign-ins</h2>
+    <% if (!signIns.length) { %>
+      <div class="info" role="status"><p>No sign-ins are recorded for your account yet.</p></div>
+    <% } else { %>
+      <p class="muted small">Your last <%= signIns.length %> sign-in attempt<%= signIns.length === 1 ? '' : 's' %>. Don't recognize one? <a href="/profile/password">Change your password</a>, then sign out of all sessions from your profile.</p>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">When (UTC)</th>
+              <th scope="col">Result</th>
+              <th scope="col">From address</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% signIns.forEach(signIn => { %>
+              <tr>
+                <td class="nowrap"><%= formatStamp(signIn.when) %></td>
+                <td><span class="status-badge <%= signIn.ok ? 'status-active' : 'status-revoked' %>"><%= signIn.ok ? 'Signed in' : 'Failed' %></span></td>
+                <td><%= signIn.from || 'Unknown' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+
+    <h2 class="section-title">Changes by an administrator</h2>
+    <p class="muted small">Password resets, role and status changes, sponsorships, points, and unlocks.</p>
     <% if (!changes.length) { %>
       <div class="info" role="status"><p>An administrator has not changed anything on your account.</p></div>
     <% } else { %>

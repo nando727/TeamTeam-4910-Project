@@ -69,10 +69,12 @@ router.get('/profile', requireLogin, loadProfile, (req, res) => {
 });
 
 /* aa-76 what an administrator changed on your own account, newest first
+ * aa-78 and your recent sign-ins, failed ones too, so a stranger's tries show
  * the account is always the session's, never a query value
  * an impersonating admin is recorded as the admin, so it shows here too
 */
 const ACTIVITY_LIMIT = 50;
+const SIGN_IN_LIMIT = 20;
 
 function adminChange(row) {
   if (row.type === 'password.changed') return 'Reset by an administrator';
@@ -82,12 +84,17 @@ function adminChange(row) {
 
 router.get('/profile/activity', requireLogin, async (req, res, next) => {
   try {
-    const filters = { userId: req.session.user.id, byAdmin: true };
-    const [rows, total] = await Promise.all([
+    const userId = req.session.user.id;
+    const filters = { userId, byAdmin: true };
+    const [rows, total, signIns] = await Promise.all([
       findEvents(filters, { limit: ACTIVITY_LIMIT }), countEvents(filters),
+      findEvents({ userId, category: 'sign-ins' }, { limit: SIGN_IN_LIMIT }),
     ]);
     res.render('account-activity', {
       total, formatStamp,
+      signIns: signIns.map(row => ({
+        when: row.occurredAt, ok: row.type === 'login.succeeded', from: (row.detail || '').replace(/^from (an unknown address$)?/, ''),
+      })),
       changes: rows.map(row => ({ when: row.occurredAt, what: row.label, detail: adminChange(row) })),
       limited: total > ACTIVITY_LIMIT, limit: ACTIVITY_LIMIT,
     });
