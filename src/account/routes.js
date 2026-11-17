@@ -7,6 +7,8 @@ const {
 const { getAbout } = require('../about/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { verifyPassword } = require('../auth/password');
+const { findEvents, countEvents } = require('../audit/log');
+const { formatStamp } = require('../reports/helpers');
 const {
   PUBLIC_RULES, MAX_PASSWORD_LENGTH, PASSWORD_HISTORY_LIMIT, passwordProblems,
 } = require('../auth/password-policy');
@@ -64,6 +66,32 @@ async function loadProfile(req, res, next) {
 
 router.get('/profile', requireLogin, loadProfile, (req, res) => {
   renderProfile(req, res, req.profile);
+});
+
+/* aa-76 what an administrator changed on your own account, newest first
+ * the account is always the session's, never a query value
+ * an impersonating admin is recorded as the admin, so it shows here too
+*/
+const ACTIVITY_LIMIT = 50;
+
+function adminChange(row) {
+  if (row.type === 'password.changed') return 'Reset by an administrator';
+  if (row.type === 'points.changed' && row.sponsor) return `${row.detail} (${row.sponsor})`;
+  return row.detail;
+}
+
+router.get('/profile/activity', requireLogin, async (req, res, next) => {
+  try {
+    const filters = { userId: req.session.user.id, byAdmin: true };
+    const [rows, total] = await Promise.all([
+      findEvents(filters, { limit: ACTIVITY_LIMIT }), countEvents(filters),
+    ]);
+    res.render('account-activity', {
+      total, formatStamp,
+      changes: rows.map(row => ({ when: row.occurredAt, what: row.label, detail: adminChange(row) })),
+      limited: total > ACTIVITY_LIMIT, limit: ACTIVITY_LIMIT,
+    });
+  } catch (err) { next(err); }
 });
 
 router.get('/profile/edit', requireLogin, loadProfile, (req, res) => {

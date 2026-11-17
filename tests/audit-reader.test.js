@@ -118,6 +118,13 @@ describe('filters', () => {
     expect(params().slice(0, 2)).toEqual(['2026-11-01', '2026-11-09']);
   });
 
+  test("aa-76 an admin's changes to someone else's account, not their own", async () => {
+    await findEvents({ userId: 5, byAdmin: true });
+
+    expect(sql()).toContain("e.subject_user_id = ? AND e.actor_user_id <> e.subject_user_id AND EXISTS (SELECT 1 FROM users a WHERE a.id = e.actor_user_id AND a.role = 'admin')");
+    expect(params()[0]).toBe(5);
+  });
+
   test('every value is bound: as many placeholders as parameters', async () => {
     await findEvents({ category: 'accounts', userId: 5, sponsorId: 7, from: '2026-11-01', to: '2026-11-09' }, { limit: 10, offset: 20 });
 

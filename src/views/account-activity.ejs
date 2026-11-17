@@ -1,0 +1,36 @@
+<%- include('partials/head', { title: 'Account activity' }) %>
+  <section class="card">
+    <div class="page-header">
+      <span class="eyebrow">Your account</span>
+      <h1>Account activity</h1>
+      <p class="lede">Changes an administrator made to your account, newest first: password resets, role and status changes, sponsorships, points, and unlocks.</p>
+    </div>
+
+    <% if (!changes.length) { %>
+      <div class="info" role="status"><p>An administrator has not changed anything on your account.</p></div>
+    <% } else { %>
+      <p class="muted small"><%= limited ? `The ${limit} most recent of ${total.toLocaleString('en-US')} changes.` : `${total} change${total === 1 ? '' : 's'}.` %></p>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">When (UTC)</th>
+              <th scope="col">What changed</th>
+              <th scope="col">Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% changes.forEach(change => { %>
+              <tr>
+                <td class="nowrap"><%= formatStamp(change.when) %></td>
+                <td class="cell-strong"><%= change.what %></td>
+                <td><%= change.detail || '—' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+    <p style="margin-top: 20px;"><a href="/profile">Back to your profile</a></p>
+  </section>
+<%- include('partials/foot') %>

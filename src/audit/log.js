@@ -89,8 +89,9 @@ const ALL_EVENTS = `
    through the driver it is about, because '= ?' never matches NULL
  * one that names another sponsor is not, a shared driver's other program stays private
  * `to` covers its whole day
+ * aa-76 byAdmin keeps what an admin did to someone else's account, by the actor's role now
 */
-function whereFor({ category = null, userId = null, sponsorId = null, from = null, to = null } = {}) {
+function whereFor({ category = null, userId = null, sponsorId = null, byAdmin = false, from = null, to = null } = {}) {
   const where = [];
   const params = [];
   if (category) {
@@ -107,6 +108,9 @@ function whereFor({ category = null, userId = null, sponsorId = null, from = nul
     where.push('(e.sponsor_id = ? OR (e.sponsor_id IS NULL AND EXISTS (SELECT 1 FROM driver_sponsors ds '
       + 'WHERE ds.driver_id = e.subject_user_id AND ds.sponsor_id = ?)))');
     params.push(sponsorId, sponsorId);
+  }
+  if (byAdmin) {
+    where.push("e.actor_user_id <> e.subject_user_id AND EXISTS (SELECT 1 FROM users a WHERE a.id = e.actor_user_id AND a.role = 'admin')");
   }
   for (const [value, clause] of [[from, 'e.occurred_at >= ?'], [to, 'e.occurred_at < ? + INTERVAL 1 DAY']]) {
     if (!value) continue;
