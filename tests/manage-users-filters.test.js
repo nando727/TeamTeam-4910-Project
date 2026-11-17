@@ -42,7 +42,7 @@ beforeEach(() => {
     if (sql.startsWith('SELECT id, name, contact_email AS contactEmail')) return SPONSORS;
     if (sql.startsWith('SELECT user_id FROM setup_tokens')) return [];
     if (sql.startsWith('UPDATE users SET status')) return { affectedRows: 1 };
-    if (sql.startsWith('INSERT INTO admin_actions')) return { insertId: 1 };
+    if (sql.startsWith('INSERT INTO audit_events')) return { insertId: 1 };
     throw new Error(`Unexpected query: ${sql}`);
   });
 });

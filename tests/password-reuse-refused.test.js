@@ -121,7 +121,7 @@ beforeEach(() => {
       return { affectedRows: 1 };
     }
     if (sql.startsWith('UPDATE setup_tokens SET used_at')) return { affectedRows: 0 };
-    if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
+    if (sql.startsWith('INSERT INTO audit_events')) return { insertId: 1 };
 
     // --- sessions ---
     if (sql.startsWith('UPDATE users SET sessions_valid_from')) return { affectedRows: 1 };

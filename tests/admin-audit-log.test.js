@@ -1,6 +1,5 @@
-// Sprint 9: the administrator audit log. Role changes, status changes,
-// password resets, unlocks, and sponsorship changes are recorded, and a
-// failed write never undoes the change it was describing.
+// aa-55 the audit log page: every audited event in one list
+// an admin sees all of it, a sponsor its own drivers
 import { createRequire } from 'node:module';
 import { describe, test, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
@@ -9,160 +8,209 @@ const require = createRequire(import.meta.url);
 const db = require('../src/db');
 const { app } = require('../src/app');
 const { hashPassword } = require('../src/auth/password');
-const { recordAdminAction, listAdminActions, countAdminActions, actionLabel } = require('../src/admin/audit');
 
 const ADMIN = { id: 3, username: 'admin1', role: 'admin', status: 'active', name: 'Ada', email: 'ada@example.com', sponsor_id: null };
 const DRIVER = { id: 1, username: 'driver1', role: 'driver', status: 'active', name: 'Theo', email: 'theo@example.com', sponsor_id: null };
+const SPONSOR = { id: 2, username: 'sponsor1', role: 'sponsor', status: 'active', name: 'Sam', email: 'sam@example.com', sponsor_id: 7 };
+const USERS = [ADMIN, DRIVER, SPONSOR];
 
 let hash;
 let rows;
 let total;
-let written;
 let queries;
 
 beforeAll(async () => { hash = await hashPassword('Password1!'); });
 
+// one event from each of the four tables the log reads
+const event = (over = {}) => ({
+  type: 'role.changed', detail: 'driver to sponsor', occurred_at_ms: Date.UTC(2026, 10, 10, 12, 0),
+  actor_username: 'admin1', subject_user_id: 1, subject_username: 'driver1', subject_role: 'sponsor',
+  sponsor_name: null, ...over,
+});
+
 beforeEach(() => {
-  written = [];
   queries = [];
-  total = 2;
   rows = [
-    { id: 2, action: 'role-change', detail: 'driver1: driver to sponsor; removed 2 memberships', createdAt: new Date('2026-11-10T12:00:00Z'), adminUserId: 3, adminUsername: 'admin1', targetUserId: 1, targetUsername: 'driver1', targetRole: 'sponsor' },
-    { id: 1, action: 'status-change', detail: 'driver1: active to disabled', createdAt: new Date('2026-11-09T08:30:00Z'), adminUserId: 3, adminUsername: 'admin1', targetUserId: 1, targetUsername: 'driver1', targetRole: 'sponsor' },
+    event(),
+    event({ type: 'points.changed', detail: '+50 points: safe driving', actor_username: 'sponsor1', sponsor_name: 'Acme' }),
+    event({ type: 'account.unlocked', detail: null }),
+    event({ type: 'login.failed', detail: 'from 203.0.113.7', actor_username: null, subject_user_id: null, subject_username: 'nobody', subject_role: null }),
   ];
-  vi.spyOn(console, 'error').mockImplementation(() => {});
+  total = rows.length;
   vi.spyOn(db, 'query').mockImplementation(async (sql, params = []) => {
     queries.push([sql, params]);
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
     if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];
     if (sql.includes('FROM users WHERE username')) {
-      const user = [ADMIN, DRIVER].find(u => u.username === params[0]);
+      const user = USERS.find(u => u.username === params[0]);
       return user ? [{ ...user, password_hash: hash }] : [];
     }
     if (sql.includes('FROM users WHERE id')) {
-      const user = [ADMIN, DRIVER].find(u => u.id === params[0]);
+      const user = USERS.find(u => u.id === params[0]);
       return user ? [user] : [];
     }
-    if (sql.startsWith('INSERT INTO admin_actions')) { written.push(params); return { insertId: written.length }; }
-    if (sql.startsWith('SELECT COUNT(*) AS total FROM admin_actions')) return [{ total }];
-    if (sql.includes('FROM admin_actions a')) return rows;
+    if (sql.includes('FROM audit_events ae')) return sql.includes('COUNT(*)') ? [{ total }] : rows;
+    if (sql.includes('FROM sponsors ORDER BY')) return [{ id: 4, name: 'Acme', contactEmail: 'a@acme.example', status: 'active' }];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
 afterEach(() => vi.restoreAllMocks());
 
-async function admin(username = 'admin1') {
+async function signIn(username = 'admin1') {
   const agent = request.agent(app);
   await agent.post('/login').type('form').send({ username, password: 'Password1!' }).expect(302);
   return agent;
 }
 
-describe('recording', () => {
-  test('writes the administrator, the account, the action, and a sentence', async () => {
-    expect(await recordAdminAction({ adminUserId: 3, targetUserId: 1, action: 'role-change', detail: 'driver1: driver to sponsor' })).toBe(true);
-    expect(written[0]).toEqual([3, 1, 'role-change', 'driver1: driver to sponsor']);
-  });
+const listQuery = () => queries.filter(([sql]) => sql.includes('FROM audit_events ae') && !sql.includes('COUNT(*)')).pop();
 
-  test('an action it does not know is recorded as "other" rather than dropped', async () => {
-    await recordAdminAction({ adminUserId: 3, targetUserId: 1, action: 'something-new' });
-    expect(written[0][2]).toBe('other');
-    expect(written[0][3]).toBeNull();
-    expect(actionLabel('something-new')).toBe('Other');
-  });
-
-  test('a long detail is cut to fit the column', async () => {
-    await recordAdminAction({ adminUserId: 3, action: 'role-change', detail: 'x'.repeat(900) });
-    expect(written[0][3]).toHaveLength(500);
-  });
-
-  test('a failed write is reported and does not throw, because the change already happened', async () => {
-    db.query.mockImplementation(async sql => {
-      if (sql.startsWith('INSERT INTO admin_actions')) throw new Error('table is missing');
-      return [];
-    });
-    expect(await recordAdminAction({ adminUserId: 3, targetUserId: 1, action: 'unlock' })).toBe(false);
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('could not record "unlock"'));
-  });
-});
-
-describe('reading', () => {
-  test('newest first, with both usernames joined in', async () => {
-    const list = await listAdminActions({}, { limit: 25, offset: 0 });
-    expect(list).toHaveLength(2);
-    const [sql] = queries.find(([q]) => q.includes('FROM admin_actions a'));
-    expect(sql).toContain('ORDER BY a.created_at DESC, a.id DESC');
-    expect(sql).toContain('LEFT JOIN users admin');
-    expect(sql).toContain('LEFT JOIN users target');
-  });
-
-  test('filters by action and by account, and ignores an action it does not know', async () => {
-    await listAdminActions({ action: 'role-change', targetUserId: 1 });
-    const [sql, params] = queries.find(([q]) => q.includes('FROM admin_actions a'));
-    expect(sql).toContain('WHERE a.action = ? AND a.target_user_id = ?');
-    expect(params).toEqual(['role-change', 1]);
-    queries.length = 0;
-    await countAdminActions({ action: 'nonsense' });
-    expect(queries[0][1]).toEqual([]);
-  });
-});
-
-describe('the page', () => {
-  test('is admin only and linked from the nav, the home page, and Manage users', async () => {
-    await request(app).get('/admin/audit-log').expect(302);
-    const driver = await admin('driver1');
-    await driver.get('/admin/audit-log').expect(403);
-    const agent = await admin();
+describe('who can see it', () => {
+  test('an admin can, from a link on the home page', async () => {
+    const agent = await signIn();
     const home = await agent.get('/').expect(200);
     expect(home.text).toContain('href="/admin/audit-log"');
-    expect(home.text).toContain('>Audit log</a>');
+    await agent.get('/admin/audit-log').expect(200);
   });
 
-  test('lists what was done, to whom, by whom, and when', async () => {
-    const agent = await admin();
-    const page = await agent.get('/admin/audit-log').expect(200);
-    expect(page.text).toContain('Role changed');
-    expect(page.text).toContain('Status changed');
-    expect(page.text).toContain('driver1: driver to sponsor; removed 2 memberships');
+  test('a signed-out visitor is sent to log in, and a driver is refused', async () => {
+    await request(app).get('/admin/audit-log').expect(302);
+    const driver = await signIn('driver1');
+    await driver.get('/admin/audit-log').expect(403);
+  });
+});
+
+describe('what it shows', () => {
+  test('events from every source in one table: what, to whom, by whom, when', async () => {
+    const page = await (await signIn()).get('/admin/audit-log').expect(200);
+
+    for (const label of ['Role changed', 'Points changed', 'Sign-in unlocked', 'Failed sign-in']) {
+      expect(page.text).toContain(label);
+    }
+    expect(page.text).toContain('+50 points: safe driving');
     expect(page.text).toContain('2026-11-10 12:00');
-    expect(page.text).toContain('Showing 1 to 2 of 2 actions.');
-    // Each row links to the same log filtered to that account.
+    expect(page.text).toContain('Showing 1 to 4 of 4 events.');
     expect(page.text).toContain('href="/admin/audit-log?user=1"');
   });
 
-  test('filters by action and by account', async () => {
-    const agent = await admin();
-    const page = await agent.get('/admin/audit-log?action=role-change&user=1').expect(200);
-    expect(page.text).toContain('<option value="role-change" selected>');
-    expect(page.text).toContain('Filtered to <strong>driver1</strong>');
-    const [, params] = queries.filter(([q]) => q.includes('FROM admin_actions a')).pop();
-    expect(params).toEqual(['role-change', 1]);
-  });
+  test('a failed sign-in for a username that is not an account still appears', async () => {
+    const page = await (await signIn()).get('/admin/audit-log').expect(200);
 
-  test('pages, keeping the filters in the links', async () => {
-    total = 60;
-    const agent = await admin();
-    const page = await agent.get('/admin/audit-log?action=unlock&page=2').expect(200);
-    expect(page.text).toContain('Page 2 of 3');
-    expect(page.text).toContain('href="/admin/audit-log?action=unlock&amp;page=3"');
+    expect(page.text).toContain('nobody');
+    expect(page.text).toContain('(no such account)');
   });
 
   test('says plainly when there is nothing to show', async () => {
     rows = [];
     total = 0;
-    const agent = await admin();
-    const empty = await agent.get('/admin/audit-log').expect(200);
-    expect(empty.text).toContain('Nothing has been recorded yet.');
-    const filtered = await agent.get('/admin/audit-log?action=unlock').expect(200);
-    expect(filtered.text).toContain('Nothing matches these filters.');
+    const agent = await signIn();
+
+    expect((await agent.get('/admin/audit-log').expect(200)).text).toContain('Nothing has been recorded yet.');
+    expect((await agent.get('/admin/audit-log?category=points').expect(200)).text).toContain('Nothing matches these filters.');
+  });
+});
+
+describe('filtering and paging', () => {
+  test('by category and by account', async () => {
+    const page = await (await signIn()).get('/admin/audit-log?category=sign-ins&user=1').expect(200);
+
+    expect(page.text).toContain('<option value="sign-ins" selected>');
+    expect(page.text).toContain('Filtered to <strong>driver1</strong>');
+    expect(listQuery()[1].slice(0, 3)).toEqual(['login.succeeded', 'login.failed', 1]);
   });
 
-  test('a deleted account still shows as an id rather than as nothing', async () => {
-    rows = [{ id: 5, action: 'password-reset', detail: 'reset', createdAt: new Date('2026-11-01T00:00:00Z'), adminUserId: 9, adminUsername: null, targetUserId: 8, targetUsername: null, targetRole: null }];
-    total = 1;
-    const agent = await admin();
-    const page = await agent.get('/admin/audit-log').expect(200);
-    expect(page.text).toContain('deleted account #8');
-    expect(page.text).toContain('deleted account #9');
+  test('a category that does not exist is ignored rather than an error', async () => {
+    await (await signIn()).get('/admin/audit-log?category=nonsense').expect(200);
+
+    expect(listQuery()[0]).not.toContain('e.type IN');
+  });
+
+  test('pages keep the filters in their links', async () => {
+    total = 60;
+    const page = await (await signIn()).get('/admin/audit-log?category=accounts&page=2').expect(200);
+
+    expect(page.text).toContain('Page 2 of 3');
+    expect(page.text).toContain('href="/admin/audit-log?category=accounts&amp;page=3"');
+    expect(listQuery()[1].slice(-2)).toEqual(['25', '25']);
+  });
+});
+
+describe('the report filters the spec asks for', () => {
+  test('one sponsor and a date range reach the query, and the count says the range', async () => {
+    const page = await (await signIn()).get('/admin/audit-log?sponsor=4&from=2026-11-01&to=2026-11-09').expect(200);
+
+    expect(page.text).toContain('<option value="4" selected>Acme</option>');
+    expect(page.text).toContain('from 2026-11-01 to 2026-11-09');
+    expect(listQuery()[1].slice(0, 4)).toEqual([4, 4, '2026-11-01', '2026-11-09']);
+  });
+
+  test('a sponsor that does not exist is ignored', async () => {
+    await (await signIn()).get('/admin/audit-log?sponsor=999').expect(200);
+
+    expect(listQuery()[0]).not.toContain('e.sponsor_id = ?');
+  });
+
+  test('a date that is not a date is refused with a message', async () => {
+    const page = await (await signIn()).get('/admin/audit-log?from=yesterday').expect(400);
+
+    expect(page.text).toContain('Enter the start date as YYYY-MM-DD.');
+  });
+});
+
+describe('the CSV download', () => {
+  test('has every row for the same filters, as a file', async () => {
+    const agent = await signIn();
+    const page = await agent.get('/admin/audit-log?category=points&from=2026-11-01').expect(200);
+    expect(page.text).toContain('href="/admin/audit-log.csv?category=points&amp;from=2026-11-01"');
+
+    const csv = await agent.get('/admin/audit-log.csv?category=points&from=2026-11-01').expect(200);
+
+    expect(csv.headers['content-disposition']).toContain('audit-log-from-2026-11-01.csv');
+    expect(csv.text).toContain('"Date (UTC)","Category","Event","Account","By","Sponsor","Detail"');
+    expect(csv.text).toContain('"2026-11-10 12:00","Point changes","Points changed","driver1","sponsor1","Acme","\'+50 points: safe driving"');
+    // not paged: one query, with the filters and no offset
+    expect(listQuery()[1]).toEqual(['points.changed', '2026-11-01', '10000', '0']);
+  });
+
+  test('refuses a bad date instead of downloading everything', async () => {
+    const res = await (await signIn()).get('/admin/audit-log.csv?to=nope').expect(400);
+
+    expect(res.text).toContain('Enter the end date as YYYY-MM-DD.');
+  });
+
+  test('is admin only', async () => {
+    await request(app).get('/admin/audit-log.csv').expect(302);
+    await (await signIn('driver1')).get('/admin/audit-log.csv').expect(403);
+  });
+});
+
+describe("a sponsor's audit log", () => {
+  test('is pinned to its own organization, whatever the form asks for', async () => {
+    const agent = await signIn('sponsor1');
+    const page = await agent.get('/reports/audit-log?sponsor=4&user=1&category=points').expect(200);
+
+    expect(listQuery()[1]).toEqual(['points.changed', 7, 7, '25', '0']);
+    expect(page.text).not.toContain('name="sponsor"');
+    expect(page.text).not.toContain('?user=');
+    expect(page.text).toContain('href="/reports/audit-log.csv?category=points"');
+    await agent.get('/admin/audit-log').expect(403);
+  });
+
+  test('shows that a driver signed in, not where from, on the page and in the CSV', async () => {
+    const agent = await signIn('sponsor1');
+    const page = await agent.get('/reports/audit-log').expect(200);
+    const csv = await agent.get('/reports/audit-log.csv').expect(200);
+
+    for (const text of [page.text, csv.text]) {
+      expect(text).toContain('Failed sign-in');
+      expect(text).not.toContain('203.0.113.7');
+      expect(text).toContain('+50 points: safe driving');
+    }
+    expect(listQuery()[1]).toEqual([7, 7, '10000', '0']);
+  });
+
+  test('a signed-out visitor is sent to log in, and a driver is refused', async () => {
+    await request(app).get('/reports/audit-log').expect(302);
+    await (await signIn('driver1')).get('/reports/audit-log.csv').expect(403);
   });
 });

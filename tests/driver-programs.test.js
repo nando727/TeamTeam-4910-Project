@@ -62,9 +62,29 @@ test('approval saves the membership and decision in one transaction', async () =
 
 test('rejection does not create a membership', async () => {
   await setApplicationStatus(5, 'rejected', 7, 'Program is full');
-  expect(conn.execute).toHaveBeenCalledTimes(2);
+  expect(conn.execute).toHaveBeenCalledTimes(3);
   expect(conn.execute.mock.calls[1][1]).toEqual(['rejected', 'Program is full', 5, 7]);
+  expect(conn.execute.mock.calls.some(([sql]) => sql.includes('driver_sponsors'))).toBe(false);
   expect(conn.commit).toHaveBeenCalledOnce();
+});
+
+// aa-55 the audit log records who decided, about whom, for which sponsor, and why
+const auditRow = () => conn.execute.mock.calls.find(([sql]) => sql.startsWith('INSERT INTO audit_events'))[1];
+
+test('a decision is audited inside the same transaction', async () => {
+  await setApplicationStatus(5, 'rejected', 7, 'Program is full', 9);
+  expect(auditRow()).toEqual(['application.decided', 9, 12, 7, 'rejected: Program is full']);
+});
+
+test('an approval is audited too', async () => {
+  await setApplicationStatus(5, 'approved', 7, null, 9);
+  expect(auditRow()).toEqual(['application.decided', 9, 12, 7, 'approved']);
+});
+
+test('a decision that does not happen is not audited', async () => {
+  conn.execute.mockResolvedValueOnce([[]]); // no such application for this sponsor
+  expect(await setApplicationStatus(5, 'approved', 99)).toBe(false);
+  expect(conn.execute.mock.calls.some(([sql]) => sql.startsWith('INSERT INTO audit_events'))).toBe(false);
 });
 
 test('wrong sponsor or repeated decisions cannot change membership or points', async () => {

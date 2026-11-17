@@ -7,8 +7,9 @@ const {
 } = require('../users/store');
 const { createSponsor, listSponsors, findSponsorById } = require('../sponsors/store');
 const { listDriversForSponsor, listSponsorAccounts } = require('../sponsors/accounts');
-const { ACTIONS, actionLabel, recordAdminAction, listAdminActions, countAdminActions } = require('./audit');
-const { positiveInt, text, queryString, formatStamp } = require('../reports/helpers');
+const { recordEvent } = require('../audit/log');
+const { auditPages } = require('../audit/pages');
+const { positiveInt, queryString } = require('../reports/helpers');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { requireActiveAdmin } = require('./guard');
 const { listDriverSponsors, addDriverSponsor, removeDriverSponsor, MembershipError } = require('../memberships/store');
@@ -170,40 +171,12 @@ router.get('/sponsors/:sponsorId', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ---- Audit log (sprint 9) -------------------------------------------------
-//
-// What administrators have done to accounts, newest first. The sign-in log
-// (login_attempts) and the password log (password_changes) answer their own
-// questions; this one answers "who changed this account, and what went with
-// it?", which role changes made worth asking.
+// ---- Audit log --------------------------------------------------------------
+// aa-55 every audited event in one list, the page itself is src/audit/pages.js
 
-const AUDIT_PAGE_SIZE = 25;
-
-router.get('/audit-log', async (req, res, next) => {
-  try {
-    const wanted = text(req.query.action);
-    const action = Object.prototype.hasOwnProperty.call(ACTIONS, wanted) && wanted !== 'other' ? wanted : '';
-    const userId = positiveInt(text(req.query.user));
-    const filters = { action: action || null, targetUserId: userId };
-
-    const total = await countAdminActions(filters);
-    const pageCount = Math.max(1, Math.ceil(total / AUDIT_PAGE_SIZE));
-    const page = Math.min(positiveInt(text(req.query.page)) || 1, pageCount);
-    const rows = await listAdminActions(filters, { limit: AUDIT_PAGE_SIZE, offset: (page - 1) * AUDIT_PAGE_SIZE });
-    const state = { action, user: userId ? String(userId) : '' };
-    const pageHref = n => '/admin/audit-log' + queryString({ ...state, page: n > 1 ? n : null });
-    const target = userId ? await findUserById(userId) : null;
-
-    res.render('admin/audit-log', {
-      rows, actions: Object.entries(ACTIONS).filter(([key]) => key !== 'other').map(([value, label]) => ({ value, label })),
-      state, target, actionLabel, formatStamp,
-      total, page, pageCount,
-      pageStart: total ? (page - 1) * AUDIT_PAGE_SIZE + 1 : 0, pageEnd: Math.min(page * AUDIT_PAGE_SIZE, total),
-      prevHref: page > 1 ? pageHref(page - 1) : null, nextHref: page < pageCount ? pageHref(page + 1) : null,
-      filtered: Boolean(action || userId),
-    });
-  } catch (err) { next(err); }
-});
+const auditLog = auditPages('/admin/audit-log');
+router.get('/audit-log', auditLog.page);
+router.get('/audit-log.csv', auditLog.csv);
 
 // ---- Manage users (change account status) ---------------------------------
 
@@ -374,9 +347,9 @@ router.post('/manage-users/:userId/status', async (req, res, next) => {
     if (status === 'active') {
       // Restoring access needs no confirmation.
       await updateUserStatus(user.id, status);
-      await recordAdminAction({
-        adminUserId: actingAdminId(req), targetUserId: user.id, action: 'status-change',
-        detail: `${user.username}: ${user.status} to active`,
+      await recordEvent({
+        type: 'status.changed', actorId: actingAdminId(req), subjectId: user.id,
+        detail: `${user.status} to active`,
       });
       return flashAndRedirect(req, res, { kind: 'success', text: `Status for ${user.username} changed to ${status}.` }, returnTo);
     }
@@ -399,13 +372,8 @@ router.post('/manage-users/:userId/unlock', async (req, res, next) => {
       return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, ${user.username} is not locked out.` }, returnTo);
     }
 
-    // Recorded against the administrator who did it; the failed attempts stay
-    // in the audit log exactly as they were.
-    await clearLockout(user.username, req.session.user.id);
-    await recordAdminAction({
-      adminUserId: actingAdminId(req), targetUserId: user.id, action: 'unlock',
-      detail: `${user.username} was let back in after failed sign-ins`,
-    });
+    // the login_unlocks row this writes is the audit record of the unlock
+    await clearLockout(user.username, actingAdminId(req));
     flashAndRedirect(req, res, { kind: 'success', text: `${user.username} can sign in again.` }, returnTo);
   } catch (err) { next(err); }
 });
@@ -429,9 +397,9 @@ router.post('/manage-users/:userId/confirm', async (req, res, next) => {
       return flashAndRedirect(req, res, { kind: 'info', text: `No change needed, status is already ${user.status}.` }, draft.returnTo);
     }
     await updateUserStatus(user.id, draft.status);
-    await recordAdminAction({
-      adminUserId: actingAdminId(req), targetUserId: user.id, action: 'status-change',
-      detail: `${user.username}: ${user.status} to ${draft.status}`,
+    await recordEvent({
+      type: 'status.changed', actorId: actingAdminId(req), subjectId: user.id,
+      detail: `${user.status} to ${draft.status}`,
     });
     flashAndRedirect(req, res, { kind: 'success', text: `Status for ${user.username} changed to ${draft.status}.` }, draft.returnTo);
   } catch (err) { next(err); }
@@ -521,9 +489,9 @@ router.post('/manage-users/:userId/role/confirm', async (req, res, next) => {
     // What actually went, in the same words the confirmation used.
     const removed = Object.entries(result.removed).filter(([, count]) => count > 0)
       .map(([key, count]) => `${count} ${key}`);
-    await recordAdminAction({
-      adminUserId: actingAdminId(req), targetUserId: user.id, action: 'role-change',
-      detail: `${user.username}: ${result.from} to ${result.to}` + (removed.length ? `; removed ${removed.join(', ')}` : '; nothing to remove'),
+    await recordEvent({
+      type: 'role.changed', actorId: actingAdminId(req), subjectId: user.id,
+      detail: `${result.from} to ${result.to}` + (removed.length ? `; removed ${removed.join(', ')}` : '; nothing to remove'),
     });
 
     // The old role is in their session, and so is anything it let them see.
@@ -571,9 +539,9 @@ router.post('/manage-users/:userId/sponsors', requireDriver, async (req, res, ne
     const sponsor = (await listSponsors()).find(s => s.id === sponsorId);
     if (!sponsor) return flashAndRedirect(req, res, { kind: 'error', text: 'Choose a sponsor from the list.' }, back);
     await addDriverSponsor(user.id, sponsorId);
-    await recordAdminAction({
-      adminUserId: actingAdminId(req), targetUserId: user.id, action: 'sponsorship-added',
-      detail: `${user.username} was added to ${sponsor.name}`,
+    await recordEvent({
+      type: 'sponsorship.added', actorId: actingAdminId(req), subjectId: user.id, sponsorId: sponsor.id,
+      detail: `added to ${sponsor.name}`,
     });
     flashAndRedirect(req, res, { kind: 'success', text: `${user.username} now belongs to ${sponsor.name}.` }, back);
   } catch (err) {
@@ -607,9 +575,9 @@ router.post('/manage-users/:userId/sponsors/:sponsorId/remove/confirm', requireD
     delete req.session.sponsorRemoval;
     const removed = await removeDriverSponsor(user.id, draft.sponsorId);
     if (removed) {
-      await recordAdminAction({
-        adminUserId: actingAdminId(req), targetUserId: user.id, action: 'sponsorship-removed',
-        detail: `${user.username} was removed from ${draft.sponsorName}, losing ${Number(draft.balance).toLocaleString('en-US')} point${Number(draft.balance) === 1 ? '' : 's'} held there`,
+      await recordEvent({
+        type: 'sponsorship.removed', actorId: actingAdminId(req), subjectId: user.id, sponsorId: draft.sponsorId,
+        detail: `removed from ${draft.sponsorName}, losing ${Number(draft.balance).toLocaleString('en-US')} point${Number(draft.balance) === 1 ? '' : 's'} held there`,
       });
     }
     flashAndRedirect(req, res, removed
@@ -708,13 +676,6 @@ router.post('/manage-users/:userId/password', async (req, res, next) => {
     // admin resetting their own password keeps the session they are using.
     const cutoffMs = await revokeSessions(user.id);
     if (req.session.user.id === user.id) req.session.issuedAt = cutoffMs + 1;
-
-    // The password itself is already recorded in password_changes; this is the
-    // administrator-facing log, which holds no hash either.
-    await recordAdminAction({
-      adminUserId: actingAdminId(req), targetUserId: user.id, action: 'password-reset',
-      detail: `${user.username}'s password was reset and their other sessions were signed out`,
-    });
 
     flashAndRedirect(req, res, { kind: 'success', text: `Password for ${user.username} was reset. Their other sessions were signed out.` }, STATUS_PAGES[from]);
   } catch (err) { next(err); }

@@ -90,7 +90,7 @@ beforeEach(() => {
       return { affectedRows: 1 };
     }
     if (sql.startsWith('UPDATE setup_tokens SET used_at')) return { affectedRows: 0 };
-    if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
+    if (sql.startsWith('INSERT INTO audit_events')) return { insertId: 1 };
     // Story AA-79: the hash now in force is remembered so it cannot be
     // reused. No rows here, so there is never anything to prune.
     if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };

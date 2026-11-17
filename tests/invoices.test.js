@@ -75,7 +75,7 @@ beforeEach(() => {
       return [...new Set(purchases.map(p => p.day.slice(0, 7)))].sort().reverse().map(month => ({ month }));
     }
     if (sql.startsWith('SELECT team_name')) return [{ team_name: 'F26-Team13', app_version: '1.0.0', release_date: '2026-09-15', description: 'x' }];
-    if (sql.startsWith('INSERT INTO admin_actions')) { auditRows.push(params); return { insertId: auditRows.length }; }
+    if (sql.startsWith('INSERT INTO audit_events')) { auditRows.push(params); return { insertId: auditRows.length }; }
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
@@ -357,9 +357,9 @@ describe('emailing an invoice (AD-46)', () => {
 
     // And the audit log knows billing went out.
     expect(auditRows).toHaveLength(1);
-    expect(auditRows[0][0]).toBe(3);
-    expect(auditRows[0][2]).toBe('invoice-emailed');
-    expect(auditRows[0][3]).toContain('INV-202610-0001 for Demo Sponsor (October 2026) to billing@demo.example: written to the server log');
+    // [event_type, actor, subject, sponsor, detail]
+    expect(auditRows[0].slice(0, 2)).toEqual(['invoice.emailed', 3]);
+    expect(auditRows[0][4]).toContain('INV-202610-0001 for Demo Sponsor (October 2026) to billing@demo.example: written to the server log');
   });
 
   test('needs the form token, an admin, and a real sponsor', async () => {

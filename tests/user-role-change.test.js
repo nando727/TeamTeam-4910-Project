@@ -73,7 +73,7 @@ beforeEach(() => {
     if (sql.startsWith('SELECT COUNT(*) AS total FROM point_transactions')) return [{ total: counts.transactions }];
     if (sql.startsWith('SELECT COUNT(*) AS total FROM purchases')) return [{ total: counts.purchases }];
     if (sql.startsWith('SELECT name FROM sponsors')) return [{ name: 'Northstar Freight' }];
-    if (sql.startsWith('INSERT INTO admin_actions')) { audits.push(params); return { insertId: audits.length }; }
+    if (sql.startsWith('INSERT INTO audit_events')) { audits.push(params); return { insertId: audits.length }; }
     if (sql.startsWith('UPDATE users SET sessions_valid_from')) { revoked.push(params[0]); return { affectedRows: 1 }; }
     if (sql.startsWith('SELECT UNIX_TIMESTAMP(sessions_valid_from)')) return [{ cutoff_ms: Date.now() }];
     throw new Error(`Unexpected query: ${sql}`);
@@ -212,11 +212,10 @@ describe('saving it', () => {
 
     expect(revoked).toContain(1);
     const [audit] = audits;
-    expect(audit[0]).toBe(3);
-    expect(audit[1]).toBe(1);
-    expect(audit[2]).toBe('role-change');
-    expect(audit[3]).toContain('driver1: driver to sponsor');
-    expect(audit[3]).toContain('removed 2 memberships, 3 applications');
+    // [event_type, actor, subject, sponsor, detail]
+    expect(audit.slice(0, 4)).toEqual(['role.changed', 3, 1, null]);
+    expect(audit[4]).toContain('driver to sponsor');
+    expect(audit[4]).toContain('removed 2 memberships, 3 applications');
 
     const page = await agent.get(res.headers.location).expect(200);
     expect(page.text).toContain('driver1 is now a sponsor.');

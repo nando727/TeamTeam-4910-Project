@@ -40,7 +40,8 @@ describe('rerunning on a database that has memberships', () => {
     expect(applied).toContain('Applied migration: 014_driver_sponsors_multiple.sql');
     expect(applied).toContain('Applied migration: 018_sponsor_monthly_fees.sql');
     expect(applied).toContain('Applied migration: 021_password_history.sql');
-    expect(applied.pop()).toBe('Applied migration: 023_sponsor_point_rates.sql');
+    expect(applied).toContain('Applied migration: 023_sponsor_point_rates.sql');
+    expect(applied.pop()).toBe('Applied migration: 024_audit_events.sql');
     expect(sqlRun(conn).some(sql => sql.includes('CREATE PROCEDURE sponsor_monthly_fees'))).toBe(true);
   });
 });

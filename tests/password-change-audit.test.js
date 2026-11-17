@@ -1,9 +1,5 @@
-// Audit log requirement: password changes are recorded, the way login attempts
-// already were. Nothing used to record them at all -- password_resets holds
-// reset tokens, so it says a link was requested, not that a password changed.
-//
-// The row never holds the password or its hash: whose password changed, who
-// changed it, how, and when.
+// aa-55 every way a password can be set is audited: whose password, who
+// changed it, and how... never the password or its hash
 import { createRequire } from 'node:module';
 import { beforeAll, beforeEach, afterEach, describe, test, expect, vi } from 'vitest';
 import request from 'supertest';
@@ -29,23 +25,23 @@ const users = [
 ];
 
 let passwordHash;
-let changes;      // fake password_changes
+let events;       // fake audit_events
 let tokens;       // fake setup_tokens
 let resets;       // fake password_resets
 
 beforeAll(async () => { passwordHash = await hashPassword(PASSWORD); });
 
 beforeEach(() => {
-  changes = [];
+  events = [];
   tokens = [{ id: 1, user_id: 4, token_hash: hashToken(SETUP_TOKEN), expires_at: new Date(Date.now() + 3600_000), used_at: null }];
   resets = [{ id: 1, user_id: 1, token_hash: hashResetToken(RESET_TOKEN), used_at: null }];
 
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
-    if (sql.startsWith('INSERT INTO password_changes')) {
-      const [user_id, changed_by_user_id, method] = params;
-      changes.push({ user_id, changed_by_user_id, method, params });
-      return { insertId: changes.length };
+    if (sql.startsWith('INSERT INTO audit_events')) {
+      const [event_type, actor_user_id, subject_user_id, sponsor_id, detail] = params;
+      events.push({ event_type, actor_user_id, subject_user_id, sponsor_id, detail, params });
+      return { insertId: events.length };
     }
 
     // Story AA-79: the hash now in force is remembered so it cannot be
@@ -137,7 +133,10 @@ describe('every way a password can be set is recorded', () => {
 
     await changeOwnPassword(agent);
 
-    expect(changes).toEqual([{ user_id: 1, changed_by_user_id: 1, method: 'profile', params: expect.anything() }]);
+    expect(events).toEqual([{
+      event_type: 'password.changed', subject_user_id: 1, actor_user_id: 1,
+      sponsor_id: null, detail: 'method=profile', params: expect.anything(),
+    }]);
   });
 
   test('an administrator resetting someone else', async () => {
@@ -149,7 +148,9 @@ describe('every way a password can be set is recorded', () => {
     }).expect(303);
 
     // Whose account, and which admin did it.
-    expect(changes[0]).toMatchObject({ user_id: 1, changed_by_user_id: 3, method: 'admin-reset' });
+    expect(events[0]).toMatchObject({
+      event_type: 'password.changed', subject_user_id: 1, actor_user_id: 3, detail: 'method=admin-reset',
+    });
   });
 
   test('a reset from an emailed link, where nobody is signed in', async () => {
@@ -157,7 +158,9 @@ describe('every way a password can be set is recorded', () => {
       newPassword: NEW_PASSWORD, confirmPassword: NEW_PASSWORD,
     }).expect(303);
 
-    expect(changes[0]).toMatchObject({ user_id: 1, changed_by_user_id: null, method: 'reset-link' });
+    expect(events[0]).toMatchObject({
+      subject_user_id: 1, actor_user_id: null, detail: 'method=reset-link',
+    });
   });
 
   test('claiming an account with a setup link', async () => {
@@ -168,7 +171,9 @@ describe('every way a password can be set is recorded', () => {
       token: formTokenFrom(page), password: NEW_PASSWORD, confirmPassword: NEW_PASSWORD,
     }).expect(302);
 
-    expect(changes[0]).toMatchObject({ user_id: 4, changed_by_user_id: null, method: 'setup-link' });
+    expect(events[0]).toMatchObject({
+      subject_user_id: 4, actor_user_id: null, detail: 'method=setup-link',
+    });
   });
 });
 
@@ -182,7 +187,9 @@ describe('who the log blames', () => {
 
     await changeOwnPassword(agent);
 
-    expect(changes[0]).toMatchObject({ user_id: 1, changed_by_user_id: 3, method: 'profile' });
+    expect(events[0]).toMatchObject({
+      subject_user_id: 1, actor_user_id: 3, detail: 'method=profile',
+    });
   });
 });
 
@@ -192,7 +199,7 @@ describe('what is never written, and what is never missed', () => {
 
     await changeOwnPassword(agent);
 
-    const written = JSON.stringify(changes[0].params);
+    const written = JSON.stringify(events[0].params);
     expect(written).not.toContain(NEW_PASSWORD);
     expect(written).not.toContain('$2b$');
   });
@@ -202,7 +209,7 @@ describe('what is never written, and what is never missed', () => {
 
     await changeOwnPassword(agent, { currentPassword: 'not-my-password', status: 400 });
 
-    expect(changes).toEqual([]);
+    expect(events).toEqual([]);
   });
 
   test('a caller that says nothing about how is still recorded, as unknown', async () => {
@@ -210,12 +217,14 @@ describe('what is never written, and what is never missed', () => {
     // show, so a missing method must never be the quiet case.
     await updateUserPassword(1, NEW_PASSWORD);
 
-    expect(changes[0]).toMatchObject({ user_id: 1, changed_by_user_id: null, method: 'unknown' });
+    expect(events[0]).toMatchObject({
+      event_type: 'password.changed', subject_user_id: 1, actor_user_id: null, detail: 'method=unknown',
+    });
   });
 
   test('an invented method is recorded as unknown rather than stored as given', async () => {
     await updateUserPassword(1, NEW_PASSWORD, { method: 'something-made-up', changedBy: 3 });
 
-    expect(changes[0]).toMatchObject({ method: 'unknown', changed_by_user_id: 3 });
+    expect(events[0]).toMatchObject({ detail: 'method=unknown', actor_user_id: 3 });
   });
 });

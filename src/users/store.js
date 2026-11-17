@@ -3,6 +3,7 @@ const { hashPassword, verifyPassword, NO_PASSWORD } = require('../auth/password'
 const { invalidateSetupTokens } = require('../auth/setup-tokens');
 const { invalidateResetTokens } = require('../auth/password-reset');
 const { recordPasswordUsed, recentPasswordHashes } = require('../auth/password-history');
+const { recordEvent } = require('../audit/log');
 const { notifyPasswordChanged, notifiesFor } = require('../auth/password-notice');
 const { notifyEmailChanged } = require('../auth/contact-notice');
 
@@ -141,7 +142,7 @@ async function matchesRecentPassword(id, password) {
 // resend. The other order fails the wrong way round: a failed void leaves a
 // live link to an account whose password has just changed.
 //
-// Audit log requirement: the change is recorded in password_changes. `method`
+// Audit log requirement: the change is recorded in the audit log. `method`
 // says which route set it and `changedBy` who was signed in at the time, both
 // of which only the caller knows. An unrecognised or missing method is still
 // recorded, as 'unknown': a password change nobody can account for is exactly
@@ -193,13 +194,15 @@ async function updateUserPassword(id, password, { method, changedBy = null } = {
   return true;
 }
 
-// Never the password and never the hash: whose password changed, who changed
-// it, how, and when (the column defaults to the database's clock).
+// aa-55 audits whose password changed, who changed it and how
+// never the password or its hash
 async function recordPasswordChange(userId, changedByUserId, method) {
-  await db.query(
-    'INSERT INTO password_changes (user_id, changed_by_user_id, method) VALUES (?, ?, ?)',
-    [userId, changedByUserId, PASSWORD_CHANGE_METHODS.includes(method) ? method : 'unknown']
-  );
+  await recordEvent({
+    type: 'password.changed',
+    actorId: changedByUserId,
+    subjectId: userId,
+    detail: `method=${PASSWORD_CHANGE_METHODS.includes(method) ? method : 'unknown'}`,
+  });
 }
 
 // Failed sign-ins for a username in the last 24 hours. Read-only: the audit

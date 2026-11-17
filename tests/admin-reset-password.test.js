@@ -58,8 +58,8 @@ beforeEach(() => {
     if (sql.startsWith('UPDATE setup_tokens SET used_at')) return { affectedRows: 0 };
     // Story AA-27: setting a password also voids any pending reset link.
     if (sql.startsWith('UPDATE password_resets SET used_at = NOW() WHERE user_id')) return { affectedRows: 0 };
-    // Audit log requirement: every password change is recorded.
-    if (sql.startsWith('INSERT INTO password_changes')) return { insertId: 1 };
+    // Audit log requirement (story AA-55): recorded in the one audit table.
+    if (sql.startsWith('INSERT INTO audit_events')) return { insertId: 1 };
     // Story AA-79: the hash now in force is remembered so it cannot be
     // reused. No rows here, so there is never anything to prune.
     if (sql.startsWith('INSERT INTO password_history')) return { insertId: 1 };

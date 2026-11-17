@@ -19,7 +19,8 @@ const { apportionDriverFees } = require('./invoice-drivers');
 const { invoiceEmailSubject, invoiceEmailText, looksLikePlaceholder } = require('./invoice-email');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { sendMail } = require('../mail/mailer');
-const { recordAdminAction } = require('../admin/audit');
+const { recordEvent } = require('../audit/log');
+const { auditPages } = require('../audit/pages');
 
 const router = express.Router();
 
@@ -143,6 +144,13 @@ function buildChart(daily, { from, to }) {
 
   return { W, H, L, R, T, B, plotW, plotH, zeroY: +zeroY.toFixed(1), bars, linePoints, ticks, xLabels, bucketDays, start, end, totals, finalCumulative: running };
 }
+
+// ---- Audit log ----------------------------------------------------------------
+// aa-55 a sponsor's audit log, limited to its own drivers by the session
+
+const auditLog = auditPages('/reports/audit-log');
+router.get('/audit-log', auditLog.page);
+router.get('/audit-log.csv', auditLog.csv);
 
 // ---- Driver Point Tracking ----------------------------------------------------
 
@@ -489,9 +497,10 @@ router.post('/invoices/:sponsorId/email', requireFormToken, async (req, res, nex
 
     // Billing went out (or visibly did not): both belong in the audit log.
     // Not tied to a user account; the sponsor is named in the detail.
-    await recordAdminAction({
-      adminUserId: req.session.impersonator ? req.session.impersonator.id : req.session.user.id,
-      action: 'invoice-emailed',
+    await recordEvent({
+      type: 'invoice.emailed',
+      actorId: req.session.impersonator ? req.session.impersonator.id : req.session.user.id,
+      sponsorId: invoice.sponsor.id,
       detail: `${invoice.number} for ${invoice.sponsor.name} (${monthLabel(invoice.month)}) to ${invoice.sponsor.contactEmail}: ${outcome}`,
     });
 

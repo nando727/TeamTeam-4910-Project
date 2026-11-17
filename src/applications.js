@@ -1,4 +1,5 @@
 const db = require('./db');
+const { recordEvent } = require('./audit/log');
 const VALID_STATUSES = ['pending', 'approved', 'rejected'];
 
 //helper to catch strange characters in filter entry
@@ -35,7 +36,8 @@ async function listApplicationsForSponsor(sponsorId,{ status = null, search = nu
 }
 
 
-async function setApplicationStatus(applicationId, status, sponsorId, rejectionReason = null) {
+// decidedBy is the signed-in user who made the decision, for the audit log
+async function setApplicationStatus(applicationId, status, sponsorId, rejectionReason = null, decidedBy = null) {
   if (!sponsorId || !['approved', 'rejected'].includes(status)) return false;
   const conn = await db.pool.getConnection();
   try {
@@ -64,6 +66,14 @@ async function setApplicationStatus(applicationId, status, sponsorId, rejectionR
         [sponsorId, applications[0].driver_id]
       );
     }
+    // aa-55 who decided, when, and why... on conn so it commits with the decision
+    await recordEvent({
+      type: 'application.decided',
+      actorId: decidedBy,
+      subjectId: applications[0].driver_id,
+      sponsorId,
+      detail: status === 'rejected' ? `rejected: ${rejectionReason}` : 'approved',
+    }, conn);
     // Approval and membership must either both save or both roll back.
     await conn.commit();
     return true;
