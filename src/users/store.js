@@ -194,13 +194,8 @@ async function updateUserPassword(id, password, { method, changedBy = null } = {
   return true;
 }
 
-// Never the password and never the hash: whose password changed, who changed
-// it, how, and when (the database's clock sets the time).
-//
-// Story AA-55 (22263): this used to write password_changes, a table whose only
-// job was to hold these rows. It now writes the audit log that every other
-// recorded event goes to; the method rides in the detail, which is where this
-// event's variable part belongs.
+// aa-55 audits whose password changed, who changed it and how
+// never the password or its hash
 async function recordPasswordChange(userId, changedByUserId, method) {
   await recordEvent({
     type: 'password.changed',

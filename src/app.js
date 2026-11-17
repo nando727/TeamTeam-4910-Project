@@ -162,9 +162,12 @@ app.get('/', requireLogin, async (req, res, next) => {
   res.render(view, locals);
 });
 
+// who the audit log credits: the admin, when one is acting as this sponsor
+const decider = req => (req.session.impersonator ? req.session.impersonator.id : req.session.user.id);
+
 app.post('/applications/:id/approve', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
   try {
-    const ok = await setApplicationStatus(req.params.id, 'approved', req.session.user.sponsorId);
+    const ok = await setApplicationStatus(req.params.id, 'approved', req.session.user.sponsorId, null, decider(req));
     if (!ok) return res.status(404).send('Application not found.');
     res.redirect('/');
   } catch (err) {
@@ -179,7 +182,7 @@ app.post('/applications/:id/reject', requireLogin, requireSponsor, requireFormTo
     return res.status(400).send('A rejection reason is required.');
   }
   try {
-    const ok = await setApplicationStatus(req.params.id, 'rejected', req.session.user.sponsorId, reason);
+    const ok = await setApplicationStatus(req.params.id, 'rejected', req.session.user.sponsorId, reason, decider(req));
     if (!ok) return res.status(404).send('Application not found.');
     res.redirect('/');
   } catch (err) { next(err); }

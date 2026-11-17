@@ -223,10 +223,9 @@ CREATE TABLE IF NOT EXISTS password_history (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
--- Every audit record in the app (see migration 024): login attempts, password
--- changes, point changes and application decisions, in one shape. The tables
--- that do a job besides recording keep their own rows and append here as well;
--- see the migration for why the audit log is not what the lockout counts.
+-- the audit log (migration 024): password changes, application decisions and
+-- account changes. sign-ins, point changes and unlocks are audited from their
+-- own tables, so nothing is stored twice
 CREATE TABLE IF NOT EXISTS audit_events (
   id INT AUTO_INCREMENT PRIMARY KEY,
   event_type VARCHAR(48) NOT NULL,
@@ -241,22 +240,6 @@ CREATE TABLE IF NOT EXISTS audit_events (
   FOREIGN KEY (actor_user_id) REFERENCES users(id),
   FOREIGN KEY (subject_user_id) REFERENCES users(id),
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
-);
-
--- Administrator actions on accounts (see migration 022): role changes, status
--- changes, password resets, unlocks, and sponsorship changes. Never holds a
--- password, a hash, or a token.
-CREATE TABLE IF NOT EXISTS admin_actions (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  admin_user_id INT NULL,
-  target_user_id INT NULL,
-  action VARCHAR(32) NOT NULL,
-  detail VARCHAR(500) NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_admin_actions_created (created_at),
-  INDEX idx_admin_actions_target (target_user_id, created_at),
-  FOREIGN KEY (admin_user_id) REFERENCES users(id),
-  FOREIGN KEY (target_user_id) REFERENCES users(id)
 );
 
 -- The 1% monthly fee each sponsor owes (see migration 018). Keep this text the

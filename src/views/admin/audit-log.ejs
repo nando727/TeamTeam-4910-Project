@@ -3,7 +3,7 @@
     <div class="page-header">
       <span class="eyebrow">Administration</span>
       <h1>Audit log</h1>
-      <p class="lede">What administrators have done to accounts, newest first: role changes, status changes, password resets, unlocks, and sponsorship changes. Sign-in attempts are recorded separately and are never changed by anything here.</p>
+      <p class="lede">Everything the system audits, newest first: sign-in attempts, password changes, point changes, driver application decisions, and account changes.</p>
       <% if (target) { %>
         <p class="hint">Filtered to <strong><%= target.username %></strong>. <a href="/admin/audit-log">Show every account</a>.</p>
       <% } %>
@@ -12,11 +12,11 @@
     <form class="filters" method="GET" action="/admin/audit-log">
       <% if (state.user) { %><input type="hidden" name="user" value="<%= state.user %>"><% } %>
       <div class="filters__field">
-        <label for="action">Action</label>
-        <select id="action" name="action" data-autosubmit>
-          <option value="">All actions</option>
-          <% actions.forEach(action => { %>
-            <option value="<%= action.value %>" <%= state.action === action.value ? 'selected' : '' %>><%= action.label %></option>
+        <label for="category">Category</label>
+        <select id="category" name="category" data-autosubmit>
+          <option value="">All categories</option>
+          <% categories.forEach(category => { %>
+            <option value="<%= category.value %>" <%= state.category === category.value ? 'selected' : '' %>><%= category.label %></option>
           <% }); %>
         </select>
       </div>
@@ -28,7 +28,7 @@
 
     <div class="report-bar">
       <span class="muted small">
-        <% if (total === 0) { %>Nothing recorded<% } else { %>Showing <%= pageStart %> to <%= pageEnd %> of <%= total.toLocaleString('en-US') %> action<%= total === 1 ? '' : 's' %><% } %><%= filtered ? ' for these filters' : '' %>.
+        <% if (total === 0) { %>Nothing recorded<% } else { %>Showing <%= pageStart %> to <%= pageEnd %> of <%= total.toLocaleString('en-US') %> event<%= total === 1 ? '' : 's' %><% } %><%= filtered ? ' for these filters' : '' %>.
       </span>
     </div>
 
@@ -37,7 +37,7 @@
         <% if (filtered) { %>
           <p>Nothing matches these filters. <a href="/admin/audit-log">Show everything</a>.</p>
         <% } else { %>
-          <p>Nothing has been recorded yet. Changing a role or a status, resetting a password, unlocking an account, or adding and removing a sponsorship is recorded here.</p>
+          <p>Nothing has been recorded yet.</p>
         <% } %>
       </div>
     <% } else { %>
@@ -46,7 +46,7 @@
           <thead>
             <tr>
               <th scope="col">When (UTC)</th>
-              <th scope="col">Action</th>
+              <th scope="col">Event</th>
               <th scope="col">Account</th>
               <th scope="col">By</th>
               <th scope="col">Detail</th>
@@ -55,19 +55,19 @@
           <tbody>
             <% rows.forEach(row => { %>
               <tr>
-                <td class="nowrap"><%= formatStamp(row.createdAt) %></td>
-                <td class="cell-strong"><%= actionLabel(row.action) %></td>
+                <td class="nowrap"><%= formatStamp(row.occurredAt) %></td>
+                <td class="cell-strong"><%= row.label %></td>
                 <td>
-                  <% if (row.targetUsername) { %>
-                    <a href="/admin/audit-log?user=<%= row.targetUserId %>"><%= row.targetUsername %></a>
-                    <% if (row.targetRole) { %> <span class="role-chip"><%= row.targetRole %></span><% } %>
-                  <% } else if (row.targetUserId) { %>
-                    <span class="muted small">deleted account #<%= row.targetUserId %></span>
+                  <% if (row.subjectId) { %>
+                    <a href="/admin/audit-log?user=<%= row.subjectId %>"><%= row.subject %></a>
+                    <% if (row.subjectRole) { %> <span class="role-chip"><%= row.subjectRole %></span><% } %>
+                  <% } else if (row.subject) { %>
+                    <%= row.subject %> <span class="muted small">(no such account)</span>
                   <% } else { %>
                     <span class="muted small">—</span>
                   <% } %>
                 </td>
-                <td><%= row.adminUsername || (row.adminUserId ? `deleted account #${row.adminUserId}` : 'system') %></td>
+                <td><%= row.actor || '—' %></td>
                 <td><%= row.detail || '—' %></td>
               </tr>
             <% }); %>

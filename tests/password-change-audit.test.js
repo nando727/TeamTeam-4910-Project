@@ -1,14 +1,5 @@
-// Audit log requirement: password changes are recorded. Nothing used to record
-// them at all -- password_resets holds reset tokens, so it says a link was
-// requested, not that a password changed.
-//
-// The row never holds the password or its hash: whose password changed, who
-// changed it, how, and when.
-//
-// Story AA-55 (22263): these rows now go to audit_events, the one table every
-// audit record is written to, instead of a password_changes table of their own.
-// What is recorded has not changed; where it lands has, so this file asserts
-// against the audit row's shape.
+// aa-55 every way a password can be set is audited: whose password, who
+// changed it, and how... never the password or its hash
 import { createRequire } from 'node:module';
 import { beforeAll, beforeEach, afterEach, describe, test, expect, vi } from 'vitest';
 import request from 'supertest';

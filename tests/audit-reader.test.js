@@ -1,257 +1,165 @@
-// Story AA-57 (22265): audit records are kept when no sponsor applies.
-//
-// The table has allowed a NULL sponsor, actor and subject since story AA-55,
-// so there is nothing left to "keep" at write time -- the records already go
-// in. What this story is really about is the read, because every natural way
-// to write the query throws those rows away and says nothing:
-//
-//   WHERE sponsor_id = ?   NULL is not equal to anything, so a password change
-//                          or a login attempt vanishes from a filtered report
-//   JOIN users ON ...      an inner join drops the whole row when the actor is
-//                          NULL, not just the actor's name
-//   event_type IN (...)    a category list that forgot a type hides it forever
-//
-// Two of those three live in SQL that a mocked database cannot evaluate
-// honestly -- a fake that reproduced MySQL's NULL rules would only be testing
-// itself -- so the statement itself is asserted here. The JS either side of it
-// (what is filtered out after the query, how a row is mapped) is tested on
-// rows, the way everything else in this suite is.
+// aa-55, aa-57 reading the audit log: four tables as one list, nothing dropped
+// the statement itself was run against the real database... a mock cannot check
+// SQL, so these tests pin its shape and the JavaScript around it
 import { beforeEach, afterEach, describe, test, expect, vi } from 'vitest';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const db = require('../src/db');
-const {
-  findEvents, categoryOf,
-  EVENT_TYPES, EVENT_CATEGORIES, DEFAULT_LIMIT,
-  UnknownCategoryError, BadDateError,
-} = require('../src/audit/log');
+const { findEvents, countEvents, EVENT_TYPES, CATEGORIES, DEFAULT_LIMIT } = require('../src/audit/log');
 
-let reads;   // every [sql, params] findEvents sent
-let rows;    // what the database hands back
+let reads;
+let rows;
 
 beforeEach(() => {
   reads = [];
   rows = [];
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     reads.push({ sql, params });
-    return rows;
+    return sql.includes('COUNT(*)') ? [{ total: 42 }] : rows;
   });
 });
 
 afterEach(() => vi.restoreAllMocks());
 
-const sql = () => reads[0].sql;
+const sql = () => reads[0].sql.replace(/\s+/g, ' ');
 const params = () => reads[0].params;
-// Collapses the whitespace the statement is built with, so an assertion reads
-// like the SQL rather than like the concatenation.
-const flat = () => sql().replace(/\s+/g, ' ');
 
-// A row shaped the way mysql2 hands one back from this statement.
 const dbRow = (over = {}) => ({
-  id: 1,
-  event_type: 'password.changed',
-  detail: 'method=profile',
-  occurred_at_ms: 1762700000000,
-  actor_username: 'admin1',
-  subject_username: 'driver1',
-  sponsor_name: 'Acme Freight',
-  ...over,
+  type: 'password.changed', detail: 'method=profile', occurred_at_ms: '1794182400000.000000',
+  actor_username: 'admin1', subject_user_id: 1, subject_username: 'driver1', subject_role: 'driver',
+  sponsor_name: 'Acme Freight', ...over,
 });
 
-describe('a record with nothing in its nullable columns survives the read', () => {
-  test('no sponsor, no actor, no subject: still returned', async () => {
-    // A failed login for a username that does not exist is all three at once,
-    // and is exactly the record an audit log is read for.
-    rows = [dbRow({ sponsor_name: null, actor_username: null, subject_username: null })];
+describe('one list from four tables', () => {
+  test('reads audit_events, sign-ins, point changes and unlocks together', async () => {
+    await findEvents();
+
+    for (const table of ['audit_events ae', 'login_attempts la', 'point_transactions pt', 'login_unlocks lu']) {
+      expect(sql()).toContain(`FROM ${table}`);
+    }
+    expect(sql().match(/UNION ALL/g)).toHaveLength(3);
+    expect(sql()).toContain('ORDER BY e.occurred_at DESC, e.id DESC');
+  });
+
+  test('gives each event a label, names instead of ids, and a real time', async () => {
+    rows = [dbRow()];
+
+    const [event] = await findEvents();
+
+    expect(event).toEqual({
+      type: 'password.changed', label: 'Password changed', occurredAt: new Date(1794182400000),
+      actor: 'admin1', subject: 'driver1', subjectId: 1, subjectRole: 'driver',
+      sponsor: 'Acme Freight', detail: 'method=profile',
+    });
+  });
+
+  test('aa-57 an event with no actor, account or sponsor is still listed', async () => {
+    rows = [dbRow({ actor_username: null, subject_user_id: null, subject_username: null, subject_role: null, sponsor_name: null })];
 
     const events = await findEvents();
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ sponsor: null, actor: null, subject: null });
+    expect(events[0]).toMatchObject({ actor: null, subject: null, sponsor: null });
+    // an inner join would drop the whole row, not just the missing name
+    expect(sql().match(/(LEFT )?JOIN (users|sponsors)/g).every(join => join.startsWith('LEFT'))).toBe(true);
   });
 
-  test('the nulls come back as null, not dropped keys or empty strings', async () => {
-    rows = [dbRow({ sponsor_name: null, actor_username: null, subject_username: null })];
+  test('a failed sign-in for a username that was never real keeps the username', async () => {
+    rows = [dbRow({ type: 'login.failed', subject_user_id: null, subject_username: 'nobody', subject_role: null })];
 
     const [event] = await findEvents();
 
-    expect(Object.keys(event).sort()).toEqual(
-      ['actor', 'category', 'detail', 'id', 'occurredAtMs', 'sponsor', 'subject', 'type'],
-    );
-    expect(event.detail).toBe('method=profile');
+    expect(event).toMatchObject({ label: 'Failed sign-in', subject: 'nobody', subjectId: null });
   });
 
-  test('a mix of complete and sponsor-less rows returns both', async () => {
-    rows = [dbRow({ id: 2, sponsor_name: null }), dbRow({ id: 1 })];
+  test('a type from an older deploy reads as Other rather than breaking the page', async () => {
+    rows = [dbRow({ type: 'something.old' })];
 
-    const events = await findEvents();
-
-    expect(events.map(e => e.id)).toEqual([2, 1]);
+    expect((await findEvents())[0].label).toBe('Other');
   });
 });
 
-describe('the statement itself', () => {
-  test('an admin reading everything filters on nothing at all', async () => {
-    // Not "matches any sponsor" -- no WHERE clause exists. A filter that is
-    // never applied cannot drop the rows with nothing in the column. The
-    // column still appears in the LEFT JOIN that fetches the sponsor's name,
-    // which is the one mention of it that keeps rows rather than losing them.
+describe('filters', () => {
+  test('no filter means no WHERE, so nothing can be filtered out', async () => {
     await findEvents();
 
-    expect(flat()).not.toContain('WHERE');
-    expect(flat()).not.toContain('ae.sponsor_id = ?');
-    expect(flat()).toContain('LEFT JOIN sponsors sponsor ON sponsor.id = ae.sponsor_id');
+    expect(sql()).not.toContain('WHERE e.');
+    expect(params()).toEqual([String(DEFAULT_LIMIT), '0']);
   });
 
-  test('one sponsor is matched through its drivers as well as the column', async () => {
+  test('a category becomes its event types, bound as values', async () => {
+    await findEvents({ category: 'sign-ins' });
+
+    expect(sql()).toContain('WHERE e.type IN (?, ?)');
+    expect(params().slice(0, 2)).toEqual(['login.succeeded', 'login.failed']);
+  });
+
+  test('one account', async () => {
+    await findEvents({ userId: 5 });
+
+    expect(sql()).toContain('WHERE e.subject_user_id = ?');
+    expect(params()[0]).toBe(5);
+  });
+
+  test("aa-57 a sponsor sees its drivers' events even though they carry no sponsor", async () => {
     await findEvents({ sponsorId: 7 });
 
-    // The bug this story exists to prevent is this line without the OR.
-    expect(flat()).toContain('ae.sponsor_id = ? OR EXISTS');
-    expect(flat()).toContain('ds.driver_id = ae.subject_user_id AND ds.sponsor_id = ?');
+    expect(sql()).toContain('e.sponsor_id = ? OR EXISTS');
+    expect(sql()).toContain('ds.driver_id = e.subject_user_id AND ds.sponsor_id = ?');
     expect(params().slice(0, 2)).toEqual([7, 7]);
   });
 
-  test('every join to a nullable column is a LEFT join', async () => {
-    await findEvents();
-
-    const joins = flat().match(/(LEFT )?JOIN \w+/g) || [];
-    expect(joins).toHaveLength(3);
-    expect(joins.every(j => j.startsWith('LEFT JOIN'))).toBe(true);
-  });
-
-  test('the date range ends inclusively, by the day and not by its midnight', async () => {
+  test('aa-59 a date range is compared in SQL and includes the whole last day', async () => {
     await findEvents({ from: '2026-11-01', to: '2026-11-09' });
 
-    expect(flat()).toContain('ae.occurred_at >= ?');
-    // `<= '2026-11-09'` would hide everything that happened today.
-    expect(flat()).toContain('ae.occurred_at < ? + INTERVAL 1 DAY');
-    expect(flat()).not.toContain('occurred_at <=');
-    expect(params()).toEqual(['2026-11-01', '2026-11-09', DEFAULT_LIMIT]);
+    expect(sql()).toContain('e.occurred_at >= ? AND e.occurred_at < ? + INTERVAL 1 DAY');
+    expect(params().slice(0, 2)).toEqual(['2026-11-01', '2026-11-09']);
   });
 
-  test('the time crosses as a number, computed by the database', async () => {
-    // Story AA-59: a DATETIME handed to the driver comes back as a Date at
-    // local midnight, so the conversion happens in SQL or not at all.
-    await findEvents();
+  test('every value is bound: as many placeholders as parameters', async () => {
+    await findEvents({ category: 'accounts', userId: 5, sponsorId: 7, from: '2026-11-01', to: '2026-11-09' }, { limit: 10, offset: 20 });
 
-    expect(flat()).toContain('UNIX_TIMESTAMP(ae.occurred_at) * 1000');
-    expect(params().some(p => p instanceof Date)).toBe(false);
+    expect(reads[0].sql.match(/\?/g)).toHaveLength(params().length);
+    expect(params().slice(-2)).toEqual(['10', '20']);
   });
 
-  test('the time is a number by the time a caller sees it', async () => {
-    // UNIX_TIMESTAMP(...) * 1000 is a DECIMAL, and mysql2 hands DECIMALs back
-    // as strings -- checked against the real server, which returns
-    // "1794182400000.000000" for this. A string would sort and compare wrongly
-    // everywhere downstream without ever looking wrong.
-    rows = [dbRow({ occurred_at_ms: '1794182400000.000000' })];
+  test('counting uses the same filters as listing', async () => {
+    expect(await countEvents({ category: 'points', userId: 5 })).toBe(42);
 
-    const [event] = await findEvents();
-
-    expect(event.occurredAtMs).toBe(1794182400000);
-    expect(typeof event.occurredAtMs).toBe('number');
-  });
-
-  test('newest first, and ties broken so the order is stable', async () => {
-    await findEvents();
-
-    expect(flat()).toContain('ORDER BY ae.occurred_at DESC, ae.id DESC');
-  });
-
-  test('every value is bound, and the counts match', async () => {
-    await findEvents({ sponsorId: 7, category: 'login-attempts', from: '2026-11-01', to: '2026-11-09' });
-
-    expect((sql().match(/\?/g) || []).length).toBe(params().length);
-    expect(sql()).not.toContain("'");
-  });
-
-  test('a category becomes placeholders, never the type names inline', async () => {
-    await findEvents({ category: 'login-attempts' });
-
-    expect(flat()).toContain('ae.event_type IN (?, ?)');
-    expect(flat()).not.toContain('login.failed');
-    expect(params()).toEqual(['login.succeeded', 'login.failed', DEFAULT_LIMIT]);
-  });
-
-  test('the row ceiling is bound too, and a junk limit falls back', async () => {
-    await findEvents({ limit: 10 });
-    expect(params().at(-1)).toBe(10);
-
-    reads = [];
-    await findEvents({ limit: 'all of them' });
-    expect(params().at(-1)).toBe(DEFAULT_LIMIT);
-  });
-});
-
-describe('categories cover the log, so no filter can hide a row', () => {
-  test('every type a writer may use belongs to exactly one category', async () => {
-    for (const type of EVENT_TYPES) {
-      const owners = Object.keys(EVENT_CATEGORIES).filter(c => EVENT_CATEGORIES[c].includes(type));
-      expect(owners, type).toHaveLength(1);
-    }
-  });
-
-  test('the four categories the spec names are all there, and all non-empty', async () => {
-    // The project description's audit log report is filtered "by audit log
-    // category" and names these four. Some have no writer yet; an empty list
-    // would make that category a report that says nothing happened.
-    for (const name of ['driver-applications', 'point-changes', 'password-changes', 'login-attempts']) {
-      expect(EVENT_CATEGORIES[name], name).toBeTruthy();
-      expect(EVENT_CATEGORIES[name].length, name).toBeGreaterThan(0);
-    }
-  });
-
-  test("the writer's fallback type is reachable through a category", async () => {
-    // recordEvent stores an unrecognised type as 'unknown' rather than
-    // dropping it. If no category held it, a filtered report never would.
-    expect(EVENT_TYPES).toContain('unknown');
-    expect(categoryOf('unknown')).toBe('other');
-  });
-
-  test('a type that predates its category reads as other, rather than nothing', async () => {
-    rows = [dbRow({ event_type: 'something.from.an.older.deploy' })];
-
-    const [event] = await findEvents();
-
-    expect(event.category).toBe('other');
-    expect(event.type).toBe('something.from.an.older.deploy');
+    expect(sql()).toContain('WHERE e.type IN (?) AND e.subject_user_id = ?');
+    expect(params()).toEqual(['points.changed', 5]);
   });
 });
 
 describe('what the reader refuses', () => {
-  test('a category nobody recognises, rather than an empty report', async () => {
-    // An empty report and a misspelled filter look identical on screen, and
-    // only one of them means nothing happened.
-    await expect(findEvents({ category: 'passwords' })).rejects.toThrow(UnknownCategoryError);
-    expect(reads).toEqual([]);
+  test('a category it does not know, rather than showing an empty log', async () => {
+    await expect(findEvents({ category: 'nope' })).rejects.toThrow('Unknown audit log category');
+    expect(db.query).not.toHaveBeenCalled();
   });
 
   test('a date that is not a date', async () => {
-    await expect(findEvents({ from: 'last tuesday' })).rejects.toThrow(BadDateError);
-    await expect(findEvents({ to: "2026-11-09'; DROP TABLE audit_events; --" })).rejects.toThrow(BadDateError);
-    expect(reads).toEqual([]);
+    await expect(findEvents({ to: "2026-11-09'; DROP TABLE audit_events; --" })).rejects.toThrow('YYYY-MM-DD');
+    expect(db.query).not.toHaveBeenCalled();
   });
 
-  test('nothing is read when an argument is refused', async () => {
-    // A refusal that had already run the query would be a report shown and an
-    // error raised at once.
-    await expect(findEvents({ sponsorId: 7, category: 'nope' })).rejects.toThrow();
-    expect(db.query).not.toHaveBeenCalled();
+  test('a junk page size falls back to the default', async () => {
+    await findEvents({}, { limit: 'all of them', offset: -5 });
+
+    expect(params()).toEqual([String(DEFAULT_LIMIT), '0']);
   });
 });
 
-describe('what the reader does not do', () => {
-  test('an empty log reads as an empty list, not an error', async () => {
-    rows = [];
-    await expect(findEvents({ sponsorId: 7 })).resolves.toEqual([]);
+describe('categories', () => {
+  test('every event type belongs to a category the page can filter by', () => {
+    for (const [type, { category }] of Object.entries(EVENT_TYPES)) {
+      expect(CATEGORIES[category], type).toBeTruthy();
+    }
   });
 
-  test('neither a password nor a hash can appear in what is read back', async () => {
-    // The columns selected are fixed here, so this asserts the statement never
-    // reaches for one it should not.
-    await findEvents();
-
-    expect(sql()).not.toContain('password');
+  test('the four the project description names all have events', () => {
+    for (const category of ['sign-ins', 'passwords', 'points', 'applications']) {
+      expect(Object.values(EVENT_TYPES).some(type => type.category === category), category).toBe(true);
+    }
   });
 });

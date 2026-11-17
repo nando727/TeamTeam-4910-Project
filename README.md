@@ -499,43 +499,33 @@ What this does not cover: someone cycling through *different* usernames. That
 needs the request's origin, which `password_resets` does not record &mdash; a
 column and a migration, worth its own story rather than being tacked on here.
 
-### Password changes are recorded (audit log requirement)
+### Audit log (stories AA-55, AA-57, AA-59, AA-60)
 
-Every password that gets set writes a row to the audit log, `audit_events`
-(migration 024): whose password it was, who changed it, how, and when. **Never
-the password and never its hash.**
+Admins read everything the system audits on one page, **Audit log**
+(`/admin/audit-log`), newest first and filterable by category or by account.
 
-These rows used to have a table of their own, `password_changes` (migration
-019). Story AA-55 moved them to the one table every audit record goes to;
-migration 024 copies the existing rows across, and the old table is left in
-place, no longer written. What is recorded did not change &mdash; the `method`
-below now rides in the event's `detail` as `method=profile` and the rest are
-columns of `audit_events`.
+Each event is stored once:
 
-Nothing recorded this before. `password_resets` looks like it does, but it
-holds reset *tokens* &mdash; it says a link was requested, not that a password
-was ever changed, and it knows nothing about an administrator's reset or
-someone changing their own.
+| Category | Stored in |
+|---|---|
+| Sign-in attempts | `login_attempts` |
+| Point changes | `point_transactions` |
+| Sign-in unlocks | `login_unlocks` |
+| Password changes, driver application decisions, account changes (role, status, sponsorship) | `audit_events` |
 
-`method` is one of `profile`, `admin-reset`, `reset-link` or `setup-link`.
-Anything else is written as `unknown` rather than dropped: a password change
-nobody can account for is precisely what the log exists to surface, so it must
-never be the quiet case. A caller that passes no method at all gets the same
-treatment, which is what makes this safe to rely on when a fifth path appears.
+`findEvents` in `src/audit/log.js` reads all four as one list. `recordEvent` in
+the same file is the only thing that writes `audit_events`.
 
-`changed_by_user_id` is NULL where nobody was signed in &mdash; a reset link or
-a setup link, where the link itself is the credential. Where somebody was, it
-is **the person at the keyboard**: an administrator who is impersonating a
-driver and changes that driver's password is recorded as the administrator,
-not as the driver whose session it technically is. A log that names the wrong
-person is worse than no log.
+- An event records who did it, whose account it was about, the sponsor if there
+  is one, and a detail. Never a password or a hash.
+- When an admin is impersonating someone, the admin is recorded as who did it.
+- The database sets the time, not the app.
+- If an audit write fails, it is logged to the server console and the action
+  still completes.
 
-The row is written after the password, so the log only claims changes that
-happened. The two statements are not in one transaction: if the insert fails,
-the request errors with the password already changed and nothing recorded. A
-transaction is the honest fix and would need a helper in `src/db.js`, which
-every other feature would then want too &mdash; worth its own story rather than
-being smuggled in here.
+**Before deploying:** run `npm run db:migrate`. Migration 024 creates
+`audit_events`, copies the old `password_changes` rows into it, and drops the
+unused `admin_actions` table.
 
 ### The owner is told when a password changes (story 22227)
 
@@ -663,7 +653,7 @@ current password.
 
 **Where the old hashes live.** `password_history` (migration 021) is the one
 table in the app that keeps hashes a password no longer in use.
-`password_changes` deliberately holds none &mdash; an audit log read by
+The audit log deliberately holds none &mdash; a log read by
 administrators should not double as a pile of material to crack. The cost of
 having such a table is worth being plain about: a stolen copy is a set of
 bcrypt hashes someone can work on offline. Three things keep it small.
@@ -1352,13 +1342,6 @@ transaction, and the account is signed out everywhere afterwards.
 Sponsor status) showing its details, the sponsor users who act for it, and its
 drivers with the points they hold there. The sponsor's own Organization page
 gained the same People section.
-
-**The audit log** (`/admin/audit-log`, migration 022) records role changes,
-status changes, password resets, unlocks, and sponsorship changes: who did it,
-to whom, when, and what went with it. It holds no password, hash, or token,
-for the same reason `password_changes` does not. A failed write is logged and
-ignored -- the change it describes has already happened, and losing the record
-is better than undoing the change.
 
 ## Daylight and night (sprint 9)
 
