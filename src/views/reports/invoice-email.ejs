@@ -1,0 +1,34 @@
+<%- include('../partials/head', { title: `Email invoice ${invoice.number}` }) %>
+  <section class="card card--form">
+    <div class="page-header">
+      <span class="eyebrow">Reports</span>
+      <h1>Email this invoice</h1>
+      <p class="lede">Check who it goes to and what it says. Nothing is sent until you confirm, and the full email is below, exactly as it will arrive.</p>
+    </div>
+
+    <dl class="details">
+      <dt>To</dt><dd><strong><%= invoice.sponsor.contactEmail %></strong> (<%= invoice.sponsor.name %>'s contact address)</dd>
+      <dt>Subject</dt><dd><%= subject %></dd>
+      <dt>Invoice</dt><dd><%= invoice.number %>, <%= monthLabel %></dd>
+      <dt>Amount due</dt><dd><%= dollars(invoice.totals.feeCents) %></dd>
+    </dl>
+
+    <% if (placeholder) { %>
+      <p class="error" role="alert"><strong>This address looks like a placeholder.</strong>
+        Its domain is reserved for documentation and testing, so nothing real receives mail there.
+        Fix <%= invoice.sponsor.name %>'s contact email before billing them this way.</p>
+    <% } %>
+
+    <h2 class="section-title">The email, in full</h2>
+    <pre class="email-preview"><%= text %></pre>
+
+    <%# The month rides in the query string, where every invoice route reads it. %>
+    <form method="POST" action="/reports/invoices/<%= invoice.sponsor.id %>/email?month=<%= invoice.month %>" data-submit-once>
+      <input type="hidden" name="token" value="<%= token %>">
+      <div class="button-row">
+        <button type="submit">Send to <%= invoice.sponsor.contactEmail %></button>
+        <a class="button-link" href="<%= invoiceHref %>">Cancel</a>
+      </div>
+    </form>
+  </section>
+<%- include('../partials/foot') %>

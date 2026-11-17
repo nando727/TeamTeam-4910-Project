@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const db = require('../src/db');
 const { app } = require('../src/app');
 const { hashPassword } = require('../src/auth/password');
+const { sentMessages, clearOutbox } = require('../src/mail/mailer');
 
 const users = {
   admin1: { id: 3, role: 'admin', status: 'active', sponsor_id: null },
@@ -30,11 +31,14 @@ const purchases = [
 ];
 let hash;
 let extraLineItem;
+let auditRows;
 
 beforeAll(async () => { hash = await hashPassword('Password1!'); });
 
 beforeEach(() => {
   extraLineItem = null;
+  auditRows = [];
+  clearOutbox();
   vi.spyOn(db, 'query').mockImplementation(async (sql, params = []) => {
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
@@ -71,11 +75,12 @@ beforeEach(() => {
       return [...new Set(purchases.map(p => p.day.slice(0, 7)))].sort().reverse().map(month => ({ month }));
     }
     if (sql.startsWith('SELECT team_name')) return [{ team_name: 'F26-Team13', app_version: '1.0.0', release_date: '2026-09-15', description: 'x' }];
+    if (sql.startsWith('INSERT INTO admin_actions')) { auditRows.push(params); return { insertId: auditRows.length }; }
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); clearOutbox(); });
 
 async function login(username) {
   const agent = request.agent(app);
@@ -164,7 +169,8 @@ describe('one invoice', () => {
     const admin = await login('admin1');
     const page = await admin.get('/reports/invoices/1?month=2026-10').expect(200);
     expect(callParams().pop()).toEqual(['CALL sponsor_monthly_fees(?, ?)', ['2026-10-01', 1]]);
-    expect(page.text).toContain('<h1 id="invoice-title">Invoice INV-202610-0001</h1>');
+    // The id carries the sponsor so the print-all page can hold many invoices.
+    expect(page.text).toContain('<h1 id="invoice-title-1">Invoice INV-202610-0001</h1>');
     expect(page.text).toContain('From F26-Team13');
     expect(page.text).toContain('<dt>Billing period</dt><dd>October 1, 2026 to October 31, 2026</dd>');
     expect(page.text).toContain('<dt>Issued</dt><dd>November 1, 2026</dd>');
@@ -233,5 +239,138 @@ describe('one invoice', () => {
       '"Program fee (1% of purchases)","","","","",1.62',
       '"Amount due","","","","",1.62',
     ]);
+  });
+});
+
+describe('the fee by driver (AD-43)', () => {
+  test('each driver\'s purchases, total, and fee, summing to the cent to the amount due', async () => {
+    const admin = await login('admin1');
+    const page = await admin.get('/reports/invoices/1?month=2026-10').expect(200);
+    expect(page.text).toContain('Fee by driver');
+    // Alphabetical: Dana, then John. Exact fees are 59.00c and 102.98c; the
+    // procedure bills 162c, so the odd cent lands on the larger remainder.
+    const rows = [...page.text.matchAll(/<td class="cell-strong">([^<]+)<span class="muted small">\(([^)]+)\)<\/span><\/td>\s*<td class="num">(\d+)<\/td>\s*<td class="num">([^<]+)<\/td>\s*<td class="num">([^<]+)<\/td>/g)]
+      .map(m => [m[1].trim(), m[2], m[3], m[4], m[5]]);
+    expect(rows).toEqual([
+      ['Dana Driver', 'driver2', '1', '$59.00', '$0.59'],
+      ['John Doe', 'driver1', '2', '$102.98', '$1.03'],
+    ]);
+    expect(page.text).toMatch(/All drivers<\/th>\s*<td class="num">3<\/td>\s*<td class="num">\$161\.98<\/td>\s*<td class="num cell-strong">\$1\.62<\/td>/);
+    expect(page.text).toContain('Odd cents are spread across the drivers');
+    // The line items are still there in full.
+    expect(page.text).toContain('Dash camera');
+    expect(page.text).toContain('Tire gauge');
+  });
+
+  test('an invoice with no purchases shows no driver section', async () => {
+    const admin = await login('admin1');
+    const page = await admin.get('/reports/invoices/3?month=2026-10').expect(200);
+    expect(page.text).not.toContain('Fee by driver');
+  });
+});
+
+describe('print all invoices (AD-41)', () => {
+  test('one page holds every billable sponsor\'s full invoice, page-broken, skipping zero months', async () => {
+    const admin = await login('admin1');
+    const list = await admin.get('/reports/invoices?month=2026-10').expect(200);
+    expect(list.text).toContain('href="/reports/invoices/print?month=2026-10"');
+    const page = await admin.get('/reports/invoices/print?month=2026-10').expect(200);
+    // Both full invoices, with their own headers, driver fees, and totals.
+    expect(page.text).toContain('<h1 id="invoice-title-1">Invoice INV-202610-0001</h1>');
+    expect(page.text).toContain('<h1 id="invoice-title-2">Invoice INV-202610-0002</h1>');
+    expect(page.text.match(/class="invoice-sheet"/g)).toHaveLength(2);
+    expect(page.text.match(/Fee by driver/g)).toHaveLength(2);
+    expect(page.text).toContain('Theo Trucker');
+    // Quiet Logistics had no purchases in October: not billed, not printed.
+    expect(page.text).not.toContain('Quiet &lt;Logistics&gt;');
+    expect(page.text).toContain('2 invoices for October 2026, $2.92 due in total');
+    expect(page.text).toContain('Each one starts on its own printed page.');
+    expect(page.text).toContain('data-print');
+  });
+
+  test('a month with nothing to bill says so instead of printing blank sheets', async () => {
+    const admin = await login('admin1');
+    const page = await admin.get('/reports/invoices/print?month=2026-01').expect(200);
+    expect(page.text).toContain('No purchases in January 2026.');
+    expect(page.text).not.toContain('class="invoice-sheet"');
+  });
+
+  test('admins only, and a bad month is refused', async () => {
+    await request(app).get('/reports/invoices/print?month=2026-10').expect(302);
+    const sponsor = await login('sponsor1');
+    await sponsor.get('/reports/invoices/print?month=2026-10').expect(403);
+    const admin = await login('admin1');
+    await admin.get('/reports/invoices/print?month=2026-13').expect(400);
+  });
+});
+
+describe('emailing an invoice (AD-46)', () => {
+  const tokenOf = page => page.text.match(/name="token" value="([a-f0-9]+)"/)[1];
+
+  test('the invoice page offers it, and the confirm page shows exactly what will be sent', async () => {
+    const admin = await login('admin1');
+    const invoice = await admin.get('/reports/invoices/1?month=2026-10').expect(200);
+    expect(invoice.text).toContain('href="/reports/invoices/1/email?month=2026-10"');
+    expect(invoice.text).toContain('Email this invoice');
+    const page = await admin.get('/reports/invoices/1/email?month=2026-10').expect(200);
+    expect(page.text).toContain('<strong>billing@demo.example</strong>');
+    expect(page.text).toContain('Invoice INV-202610-0001 from F26-Team13, October 2026');
+    // The .example domain is reserved for documentation, and the page says so.
+    expect(page.text).toContain('This address looks like a placeholder.');
+    // The full text body is on the page, driver fees and all.
+    expect(page.text).toContain('Fee by driver');
+    expect(page.text).toContain('AMOUNT DUE');
+    expect(page.text).toContain('Send to billing@demo.example');
+    // Looking at the page sends nothing.
+    expect(sentMessages()).toHaveLength(0);
+  });
+
+  test('confirming sends the text invoice through sendMail and reports what happened', async () => {
+    const admin = await login('admin1');
+    const confirm = await admin.get('/reports/invoices/1/email?month=2026-10').expect(200);
+    const res = await admin.post('/reports/invoices/1/email?month=2026-10').type('form')
+      .send({ token: tokenOf(confirm) }).expect(303);
+    expect(res.headers.location).toBe('/reports/invoices/1?month=2026-10');
+
+    const [mail] = sentMessages();
+    expect(mail.to).toBe('billing@demo.example');
+    expect(mail.subject).toBe('Invoice INV-202610-0001 from F26-Team13, October 2026');
+    expect(mail.transport).toBe('console');
+    expect(mail.text).toContain('Invoice INV-202610-0001');
+    expect(mail.text).toContain('Billing period: October 1, 2026 to October 31, 2026');
+    expect(mail.text).toContain('Amount due:     $1.62');
+    expect(mail.text).toMatch(/Dana Driver\s+1\s+\$59\.00\s+\$0\.59/);
+    expect(mail.text).toMatch(/John Doe\s+2\s+\$102\.98\s+\$1\.03/);
+    expect(mail.text).toContain('Dash camera');
+    // Plain text stays within 72 columns, so no client wraps a table row
+    // into the wrong column.
+    const wide = mail.text.split('\n').filter(line => line.length > 72);
+    expect(wide).toEqual([]);
+
+    // The tests run on the console transport, so the page says the truth:
+    // written to the log, not sent.
+    const invoice = await admin.get(res.headers.location).expect(200);
+    expect(invoice.text).toContain('No email service is connected here, so invoice INV-202610-0001 was written to the server log');
+    // One-shot: a reload does not claim it again.
+    const again = await admin.get(res.headers.location).expect(200);
+    expect(again.text).not.toContain('written to the server log');
+
+    // And the audit log knows billing went out.
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0][0]).toBe(3);
+    expect(auditRows[0][2]).toBe('invoice-emailed');
+    expect(auditRows[0][3]).toContain('INV-202610-0001 for Demo Sponsor (October 2026) to billing@demo.example: written to the server log');
+  });
+
+  test('needs the form token, an admin, and a real sponsor', async () => {
+    const admin = await login('admin1');
+    await admin.post('/reports/invoices/1/email?month=2026-10').type('form').send({ token: 'nope' }).expect(403);
+    const sponsor = await login('sponsor1');
+    await sponsor.get('/reports/invoices/1/email?month=2026-10').expect(403);
+    await sponsor.post('/reports/invoices/1/email?month=2026-10').type('form').send({}).expect(403);
+    await request(app).get('/reports/invoices/1/email?month=2026-10').expect(302);
+    await admin.get('/reports/invoices/99/email?month=2026-10').expect(404);
+    expect(sentMessages()).toHaveLength(0);
+    expect(auditRows).toHaveLength(0);
   });
 });

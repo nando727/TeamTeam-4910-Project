@@ -94,6 +94,10 @@ describe('the palettes', () => {
   test('printing forces the daylight values, so a page printed at night is readable', () => {
     const print = css.slice(css.indexOf('@media print'));
     expect(print).toContain('--surface: var(--paper)');
+    // The override must outrank BOTH night selectors, or a dark page prints
+    // dark -- which is the bug this caught in a rendered PDF.
+    expect(print).toContain(':root, :root:not([data-theme="light"]), :root[data-theme="dark"]');
+    expect(print).toContain('--heading:');
     expect(print).toContain('--text:');
     expect(print).toContain('--surface-muted: var(--paper)');
     // And the toggle is not printed: it is of no use on paper.
