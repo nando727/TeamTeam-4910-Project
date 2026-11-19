@@ -15,8 +15,8 @@ beforeAll(async () => { hash = await hashPassword('Password1!'); });
 beforeEach(() => {
   catalog = [];
   detail = null;
-  vi.spyOn(provider, 'listProducts').mockResolvedValue([{ productId: 3 }, { productId: 4 }]);
-  vi.spyOn(provider, 'getProduct').mockResolvedValue({ productId: 3, description: 'High visibility jacket' });
+  vi.spyOn(provider, 'listProducts').mockResolvedValue([{ productId: 3, priceValue: 45.99 }, { productId: 4, priceValue: 10 }]);
+  vi.spyOn(provider, 'getProduct').mockResolvedValue({ productId: 3, priceValue: 45.99, description: 'High visibility jacket' });
   vi.spyOn(db, 'query').mockImplementation(async (sql, params) => {
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     if (sql.startsWith('SELECT sessions_valid_from')) return [{ revoked: 0 }];
@@ -66,7 +66,7 @@ test('catalog scopes selections to current memberships, including admin-added sp
   expect(params).toEqual([1]);
   expect(sql).toContain('ds.driver_id = ?');
   expect(sql).not.toContain('sponsor_applications');
-  expect(provider.listProducts).toHaveBeenCalledWith({ allowStale: false });
+  expect(provider.listProducts).toHaveBeenCalledWith({ allowStale: false, fresh: true });
   expect(sql).toContain('JOIN driver_sponsors ds ON ds.sponsor_id = c.sponsor_id');
 });
 
@@ -83,7 +83,7 @@ test('product detail shows its name and rejects products outside the current spo
   expect(params).toEqual([1]);
   expect(sql).toContain('ds.driver_id = ?');
   expect(sql).not.toContain('sponsor_applications');
-  expect(provider.getProduct).toHaveBeenCalledWith(3, { allowStale: false });
+  expect(provider.getProduct).toHaveBeenCalledWith(3, { allowStale: false, fresh: true });
   detail = [];
   await driver.get('/driver/catalog/8/3').expect(404);
   await driver.get('/driver/catalog/7/3').expect(404);
@@ -109,6 +109,25 @@ test('catalog groups multiple sponsors and escapes product names and description
   expect(product.text).toContain('&lt;script&gt;details&lt;/script&gt;');
 });
 
+test('live price uses each sponsor rate and shows an insufficient balance only for that sponsor', async () => {
+  catalog = [
+    { sponsorId: 7, sponsorName: 'Northstar', id: 3, name: 'Reward', price_value: '1.00', balance: 250, points_per_dollar: 10 },
+    { sponsorId: 8, sponsorName: 'Southstar', id: 4, product_id: 3, name: 'Reward', price_value: '1.00', balance: 499, points_per_dollar: 20 },
+  ];
+  provider.listProducts.mockResolvedValue([{ productId: 3, priceValue: 24.99 }]);
+  provider.getProduct.mockResolvedValue({ productId: 3, priceValue: 24.99, description: 'A reward' });
+  const driver = await login();
+  const page = await driver.get('/driver/catalog').expect(200);
+  expect(page.text).toContain('250 points');
+  expect(page.text).toContain('500 points');
+  expect(page.text.match(/Insufficient points/g)).toHaveLength(1);
+  expect(page.text).toContain('need 1 point more');
+  const detailPage = await driver.get('/driver/catalog/8/4').expect(200);
+  expect(detailPage.text).toContain('$24.99');
+  expect(detailPage.text).toContain('500 points');
+  expect(detailPage.text).toContain('Insufficient points');
+});
+
 test('invalid product identifiers are rejected before querying the catalog', async () => {
   const driver = await login();
   await driver.get('/driver/catalog/7/3junk').expect(404);
@@ -127,7 +146,7 @@ test('provider removal hides saved products and disables selection on their deta
   const unavailable = await driver.get('/driver/catalog/7/20').expect(200);
   expect(unavailable.text).toContain('Currently unavailable');
   expect(unavailable.text).toMatch(/<button[^>]+disabled/);
-  expect(provider.getProduct).toHaveBeenCalledWith(3, { allowStale: false });
+  expect(provider.getProduct).toHaveBeenCalledWith(3, { allowStale: false, fresh: true });
 });
 
 test('detail and cards label unknown availability and prevent selection', async () => {

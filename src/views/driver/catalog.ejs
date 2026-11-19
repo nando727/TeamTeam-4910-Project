@@ -22,6 +22,10 @@
               <span class="action__title"><%= product.name %></span>
             </a>
             <span class="action__text"><strong class="product-card__points"><%= points(product.points_cost) %></strong> · $<%= Number(product.price_value).toFixed(2) %></span>
+            <% if (!product.priceConfirmed) { %><p class="action__text">Last known price; current price could not be confirmed.</p><% } %>
+            <% if (product.priceConfirmed && Number(product.balance) < product.points_cost) { %>
+              <p class="error">Insufficient points. You have <%= points(product.balance) %> and need <%= points(product.points_cost - Number(product.balance)) %> more to redeem this product.</p>
+            <% } %>
             <%# One add at a time. Two clicks before the page comes back are
                 two requests writing the same session, and one of them is
                 lost; the group releases itself when the page loads. %>

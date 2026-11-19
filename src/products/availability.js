@@ -7,7 +7,7 @@ function availability(product) {
 
 async function currentProduct(id) {
   try {
-    return await provider.getProduct(Number(id), { allowStale: false });
+    return await provider.getProduct(Number(id), { allowStale: false, fresh: true });
   } catch (error) {
     if (error instanceof provider.FakeStoreError) {
       return { availability: error.status === 404 ? 'unavailable' : 'unknown', description: '' };
