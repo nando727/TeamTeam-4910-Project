@@ -531,6 +531,18 @@ the same file is the only thing that writes `audit_events`.
 `audit_events`, copies the old `password_changes` rows into it, and drops the
 unused `admin_actions` table. Migration 025 adds the triggers.
 
+### Account activity (stories AA-76, AA-78)
+
+**Profile -> Account activity** (`/profile/activity`) shows, for the signed-in
+account only:
+- **Recent sign-ins**: the last 20 attempts, failed ones included, with the
+  address each came from
+- **Changes by an administrator**: password resets, role and status changes,
+  sponsorships, points, and unlocks. A change counts as an admin's when the
+  person who made it is an admin now
+
+Both read the audit log. No migration.
+
 ### The owner is told when a password changes (story 22227)
 
 Every password change emails the account: **what changed, when, and how**, with
