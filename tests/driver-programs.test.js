@@ -27,6 +27,7 @@ beforeEach(() => {
     if (sql.includes('FROM driver_sponsors')) return programs;
     if (sql.includes('FROM point_transactions')) return history;
     if (sql.includes('FROM sponsor_applications')) return [];
+    if (sql.includes('held_balances')) return [[]];
     throw new Error(`Unexpected query: ${sql}`);
   });
   conn = {

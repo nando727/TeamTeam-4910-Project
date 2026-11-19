@@ -1,5 +1,6 @@
 const db = require('./db');
 const { recordEvent } = require('./audit/log');
+const {restoreHeldBalance} = require('./sponsors/balance-policy');
 const VALID_STATUSES = ['pending', 'approved', 'rejected'];
 
 //helper to catch strange characters in filter entry
@@ -60,7 +61,8 @@ async function setApplicationStatus(applicationId, status, sponsorId, rejectionR
         'INSERT INTO driver_sponsors (driver_id, sponsor_id) VALUES (?, ?)',
         [applications[0].driver_id, sponsorId]
       );
-      const restored = await restoreHeldBalance(conn, { driverId, sponsorId });
+      //TODO: get the restoration stuff actually working
+      //const restored = await restoreHeldBalance(conn, { id, sponsorId });
       
       await conn.execute(
         "UPDATE users SET sponsor_id = ? WHERE id = ? AND role = 'driver'",

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS sponsors (
   contact_phone VARCHAR(32) NULL,
   address VARCHAR(255) NOT NULL,
   status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+  balance_policy ENUM('forfeit', 'hold') NOT NULL DEFAULT 'forfeit',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -64,6 +65,15 @@ CREATE TABLE IF NOT EXISTS driver_sponsors (
   PRIMARY KEY (driver_id, sponsor_id),
   FOREIGN KEY (driver_id) REFERENCES users(id),
   FOREIGN KEY (sponsor_id) REFERENCES sponsors(id)
+);
+
+CREATE TABLE IF NOT EXISTS held_balances (
+  driver_id INT NOT NULL,
+  sponsor_id INT NOT NULL,
+  points INT NOT NULL,
+  PRIMARY KEY (driver_id, sponsor_id),
+  FOREIGN KEY (driver_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (sponsor_id) REFERENCES sponsors(id) ON DELETE CASCADE
 );
 
 -- Story 22255: single-use setup links for newly created accounts. Only the

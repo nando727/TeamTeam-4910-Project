@@ -56,6 +56,7 @@ beforeEach(() => {
     if (sql.includes('FROM sponsor_point_rates WHERE sponsor_id = ?')) {
       return [{ points_per_dollar: 10 }];
     }
+    if (sql.startsWith('SELECT balance_policy FROM sponsors')) return [{ balance_policy: 'forfeit' }];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
