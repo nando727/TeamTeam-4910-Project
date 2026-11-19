@@ -17,6 +17,13 @@
       </select>
       <label for="amount">Point change</label>
       <input id="amount" name="amount" type="number" step="1" min="-2147483647" max="2147483647" required>
+      <label for="ruleId">Rule (optional)</label>
+      <select name="ruleId" id="ruleId">
+        <option value="">None</option>
+        <% rules.forEach(r => { %>
+          <option value="<%= r.id %>"><%= r.title %> (<%= r.points > 0 ? '+' : '' %><%= r.points %>)</option>
+        <% }) %>
+      </select>
       <label for="reason">Reason</label>
       <input id="reason" name="reason" maxlength="255" required>
       <button type="submit">Save point adjustment</button>

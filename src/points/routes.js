@@ -6,6 +6,8 @@ const { listDriversInScope } = require('../reports/store');
 const { formToken, requireFormToken } = require('../auth/form-token');
 const { rememberAndRedirect } = require('../auth/return-to');
 const { denyAccess } = require('../auth/deny');
+const { findRule, listRules, ruleAdjustment } = require('../sponsors/rules');
+const {getBalancePolicy} = require('../sponsors/balance-policy')
 const router = express.Router();
 
 function role(required) {
@@ -22,12 +24,20 @@ router.get('/', role('sponsor'), async (req, res, next) => {
     const drivers = sponsorId ? await listDriversInScope({ sponsorId }) : [];
     const message = req.session.pointMessage || null;
     delete req.session.pointMessage;
-    res.render('sponsor/points', { drivers, message, token: formToken(req) });
+    res.render('sponsor/points', { drivers, message, rules: await listRules(req.session.user.sponsorId), token: formToken(req) });
   } catch (error) { next(error); }
 });
 
 router.post('/', role('sponsor'), requireFormToken, async (req, res, next) => {
   try {
+    const sponsorId = req.session.user.sponsorId;
+    let amount = Number(req.body.amount);
+    let reason = req.body.reason;
+    if (req.body.ruleId) {
+      const rule = await findRule(sponsorId, Number(req.body.ruleId)); 
+      if (!rule) { req.session.pointMessage = 'That rule was not found.'; return res.redirect('/points'); }
+      ({ amount, reason } = ruleAdjustment(rule, req.body.amount, req.body.reason));
+    }
     const driverId = Number(req.body.driverId);
     if (!Number.isInteger(driverId) || driverId <= 0 || !req.session.user.sponsorId) {
       return res.status(400).send('Select a driver in your organization.');
@@ -64,7 +74,8 @@ router.get('/drivers/:id/remove', role('sponsor'), async (req, res, next) => {
     const drivers = await listDriversInScope({ sponsorId: req.session.user.sponsorId });
     const driver = drivers.find(driver => String(driver.id) === req.params.id);
     if (!driver) return res.status(404).send('Driver not found in your organization.');
-    res.render('sponsor/remove-driver', { driver, token: formToken(req) });
+    res.render('sponsor/remove-driver', { driver, token: formToken(req), 
+    balancePolicy: await getBalancePolicy(req.session.user.sponsorId) });
   } catch (error) { next(error); }
 });
 

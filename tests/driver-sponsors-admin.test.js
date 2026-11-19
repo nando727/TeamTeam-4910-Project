@@ -15,19 +15,23 @@ const users = [
   { id: 2, username: 'sponsor1', role: 'sponsor', status: 'active', sponsor_id: 1 },
 ];
 const sponsors = [
-  { id: 1, name: 'Demo Sponsor', contactEmail: 'd@example.com', status: 'active' },
-  { id: 2, name: 'Northstar Freight', contactEmail: 'n@example.com', status: 'active' },
-  { id: 3, name: 'Quiet Logistics', contactEmail: 'q@example.com', status: 'inactive' },
+  { id: 1, name: 'Demo Sponsor', contactEmail: 'd@example.com', status: 'active', balance_policy: 'forfeit' },
+  { id: 2, name: 'Northstar Freight', contactEmail: 'n@example.com', status: 'active', balance_policy: 'forfeit' },
+  { id: 3, name: 'Quiet Logistics', contactEmail: 'q@example.com', status: 'inactive', balance_policy: 'forfeit' },
 ];
 let passwordHash;
 let memberships;
 let removalAlerts;
 let conn;
+let policy;
+let held;
 
 beforeAll(async () => { passwordHash = await hashPassword(PASSWORD); });
 
 beforeEach(() => {
   removalAlerts = [];
+  policy = 'forfeit';
+  held = [];
   conn = {
     beginTransaction: vi.fn(), commit: vi.fn(), rollback: vi.fn(), release: vi.fn(),
     execute: vi.fn(async (sql, params) => {
@@ -68,6 +72,10 @@ beforeEach(() => {
     }
     // Story 22255 follow-up: the list asks who still owes us a password.
     if (sql.startsWith('SELECT user_id FROM setup_tokens')) return [];
+
+    if (sql.startsWith('SELECT point_balance FROM driver_sponsors')) return memberships.filter(m => m.driverId === params[0] && m.sponsorId === params[1]).map(m => ({ point_balance: m.balance }));
+    if (sql.startsWith('SELECT balance_policy FROM sponsors')) return [{ balance_policy: policy }];
+    if (sql.startsWith('INSERT INTO held_balances')) { held.push(params); return { affectedRows: 1 }; }
     throw new Error(`Unexpected query: ${sql}`);
   });
 });

@@ -1,4 +1,5 @@
 const db = require('../db');
+const { applyBalancePolicy, restoreHeldBalance } = require('../sponsors/balance-policy');
 
 // Driver memberships (RC#2): a driver may belong to several sponsors.
 
@@ -39,6 +40,7 @@ async function removeDriverSponsor(driverId, sponsorId) {
       await conn.commit();
       return false;
     }
+    await applyBalancePolicy(conn, { driverId, sponsorId }); // holds the balance if the sponsor chose "hold" for their removal policy
     await conn.execute('DELETE FROM driver_sponsors WHERE driver_id = ? AND sponsor_id = ?', [driverId, sponsorId]);
     await conn.execute('INSERT INTO sponsor_removal_alerts (driver_id, sponsor_name) VALUES (?, ?)', [driverId, members[0].name]);
     await conn.commit();

@@ -1,0 +1,14 @@
+<%# When a driver leaves, included from sponsor/organization.ejs.
+    Needs: balancePolicy, policies, formToken. %>
+<h2 class="section-title">When a driver leaves</h2>
+<p>Choose what happens to a driver's points with your organization if you remove them, they quit, or they move to a different sponsor. Points are never carried to another sponsor, because each sponsor sets its own point value.</p>
+<form method="POST" action="/organization/balance-policy">
+  <input type="hidden" name="token" value="<%= formToken %>">
+  <% Object.keys(policies).forEach(key => { %>
+    <label>
+      <input type="radio" name="policy" value="<%= key %>" <%= balancePolicy === key ? 'checked' : '' %>>
+      <%= policies[key] %>
+    </label><br>
+  <% }) %>
+  <button type="submit">Save</button>
+</form>

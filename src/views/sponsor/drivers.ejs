@@ -55,11 +55,7 @@
                 <button type="submit"><%= driver.status === 'active' ? 'Deactivate' : 'Reactivate' %></button>
               </form>
             <% } %>
-            <form method="POST" action="/accounts/<%= driver.id %>/delete" class="inline-form"
-                  data-confirm="Permanently delete this account? This cannot be undone.">
-              <input type="hidden" name="token" value="<%= formToken %>">
-              <button type="submit">Delete</button>
-            </form>
+            <<a href="/points/drivers/<%= driver.id %>/remove">Remove from organization</a>
           </td>
         </tr>
       <% }) %>

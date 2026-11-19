@@ -30,6 +30,9 @@ beforeEach(() => {
     if (sql.includes('FROM driver_sponsors')) return [{ id: 12, displayName: 'Driver Twelve', username: 'driver12', balance: 100 }];
     if (sql.includes('FROM point_alerts')) return [{ id: 42, points_change: alertAmount, reason: '<b>Driving adjustment</b>', sponsor_name: 'Demo', created_at: '2026-10-19T12:00:00Z' }];
     if (sql.startsWith('UPDATE point_alerts')) return { affectedRows: 1 };
+    if (sql.includes('FROM rules WHERE sponsor_id = ?')) return [];
+    if (sql.startsWith('SELECT balance_policy FROM sponsors')) return [{ balance_policy: 'forfeit' }];
+    if (sql.startsWith('SELECT id, title, points FROM rules WHERE id = ?')) return [{ id: 3, title: 'Late delivery', points: -30 }];
     throw new Error(`Unexpected query: ${sql}`);
   });
 });
