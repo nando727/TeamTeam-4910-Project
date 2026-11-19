@@ -50,7 +50,7 @@ async function removeCatalogItem(sponsorId, id) {
 async function listCatalogForDriver(driverId) {
   return priced(await db.query(
     `SELECT c.id, c.product_id, c.title, c.title AS name, c.category, c.image_url, c.price_value, c.points_cost,
-            c.sponsor_id AS sponsorId, s.name AS sponsorName,
+            c.sponsor_id AS sponsorId, s.name AS sponsorName, ds.point_balance AS balance,
             COALESCE((SELECT points_per_dollar FROM sponsor_point_rates r WHERE r.sponsor_id = c.sponsor_id), 10) AS points_per_dollar
      FROM catalog_items c
      JOIN driver_sponsors ds ON ds.sponsor_id = c.sponsor_id

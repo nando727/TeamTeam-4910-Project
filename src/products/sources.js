@@ -106,8 +106,8 @@ function createSource({ name, url, pick, snapshotPath, owns, toLocalId = id => i
     throw error;
   }
 
-  async function listProducts({ allowStale = true } = {}) {
-    if (cache.products && Date.now() < cache.expiresAt) return cache.products;
+  async function listProducts({ allowStale = true, fresh = false } = {}) {
+    if (!fresh && cache.products && Date.now() < cache.expiresAt) return cache.products;
     let body;
     try {
       body = await fetchJson(url);

@@ -42,6 +42,21 @@ test('merges both services, offsetting DummyJSON ids so they never collide with 
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
+test('a fresh lookup checks price and availability even before the cache expires', async () => {
+  expect((await provider.getProduct(3)).priceValue).toBe(5);
+  answers.fakestore = () => ({ ok: true, json: async () => [{ ...FAKESTORE[0], price: 12.50 }] });
+  expect((await provider.getProduct(3)).priceValue).toBe(5);
+  expect((await provider.getProduct(3, { allowStale: false, fresh: true })).priceValue).toBe(12.50);
+  answers.fakestore = () => ({ ok: true, json: async () => [] });
+  await expect(provider.getProduct(3, { allowStale: false, fresh: true })).rejects.toMatchObject({ status: 404 });
+});
+
+test('a fresh request during an outage cannot use a previously available cached offer', async () => {
+  await provider.getProduct(1003);
+  answers.dummyjson = () => new Error('offline');
+  expect((await provider.getProduct(1003, { allowStale: false, fresh: true })).availability).toBe('unknown');
+});
+
 test('search covers both services and categories are merged', async () => {
   expect((await provider.searchProducts({ q: 'masc' })).map(p => p.productId)).toEqual([1003]);
   expect((await provider.searchProducts({ category: 'gear' })).map(p => p.productId)).toEqual([3]);

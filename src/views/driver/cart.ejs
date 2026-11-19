@@ -5,6 +5,7 @@
       <h1>Your cart</h1>
       <p class="lede">Review what you are about to buy with your points<% if (sponsorName) { %> from <strong><%= sponsorName %></strong><% } %>. Quantities and prices are read from the sponsor's catalog as it is right now.</p>
     </div>
+    <% const unavailable = lines.some(line => line.availability !== 'available' || !line.priceConfirmed); %>
     <% if (notice) { %>
       <p class="<%= notice.kind %>" role="<%= notice.kind === 'error' ? 'alert' : 'status' %>"><%= notice.text %><% if (notice.link) { %> <a href="<%= notice.link.href %>"><%= notice.link.text %></a>.<% } %></p>
     <% } %>
@@ -52,6 +53,8 @@
                 <td class="cell-strong">
                   <%- include('../partials/product-image', { url: line.image_url, alt: '', size: 'thumb' }) %>
                   <%= line.title %>
+                  <div class="muted small">Availability: <%= line.availability === 'available' ? 'Available' : line.availability === 'unavailable' ? 'Currently unavailable' : 'Unable to confirm' %></div>
+                  <% if (!line.priceConfirmed) { %><div class="muted small">Last known price; current price could not be confirmed.</div><% } %>
                   <span class="muted small">· $<%= Number(line.price_value).toFixed(2) %></span>
                 </td>
                 <td class="num"><%= points(line.points_cost) %></td>
@@ -95,8 +98,9 @@
         <p class="error" role="alert" style="margin-top: 18px;">You need <%= shortfall.toLocaleString('en-US') %> more point<%= shortfall === 1 ? '' : 's' %> with <%= sponsorName %> for this cart. Remove something or lower a quantity to check out.</p>
       <% } %>
 
+      <% if (unavailable) { %><p class="error" role="alert">An item's current price or availability could not be confirmed, or it is unavailable. Remove it or try again before checkout.</p><% } %>
       <div class="button-row" style="margin-top: 20px;">
-        <% if (shortfall) { %>
+        <% if (shortfall || unavailable) { %>
           <span class="button-link is-disabled" aria-disabled="true">Check out</span>
         <% } else { %>
           <a class="button-link cart-checkout" href="/driver/cart/checkout">Check out</a>

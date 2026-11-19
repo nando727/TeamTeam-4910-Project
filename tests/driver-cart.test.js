@@ -49,8 +49,8 @@ beforeEach(() => {
   vi.spyOn(db.pool, 'getConnection').mockResolvedValue(conn);
   // The catalog page itself, for the tests that land back on it after adding.
   const provider = require('../src/fakestore/client');
-  vi.spyOn(provider, 'listProducts').mockImplementation(async () => items.map(i => ({ productId: i.product_id })));
-  vi.spyOn(provider, 'getProduct').mockResolvedValue({ productId: 3, description: 'Keeps coffee hot' });
+  vi.spyOn(provider, 'listProducts').mockImplementation(async () => items.map(i => ({ productId: i.product_id, priceValue: Number(i.price_value), availability: 'available' })));
+  vi.spyOn(provider, 'getProduct').mockImplementation(async id => ({ productId: id, priceValue: Number(items.find(i => i.product_id === id)?.price_value), description: 'Keeps coffee hot', availability: 'available' }));
   vi.spyOn(db, 'query').mockImplementation(async (sql, params = []) => {
     if (sql.includes('latest_failure')) return [{ failures: 0, latest_failure: null }];
     if (sql.startsWith('INSERT INTO login_attempts')) return {};
@@ -70,7 +70,7 @@ beforeEach(() => {
     // page. Only that query aliases the title as `name`; the by-id lookup
     // below shares its JOIN, so matching on the JOIN would shadow it.
     if (sql.includes('c.title AS name')) {
-      return items.filter(i => memberships[i.sponsor_id]).map(i => ({ ...i, sponsorId: i.sponsor_id, sponsorName: memberships[i.sponsor_id] }));
+      return items.filter(i => memberships[i.sponsor_id]).map(i => ({ ...i, balance: balances[i.sponsor_id], sponsorId: i.sponsor_id, sponsorName: memberships[i.sponsor_id] }));
     }
     // Catalog items by id for one sponsor the driver belongs to.
     if (sql.includes('c.sponsor_id = ? AND c.id IN')) {
@@ -241,6 +241,9 @@ describe('checkout', () => {
 
   test('reviews the order, then writes every line in one transaction and shows the success page with confetti', async () => {
     const { agent, token, review, confirmId } = await filledCart();
+    expect(review.text).toContain('Availability: Available');
+    expect(review.text).toContain('https://fakestoreapi.com/img/mug.png');
+    expect(review.text).toContain('250 points each');
     expect(review.text).toContain('Spend 900 points with Northstar Freight?');
     expect(review.text).toContain('Balance after');
     expect(review.text).toContain('100 points');
@@ -291,6 +294,44 @@ describe('checkout', () => {
     expect(mail.text).toContain('/driver/orders');
   });
 
+  test('add, review and purchase use the live price rather than saved or submitted prices', async () => {
+    const provider = require('../src/products/provider');
+    provider.getProduct.mockResolvedValue({ productId: 3, priceValue: 19.99, availability: 'available' });
+    provider.listProducts.mockResolvedValue([{ productId: 3, priceValue: 19.99, availability: 'available' }]);
+    const { agent } = await driver();
+    const token = await tokenOf(agent);
+    await add(agent, token, { itemId: '31', sponsorId: '7', price: '0.01', pointsCost: '1' }).expect(303);
+    expect(provider.getProduct).toHaveBeenCalledWith(3, { allowStale: false, fresh: true });
+    const cart = await agent.get('/driver/cart').expect(200);
+    expect(cart.text).toContain('Current cost: 200 points each');
+    expect(cart.text).toContain('$19.99');
+    const review = await agent.get('/driver/cart/checkout').expect(200);
+    expect(review.text).toContain('Spend 200 points');
+    const confirmId = review.text.match(/name="confirmId" value="([a-f0-9]{64})"/)[1];
+    await agent.post('/driver/cart/checkout').type('form').send({ token, confirmId }).expect(303);
+    expect(executed.find(([sql]) => sql.startsWith('INSERT INTO purchases'))[1]).toEqual([21, 7, 'Insulated mug', 1999, 200]);
+  });
+
+  test.each([25.99, 24.91])('a live price change to %s after review requires a new review', async priceValue => {
+    const { agent, token, confirmId } = await filledCart();
+    const provider = require('../src/products/provider');
+    provider.listProducts.mockImplementation(async () => items.map(i => ({ productId: i.product_id, priceValue: i.id === 31 ? priceValue : Number(i.price_value), availability: 'available' })));
+    await agent.post('/driver/cart/checkout').type('form').send({ token, confirmId }).expect(303);
+    expect(conn.beginTransaction).not.toHaveBeenCalled();
+    expect((await agent.get('/driver/cart')).text).toContain('Your cart changed since you reviewed it');
+  });
+
+  test('unconfirmed or invalid live prices cannot be added using the saved price', async () => {
+    const provider = require('../src/products/provider');
+    const { agent } = await driver();
+    const token = await tokenOf(agent);
+    for (const product of [{ priceValue: 24.99, availability: 'unknown' }, { availability: 'available' }]) {
+      provider.getProduct.mockResolvedValue(product);
+      await add(agent, token, { itemId: '31', sponsorId: '7' }).expect(303);
+      expect((await agent.get('/driver/cart')).text).toContain('Your cart is empty.');
+    }
+  });
+
   test('a second submit of the same confirmation buys nothing', async () => {
     const { agent, token, confirmId } = await filledCart();
     await agent.post('/driver/cart/checkout').type('form').send({ token, confirmId }).expect(303);
@@ -321,7 +362,7 @@ describe('checkout', () => {
   test('an offer becoming unavailable after review prevents checkout without spending points', async () => {
     const { agent, token, confirmId } = await filledCart();
     const provider = require('../src/products/provider');
-    provider.getProduct.mockResolvedValue({ availability: 'unavailable' });
+    provider.listProducts.mockImplementation(async () => items.map(i => ({ productId: i.product_id, priceValue: Number(i.price_value), availability: 'unavailable' })));
     await agent.post('/driver/cart/checkout').type('form').send({ token, confirmId }).expect(303);
     expect(conn.beginTransaction).not.toHaveBeenCalled();
     expect(executed).toHaveLength(0);
@@ -356,8 +397,8 @@ describe('the catalog pages', () => {
   test('show the points cost and an add-to-cart form, and the detail page takes a quantity', async () => {
     const catalogStore = require('../src/catalog/store');
     const provider = require('../src/fakestore/client');
-    vi.spyOn(provider, 'listProducts').mockResolvedValue([{ productId: 3 }]);
-    vi.spyOn(provider, 'getProduct').mockResolvedValue({ productId: 3, description: 'Keeps coffee hot' });
+    vi.spyOn(provider, 'listProducts').mockResolvedValue([{ productId: 3, priceValue: 24.99 }]);
+    vi.spyOn(provider, 'getProduct').mockResolvedValue({ productId: 3, priceValue: 24.99, description: 'Keeps coffee hot' });
     vi.spyOn(catalogStore, 'listCatalogForDriver').mockResolvedValue([
       { id: 31, product_id: 3, title: 'Insulated mug', name: 'Insulated mug', price_value: '24.99', points_cost: 250, image_url: null, sponsorId: 7, sponsorName: 'Northstar Freight' },
     ]);
@@ -482,8 +523,8 @@ describe('one add at a time', () => {
   test('the catalog and product forms are in a group the script disables together', async () => {
     const catalogStore = require('../src/catalog/store');
     const provider = require('../src/fakestore/client');
-    vi.spyOn(provider, 'listProducts').mockResolvedValue([{ productId: 3 }]);
-    vi.spyOn(provider, 'getProduct').mockResolvedValue({ productId: 3, description: 'Keeps coffee hot' });
+    vi.spyOn(provider, 'listProducts').mockResolvedValue([{ productId: 3, priceValue: 24.99 }]);
+    vi.spyOn(provider, 'getProduct').mockResolvedValue({ productId: 3, priceValue: 24.99, description: 'Keeps coffee hot' });
     vi.spyOn(catalogStore, 'listCatalogForDriver').mockResolvedValue([
       { id: 31, product_id: 3, title: 'Insulated mug', name: 'Insulated mug', price_value: '24.99', points_cost: 250, image_url: null, sponsorId: 7, sponsorName: 'Northstar Freight' },
     ]);

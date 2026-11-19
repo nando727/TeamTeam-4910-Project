@@ -14,7 +14,11 @@
         <tbody>
           <% lines.forEach(line => { %>
             <tr>
-              <td class="cell-strong"><%= line.title %></td>
+              <td class="cell-strong">
+                <%- include('../partials/product-image', { url: line.image_url, alt: line.title, size: 'thumb' }) %>
+                <%= line.title %>
+                <div class="muted small"><%= points(line.points_cost) %> each · Availability: Available</div>
+              </td>
               <td class="num"><%= line.quantity %></td>
               <td class="num"><%= points(line.lineTotal) %></td>
             </tr>
@@ -43,4 +47,5 @@
       </div>
     </div>
   </section>
+  <script src="/product-images.js" defer></script>
 <%- include('../partials/foot') %>

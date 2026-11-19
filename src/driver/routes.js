@@ -11,6 +11,7 @@ const {
 const catalogStore = require('../catalog/store');
 const provider = require('../products/provider');
 const { availability, currentProduct } = require('../products/availability');
+const { currentOffer, currentOffers } = require('../catalog/current-offer');
 const { purchaseCart } = require('../points/store');
 const { findUserById } = require('../users/store');
 const { sendPurchaseConfirmation } = require('../mail/purchase-notice');
@@ -37,10 +38,10 @@ router.get('/catalog', async (req, res, next) => {
   if (req.session.user.role !== 'driver') return denyAccess(req, res, { needs: 'driver' });
   try {
     const selections = await catalogStore.listCatalogForDriver(req.session.user.id);
-    const available = selections.length ? await provider.listProducts({ allowStale: false }) : [];
+    const available = selections.length ? await provider.listProducts({ allowStale: false, fresh: true }) : [];
     const byId = new Map(available.map(product => [product.productId, product]));
     const products = selections.filter(product => byId.has(product.product_id) && availability(byId.get(product.product_id)) !== 'unavailable')
-      .map(product => ({ ...product, availability: availability(byId.get(product.product_id)) }));
+      .map(product => currentOffer(product, byId.get(product.product_id)));
     const catalogs = [];
     for (const product of products) {
       let catalog = catalogs.find(item => item.sponsorId === product.sponsorId);
@@ -66,7 +67,7 @@ router.get('/catalog/:sponsorId/:productId', async (req, res, next) => {
     const product = selections.find(item => String(item.sponsorId) === req.params.sponsorId && String(item.id) === req.params.productId);
     if (!product) return res.sendStatus(404);
     const current = await currentProduct(product.product_id);
-    res.render('driver/product', { product: { ...product, description: current.description, availability: availability(current) }, token: formToken(req), notice: takeCartNotice(req), points, maxQuantity: CART_MAX_QUANTITY });
+    res.render('driver/product', { product: { ...currentOffer(product, current), description: current.description }, token: formToken(req), notice: takeCartNotice(req), points, maxQuantity: CART_MAX_QUANTITY });
   } catch (err) {
     if (err instanceof provider.FakeStoreError) return res.status(err.status).render('driver/catalog-error', { message: err.message });
     next(err);
@@ -93,8 +94,8 @@ router.get('/points/history', async (req, res, next) => {
 // sponsor only, because points never mix between sponsors: an item from a
 // second sponsor can only replace the cart, never join it. Nothing about an
 // item is trusted from the session beyond its id and quantity; the title,
-// price and points cost are re-read from the sponsor's catalog on every page,
-// and once more under lock at checkout.
+// price and points cost are re-read from the sponsor selection and provider
+// on every page and at confirmation. Checkout locks the driver's balance.
 
 const CART_MAX_LINES = 20;
 const CART_MAX_QUANTITY = 10;
@@ -135,7 +136,8 @@ async function loadCart(req) {
     delete req.session.cart;
     return { cart: null, lines: [], total: 0, balance: null, sponsorName: null, dropped: cart.items.length, membershipEnded: true };
   }
-  const items = await catalogStore.findDriverCatalogItems(req.session.user.id, cart.sponsorId, cart.items.map(line => line.id));
+  const selections = await catalogStore.findDriverCatalogItems(req.session.user.id, cart.sponsorId, cart.items.map(line => line.id));
+  const items = await currentOffers(selections);
   const lines = [];
   for (const line of cart.items) {
     const item = items.find(i => i.id === line.id);
@@ -181,7 +183,8 @@ router.post('/cart/add', requireDriver, requireFormToken, async (req, res, next)
       return res.redirect(303, back);
     }
 
-    if (availability(await currentProduct(item.product_id)) !== 'available') {
+    const offer = currentOffer(item, await currentProduct(item.product_id));
+    if (offer.availability !== 'available' || !offer.priceConfirmed) {
       flashCart(req, 'error', 'This offer is unavailable or its availability could not be confirmed. It was not added to your cart.');
       return res.redirect(303, back);
     }
@@ -245,7 +248,7 @@ router.post('/cart/add', requireDriver, requireFormToken, async (req, res, next)
       // quantity they did not ask for and cannot explain.
       flashCart(req, 'info', `You can have at most ${CART_MAX_QUANTITY} of one item, so "${item.title}" stays at ${CART_MAX_QUANTITY}. ${summary}`, CART_LINK);
     } else {
-      flashCart(req, 'success', `Added "${item.title}"${result.held > 1 ? `, and you now have ${result.held}` : ''}. ${summary}`, CART_LINK);
+      flashCart(req, 'success', `Added "${item.title}"${result.held > 1 ? `, and you now have ${result.held}` : ''}. ${summary} Current cost: ${points(offer.points_cost)} each.`, CART_LINK);
     }
     res.redirect(303, back);
   } catch (err) { next(err); }
@@ -331,8 +334,7 @@ router.get('/cart/checkout', requireDriver, async (req, res, next) => {
       flashCart(req, 'info', 'Your cart is empty.');
       return res.redirect('/driver/cart');
     }
-    const offers = await Promise.all(loaded.lines.map(line => currentProduct(line.product_id)));
-    if (offers.some(offer => availability(offer) !== 'available')) {
+    if (loaded.lines.some(line => line.availability !== 'available' || !line.priceConfirmed)) {
       flashCart(req, 'error', 'An offer is unavailable or its availability cannot be confirmed. Nothing was bought.');
       return res.redirect('/driver/cart');
     }
@@ -343,7 +345,7 @@ router.get('/cart/checkout', requireDriver, async (req, res, next) => {
     const confirmId = randomBytes(32).toString('hex');
     req.session.cartConfirm = {
       confirmId, sponsorId: loaded.cart.sponsorId, total: loaded.total,
-      lines: loaded.lines.map(line => ({ id: line.id, quantity: line.quantity, pointsCost: line.points_cost })),
+      lines: loaded.lines.map(line => ({ id: line.id, quantity: line.quantity, pointsCost: line.points_cost, priceValue: line.price_value })),
     };
     res.render('driver/checkout', { ...loaded, confirmId, after: loaded.balance - loaded.total, token: formToken(req), points, dollars });
   } catch (err) { next(err); }
@@ -364,7 +366,7 @@ router.post('/cart/checkout', requireDriver, requireFormToken, async (req, res, 
     const loaded = await loadCart(req);
     const same = draft && loaded.cart && draft.confirmId === req.body.confirmId && draft.sponsorId === loaded.cart.sponsorId &&
       draft.lines.length === loaded.lines.length &&
-      draft.lines.every(d => loaded.lines.some(l => l.id === d.id && l.quantity === d.quantity && l.points_cost === d.pointsCost));
+      draft.lines.every(d => loaded.lines.some(l => l.id === d.id && l.quantity === d.quantity && l.points_cost === d.pointsCost && l.price_value === d.priceValue));
     if (!same) {
       flashCart(req, 'error', draft
         ? 'Your cart changed since you reviewed it, so nothing was bought. Review it again before checking out.'
@@ -372,8 +374,7 @@ router.post('/cart/checkout', requireDriver, requireFormToken, async (req, res, 
       return res.redirect(303, '/driver/cart');
     }
     let result;
-    const offers = await Promise.all(loaded.lines.map(line => currentProduct(line.product_id)));
-    if (offers.some(offer => availability(offer) !== 'available')) {
+    if (loaded.lines.some(line => line.availability !== 'available' || !line.priceConfirmed)) {
       flashCart(req, 'error', 'An offer is unavailable or its availability cannot be confirmed. Nothing was bought.');
       return res.redirect(303, '/driver/cart');
     }

@@ -740,8 +740,7 @@ and is unchanged.
 Drivers open **Product catalog** (`/driver/catalog`) to browse available selections
 from their current sponsors, grouped by sponsor. Product names open detail pages
 with the sponsor's saved title and the provider's description. Cards and details
-also show the saved product image (when present) and dollar price, matching the
-sponsor's saved catalog. This price is a saved value, not a live price quote.
+also show the saved product image (when present) and the current provider price.
 Point costs use the sponsor conversion rate described below. Admin-added
 memberships also work. Ford's `/my-catalog` URL redirects to this same page.
 
@@ -755,7 +754,8 @@ present in the provider's normalized product list and not marked unavailable
 are shown. A saved selection whose provider product disappeared shows
 "Currently unavailable" on its detail page. DummyJSON stock and availability
 status determine availability; FakeStore has no stock field, so presence in
-its usable list is the available signal. Live results are cached for five minutes.
+its usable list is the available signal. Sponsor browsing uses a five-minute
+cache; driver catalog, cart, and purchase checks request fresh provider results.
 Snapshot fallback products show availability as unconfirmed and cannot be selected.
 Removing a sponsor selection or membership takes effect on the next request.
 
@@ -769,7 +769,7 @@ spending points.
 Apply `db/migrations/023_sponsor_point_rates.sql` to the app's database before
 running this version (or use `npm run db:migrate` to apply pending migrations).
 Sponsors can set **Points per $1** on their catalog page. The default is **10**.
-Costs use the saved dollar price times that sponsor's rate, rounded up to whole
+Costs use the dollar price times that sponsor's rate, rounded up to whole
 points, with a minimum of one point. For example, $24.99 at 10 points per dollar
 costs 250 points. The same calculation is used for catalog, cart, and purchases;
 it replaces the previous manually assigned point cost. A rate change affects
@@ -779,6 +779,32 @@ cost requires the driver to review the cart again.
 To verify: change a sponsor's rate, view its catalog as a driver, and confirm
 the card, detail, and checkout costs agree. Provider tests cover out-of-stock
 products and outages without editing the shared database.
+
+### Current driver pricing and purchase review (DF-38 through DF-43)
+
+Driver catalog cards, details, carts, and checkout use the provider's current
+dollar price and the selected sponsor's conversion rate. Saved catalog prices
+are only last-known values when current information cannot be confirmed; such
+offers cannot be added or purchased. Sponsor selections and completed orders
+are not rewritten by browsing the driver catalog.
+
+Cards and details show an **Insufficient points** message when the driver's
+balance with that sponsor is below the product cost. Drivers can select an
+available item using the existing **Add to cart** button (the cart is their
+purchase set); insufficient funds prevent checkout. Each add rechecks price
+and availability without using the five-minute cache. The cart also checks the
+total against the sponsor balance, including quantities.
+
+The checkout review shows each product's name, image, unit point cost, quantity,
+total, and availability. Confirmation checks current prices and availability
+again. A changed price or point cost requires a new review before any points
+are spent, including price changes that round to the same point cost.
+
+No new migration or seed data is needed for DF-38 through DF-43. To verify,
+open a driver product and compare its price, point cost, and balance message,
+add it to the cart, then use **Check out** to inspect the review before buying.
+Tests simulate price changes, low balances, unavailable products, and provider
+outages without modifying the shared database or product services.
 
 To test: as a sponsor, open **Add to your catalog**, save a product, then log in
 as one of that sponsor's drivers and open **Product catalog**. Click its name to
@@ -1282,7 +1308,8 @@ A driver adds catalog items to a cart, reviews it, and checks out for points.
 **The cart is the session**, which is itself a row in MySQL, so it survives a
 deployment and ends when the session does. Nothing in it is trusted beyond an
 item id and a quantity: the title, the price, and the points cost are re-read
-from the sponsor's catalog on every page, and again under lock at checkout.
+from the sponsor selection and current provider information on every page and
+again at confirmation. The driver's balance is checked under lock at checkout.
 
 **A cart holds one sponsor's items.** Points never mix between sponsors, so
 adding an item from a second sponsor asks whether to replace the cart rather

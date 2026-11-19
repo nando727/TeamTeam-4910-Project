@@ -8,6 +8,10 @@
     <% } %>
     <%- include('../partials/product-image', { url: product.image_url, alt: product.name, size: 'detail' }) %>
     <p class="purchase-item__cost"><strong><%= points(product.points_cost) %></strong> <span class="muted">· $<%= Number(product.price_value).toFixed(2) %></span></p>
+    <% if (!product.priceConfirmed) { %><p class="info">Last known price; current price could not be confirmed.</p><% } %>
+    <% if (product.priceConfirmed && Number(product.balance) < product.points_cost) { %>
+      <p class="error" role="status">Insufficient points. You have <%= points(product.balance) %> and need <%= points(product.points_cost - Number(product.balance)) %> more to redeem this product.</p>
+    <% } %>
     <% if (product.category) { %><p class="muted small"><%= product.category %></p><% } %>
     <p><%= product.description %></p>
     <p role="status"><strong>Availability:</strong> <%= product.availability === 'available' ? 'Available' : product.availability === 'unavailable' ? 'Currently unavailable' : 'Unable to confirm current availability' %></p>
