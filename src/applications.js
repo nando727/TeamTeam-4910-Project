@@ -60,6 +60,7 @@ async function setApplicationStatus(applicationId, status, sponsorId, rejectionR
         'INSERT INTO driver_sponsors (driver_id, sponsor_id) VALUES (?, ?)',
         [applications[0].driver_id, sponsorId]
       );
+      const restored = await restoreHeldBalance(conn, { driverId, sponsorId });
       
       await conn.execute(
         "UPDATE users SET sponsor_id = ? WHERE id = ? AND role = 'driver'",

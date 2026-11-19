@@ -1,0 +1,52 @@
+<%- include('../partials/head', { title: 'Other Organizations' }) %>
+  <section class="hero">
+    <%- include('../partials/logo') %>
+    <div>
+      <h1>Other Organizations' Rules</h1>
+      <p>See what other sponsors reward, and what their points are worth.</p>
+    </div>
+  </section>
+
+  <form method="GET" action="/other-rules" class="filter-form">
+    <label for="name">Organization name:</label>
+    <input type="text" id="name" name="name" value="<%= name %>" maxlength="128" placeholder="Search...">
+    <button type="submit">Filter</button>
+    <a href="/other-rules">Clear</a>
+  </form>
+
+  <% organizations.forEach(org => { %>
+    <details>
+      <summary>
+        <strong><%= org.name %></strong>
+        &mdash; <%= org.rules.length %> rule<%= org.rules.length === 1 ? '' : 's' %>
+        <% if (org.pointsPerDollar) { %>
+          &mdash; <%= org.pointsPerDollar %> points = $1.00
+        <% } %>
+      </summary>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>Rule</th><th>Points</th><th>Details</th></tr>
+          </thead>
+          <tbody>
+            <% org.rules.forEach(rule => { %>
+              <tr>
+                <td><%= rule.title %></td>
+                <td><%= Number(rule.points) > 0 ? '+' + rule.points : rule.points %></td>
+                <td><%= rule.description %></td>
+              </tr>
+            <% }) %>
+            <% if (org.rules.length === 0) { %>
+              <tr><td colspan="3">No rules yet.</td></tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </details>
+  <% }) %>
+  <% if (organizations.length === 0) { %>
+    <p>No other organizations match.</p>
+  <% } %>
+
+  <p><a href="/">&larr; Back to home</a></p>
+<%- include('../partials/foot') %>

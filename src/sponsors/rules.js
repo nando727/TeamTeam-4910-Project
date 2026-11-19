@@ -109,7 +109,46 @@ async function findDriverSponsor(driverId) {
   return rows[0] || null;
 }
 
+function ruleAdjustment(rule, rawAmount, rawReason) {
+  const note = typeof rawReason === 'string' ? rawReason.trim() : '';
+  const reason = (note ? `Rule: ${rule.title}: ${note}` : `Rule: ${rule.title}`).slice(0, 255);
+  const typed = typeof rawAmount === 'string' ? rawAmount.trim() : '';
+  const amount = typed === '' ? Number(rule.points) : Number(typed);
+  return { amount, reason };
+}
+
+async function listOtherRulesets(sponsorId, { name = null } = {}) {
+  const params = [sponsorId || 0];
+  let nameClause = '';
+  if (name) {
+    nameClause = ' AND s.name LIKE ?';
+    params.push(`%${escapeLike(name)}%`);
+  }
+  const rows = await db.query(
+    `SELECT s.id AS sponsor_id, s.name, p.points_per_dollar,
+            r.id AS rule_id, r.title, r.points, r.description
+     FROM sponsors s
+     LEFT JOIN sponsor_point_rates p ON p.sponsor_id = s.id
+     LEFT JOIN rules r ON r.sponsor_id = s.id
+     WHERE s.status = 'active' AND s.id <> ?${nameClause}
+     ORDER BY s.name, s.id, r.title, r.id`,
+    params
+  );
+
+  const byId = new Map();
+  for (const row of rows) {
+    if (!byId.has(row.sponsor_id)) {
+      byId.set(row.sponsor_id, { id: row.sponsor_id, name: row.name, pointsPerDollar: row.points_per_dollar || null, rules: [] });
+    }
+    if (row.rule_id !== null && row.rule_id !== undefined) {
+      byId.get(row.sponsor_id).rules.push({ id: row.rule_id, title: row.title, points: row.points, description: row.description });
+    }
+  }
+  return [...byId.values()];
+}
+
 module.exports = {
   DuplicateRuleError, parseRuleTitle, parseRuleDescription, parseRulePoints, dollarsPerPoint,
-  listRules, findRule, addRule, updateRulePoints, removeRule, findDriverSponsor,
+  listRules, findRule, addRule, updateRulePoints, removeRule, findDriverSponsor, ruleAdjustment,
+  listOtherRulesets
 };

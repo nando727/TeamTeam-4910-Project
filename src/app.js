@@ -22,10 +22,12 @@ const { formToken, requireFormToken } = require('./auth/form-token');
 const { listApplicationsForSponsor, setApplicationStatus, VALID_STATUSES, escapeLike} = require('./applications');
 const db = require('./db');
 
-const ruleData = require('./sponsors/rules');
+const ruleData  = require('./sponsors/rules');
+const {listOtherRulesets} = require('./sponsors/rules');
 const { createUser,updateUserContact, updateUserStatus, DuplicateError } = require('./users/store');
 const { issueSetupToken, setupLinkFor, linkLifetimeHours } = require('./auth/setup-tokens');
 const { listDriversForSponsor, listSponsorAccounts, findOrgMember, deleteOrgMember } = require('./sponsors/accounts');
+const { POLICIES, getBalancePolicy, setBalancePolicy } = require('./sponsors/balance-policy');
 const { sendMail } = require('./mail/mailer');
 const { setupMailNotice } = require('./mail/outcome');
 const { adjustPoints } = require('./points/store');
@@ -212,7 +214,8 @@ app.get('/organization', requireLogin, requireSponsor, async (req, res, next) =>
     delete req.session.accountNotice;
     res.render('sponsor/organization', {
       organization, rules, rate, valueLabel: ruleData.dollarsPerPoint(rate), notice,
-      sponsorUsers, drivers, formToken: formToken(req),
+      sponsorUsers, drivers, formToken: formToken(req), 
+      balancePolicy: await getBalancePolicy(sponsorId), policies: POLICIES,
       totalPoints: drivers.reduce((sum, driver) => sum + Number(driver.balance || 0), 0),
     });
   } catch (err) { next(err); }
@@ -428,6 +431,22 @@ app.post('/organization/edit', requireLogin, requireSponsor, requireFormToken, a
     }
     next(err);
   }
+});
+
+app.post('/organization/balance-policy', requireLogin, requireSponsor, requireFormToken, async (req, res, next) => {
+  try {
+    const ok = await setBalancePolicy(req.session.user.sponsorId, req.body.policy);
+    flash(req, ok ? 'success' : 'error', ok ? 'Balance policy saved.' : 'Choose one of the listed options.');
+    res.redirect('/organization');
+  } catch (err) { next(err); }
+});
+
+app.get('/other-rules', requireLogin, requireSponsor, async (req, res, next) => {
+  try {
+    const name = typeof req.query.name === 'string' ? req.query.name.trim().slice(0, 128) : '';
+    const organizations = await listOtherRulesets(req.session.user.sponsorId, { name: name || null });
+    res.render('sponsor/other-rules', { organizations, name });
+  } catch (err) { next(err); }
 });
 
 // Sprint 9: with two product services there are a couple of hundred products
